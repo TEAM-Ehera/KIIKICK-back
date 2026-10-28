@@ -38,4 +38,11 @@ dependencies {
 
 tasks.named('test') {
     useJUnitPlatform()
+
+    // Keep automated tests isolated from externally configured databases such as RDS.
+    systemProperty 'spring.datasource.url', 'jdbc:h2:mem:kiikick;MODE=MySQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE'
+    systemProperty 'spring.datasource.username', 'sa'
+    systemProperty 'spring.datasource.password', ''
+    systemProperty 'spring.datasource.driver-class-name', 'org.h2.Driver'
+    systemProperty 'spring.jpa.hibernate.ddl-auto', 'create-drop'
 }
