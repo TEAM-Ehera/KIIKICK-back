@@ -2,6 +2,7 @@ package com.teamehera.kiikick.pitch.controller;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -17,6 +18,7 @@ import com.teamehera.kiikick.pitch.repository.PitchRepository;
 import com.teamehera.kiikick.user.domain.User;
 import com.teamehera.kiikick.user.repository.UserRepository;
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -160,6 +162,7 @@ class PitchControllerTest {
     void updatesNameAndCoordinatesButKeepsCornerIdentity() throws Exception {
         User owner = userRepository.save(new User("owner"));
         Pitch pitch = savePitchWithCorners(owner, "before-update");
+        LocalDateTime updatedAtBefore = pitch.getUpdatedAt();
         List<UUID> cornerIdsBefore = pitchCornerRepository
                 .findAllByPitchIdOrderByCornerOrderAsc(pitch.getId()).stream()
                 .map(PitchCorner::getId)
@@ -177,8 +180,10 @@ class PitchControllerTest {
 
         List<PitchCorner> cornersAfter = pitchCornerRepository
                 .findAllByPitchIdOrderByCornerOrderAsc(pitch.getId());
+        Pitch pitchAfter = pitchRepository.findById(pitch.getId()).orElseThrow();
         assertEquals(cornerIdsBefore, cornersAfter.stream().map(PitchCorner::getId).toList());
         assertEquals(0, cornersAfter.getFirst().getLatitude().compareTo(new BigDecimal("38.1001")));
+        assertTrue(pitchAfter.getUpdatedAt().isAfter(updatedAtBefore));
     }
 
     @Test

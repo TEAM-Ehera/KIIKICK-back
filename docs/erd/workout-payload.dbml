@@ -1,0 +1,61 @@
+Project KIIKICK_WORKOUT_PAYLOAD {
+  database_type: 'MySQL'
+
+  Note: '''
+    iOS WorkoutPayload 저장 전용 ERD
+
+    iOS 요청 날짜는 2001-01-01T00:00:00Z 기준 초 단위 Double이다.
+    서버는 UTC로 변환하고 마이크로초 HALF_UP 반올림 후 DATETIME(6)에 저장한다.
+  '''
+}
+
+Table workoutPayloads {
+  id binary(16) [pk, not null]
+  startDate datetime(6) [not null]
+  endDate datetime(6) [not null]
+  totalCalories double [not null]
+  totalDistance double [not null]
+}
+
+Table trackPoints {
+  id bigint [pk, not null, increment]
+  workoutPayloadId binary(16) [not null]
+  sampleSeq int [not null]
+  latitude double [not null]
+  longitude double [not null]
+  altitude double [not null]
+  horizontalAccuracy double [not null]
+  speed double [not null]
+  course double [not null]
+  timestamp datetime(6) [not null]
+
+  indexes {
+    (workoutPayloadId, sampleSeq) [
+      unique,
+      name: "uk_track_points_payload_seq"
+    ]
+  }
+
+  Note: "points 배열 순서를 0-based sampleSeq로 보존한다. speed와 course의 -1은 원본 측정값으로 유지한다."
+}
+
+Table heartRateSamples {
+  id bigint [pk, not null, increment]
+  workoutPayloadId binary(16) [not null]
+  sampleSeq int [not null]
+  timestamp datetime(6) [not null]
+  bpm double [not null]
+
+  indexes {
+    (workoutPayloadId, sampleSeq) [
+      unique,
+      name: "uk_heart_rate_samples_payload_seq"
+    ]
+  }
+
+  Note: "heartRateSamples 배열 순서를 0-based sampleSeq로 보존한다."
+}
+
+Ref: trackPoints.workoutPayloadId > workoutPayloads.id
+
+Ref: heartRateSamples.workoutPayloadId > workoutPayloads.id
