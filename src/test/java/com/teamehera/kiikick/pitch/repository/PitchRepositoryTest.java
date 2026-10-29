@@ -63,7 +63,8 @@ class PitchRepositoryTest {
 
         entityManager.clear();
 
-        List<Pitch> foundPitches = pitchRepository.findAllByUserIdAndDeletedAtIsNull(owner.getId());
+        List<Pitch> foundPitches = pitchRepository
+                .findAllByUserIdAndDeletedAtIsNullOrderByCreatedAtDesc(owner.getId());
 
         assertAll(
                 () -> assertEquals(1, foundPitches.size()),
@@ -87,7 +88,8 @@ class PitchRepositoryTest {
 
         entityManager.clear();
 
-        List<PitchCorner> foundCorners = pitchCornerRepository.findAllByPitchId(pitch.getId());
+        List<PitchCorner> foundCorners = pitchCornerRepository
+                .findAllByPitchIdOrderByCornerOrderAsc(pitch.getId());
 
         assertAll(
                 () -> assertEquals(4, foundCorners.size()),

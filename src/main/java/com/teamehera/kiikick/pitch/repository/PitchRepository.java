@@ -8,7 +8,9 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface PitchRepository extends JpaRepository<Pitch, UUID> {
 
-    List<Pitch> findAllByUserIdAndDeletedAtIsNull(UUID userId);
+    List<Pitch> findAllByUserIdAndDeletedAtIsNullOrderByCreatedAtDesc(UUID userId);
+
+    Optional<Pitch> findByIdAndUserIdAndDeletedAtIsNull(UUID id, UUID userId);
 
     Optional<Pitch> findByClientPitchId(UUID clientPitchId);
 }

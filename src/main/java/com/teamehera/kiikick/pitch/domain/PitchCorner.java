@@ -72,4 +72,9 @@ public class PitchCorner {
         this.longitude = longitude;
         pitch.addCorner(this);
     }
+
+    public void changeCoordinates(BigDecimal latitude, BigDecimal longitude) {
+        this.latitude = latitude;
+        this.longitude = longitude;
+    }
 }
