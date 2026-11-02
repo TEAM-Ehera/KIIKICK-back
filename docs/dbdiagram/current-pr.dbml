@@ -1,0 +1,58 @@
+// 현재 PR #6 + #7 스냅샷. head: e1f9f41859be7f4ae8a980f4d8d1f5447ea52438
+// SQL→DBML 변환본. MySQL의 updatedAt ON UPDATE 표현은 원본 current-pr.sql을 기준으로 확인합니다.
+
+Table "users" {
+  "id" BINARY(16) [pk, not null]
+  "nickname" VARCHAR(16) [not null]
+  "createdAt" DATETIME(6) [not null, default: `CURRENT_TIMESTAMP(6)`]
+  "updatedAt" DATETIME(6) [not null, default: `CURRENT_TIMESTAMP(6)`]
+  "deletedAt" DATETIME(6)
+}
+
+Table "workoutPayloads" {
+  "id" BINARY(16) [pk, not null]
+  "userId" BINARY(16) [not null]
+  "startDate" DATETIME(6) [not null]
+  "endDate" DATETIME(6) [not null]
+  "totalCalories" DOUBLE [not null]
+  "totalDistance" DOUBLE [not null]
+
+  Indexes {
+    (userId, startDate) [name: "idx_workout_user_start"]
+  }
+}
+
+Table "trackPoints" {
+  "id" BIGINT [pk, not null, increment]
+  "workoutPayloadId" BINARY(16) [not null]
+  "sampleSeq" INT [not null]
+  "latitude" DOUBLE [not null]
+  "longitude" DOUBLE [not null]
+  "altitude" DOUBLE [not null]
+  "horizontalAccuracy" DOUBLE [not null]
+  "speed" DOUBLE [not null]
+  "course" DOUBLE [not null]
+  "timestamp" DATETIME(6) [not null]
+
+  Indexes {
+    (workoutPayloadId, sampleSeq) [unique, name: "uk_track_points_payload_seq"]
+  }
+}
+
+Table "heartRateSamples" {
+  "id" BIGINT [pk, not null, increment]
+  "workoutPayloadId" BINARY(16) [not null]
+  "sampleSeq" INT [not null]
+  "timestamp" DATETIME(6) [not null]
+  "bpm" DOUBLE [not null]
+
+  Indexes {
+    (workoutPayloadId, sampleSeq) [unique, name: "uk_heart_rate_samples_payload_seq"]
+  }
+}
+
+Ref "fk_workout_user":"users"."id" <? "workoutPayloads"."userId"
+
+Ref "fk_track_workout":"workoutPayloads"."id" <? "trackPoints"."workoutPayloadId"
+
+Ref "fk_heart_workout":"workoutPayloads"."id" <? "heartRateSamples"."workoutPayloadId"
