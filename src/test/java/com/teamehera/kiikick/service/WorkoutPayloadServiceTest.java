@@ -1,5 +1,6 @@
 package com.teamehera.kiikick.workout.service;
 
+import com.teamehera.kiikick.global.exception.InvalidWorkoutPayloadException;
 import com.teamehera.kiikick.global.exception.UserNotFoundException;
 import com.teamehera.kiikick.user.domain.User;
 import com.teamehera.kiikick.user.repository.UserRepository;
@@ -29,6 +30,7 @@ import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /*
@@ -164,7 +166,10 @@ class WorkoutPayloadServiceTest {
 
         assertThrows(
                 UserNotFoundException.class,
-                () -> workoutPayloadService.create(userId, request)
+                () -> workoutPayloadService.create(
+                        userId,
+                        request
+                )
         );
 
         verify(workoutPayloadRepository, never())
@@ -172,4 +177,136 @@ class WorkoutPayloadServiceTest {
                         org.mockito.ArgumentMatchers.any()
                 );
     }
+
+    @Test
+    void startDate가_MySQL_DATETIME_최솟값보다_이르면_저장하지_않는다() {
+        UUID userId = UUID.randomUUID();
+        LocalDateTime now = LocalDateTime.now();
+
+        User user = new User(
+                userId,
+                "테스트사용자",
+                now,
+                now,
+                null
+        );
+
+        when(userRepository.findById(userId))
+                .thenReturn(Optional.of(user));
+
+        WorkoutPayloadCreateRequest request =
+                new WorkoutPayloadCreateRequest(
+                        -100_000_000_000.0,
+                        60.0,
+                        420.5,
+                        3182.4,
+                        List.of(),
+                        List.of()
+                );
+
+        InvalidWorkoutPayloadException exception =
+                assertThrows(
+                        InvalidWorkoutPayloadException.class,
+                        () -> workoutPayloadService.create(userId, request)
+                );
+
+        assertEquals(
+                "startDate: MySQL DATETIME(6)에 저장할 수 없는 날짜입니다.",
+                exception.getMessage()
+        );
+
+        verifyNoInteractions(workoutPayloadRepository);
+    }
+
+    @Test
+    void endDate가_MySQL_DATETIME_최댓값보다_늦으면_저장하지_않는다() {
+        UUID userId = UUID.randomUUID();
+        LocalDateTime now = LocalDateTime.now();
+
+        User user = new User(
+                userId,
+                "테스트사용자",
+                now,
+                now,
+                null
+        );
+
+        when(userRepository.findById(userId))
+                .thenReturn(Optional.of(user));
+
+        WorkoutPayloadCreateRequest request =
+                new WorkoutPayloadCreateRequest(
+                        0.0,
+                        300_000_000_000.0,
+                        420.5,
+                        3182.4,
+                        List.of(),
+                        List.of()
+                );
+
+        InvalidWorkoutPayloadException exception =
+                assertThrows(
+                        InvalidWorkoutPayloadException.class,
+                        () -> workoutPayloadService.create(userId, request)
+                );
+
+        assertEquals(
+                "endDate: MySQL DATETIME(6)에 저장할 수 없는 날짜입니다.",
+                exception.getMessage()
+        );
+
+        verifyNoInteractions(workoutPayloadRepository);
+    }
+
+    @Test
+    void TrackPoint_timestamp가_MySQL_DATETIME_범위를_벗어나면_저장하지_않는다() {
+        UUID userId = UUID.randomUUID();
+        LocalDateTime now = LocalDateTime.now();
+
+        User user = new User(
+                userId,
+                "테스트사용자",
+                now,
+                now,
+                null
+        );
+
+        when(userRepository.findById(userId))
+                .thenReturn(Optional.of(user));
+
+        TrackPointRequest invalidTrackPoint =
+                new TrackPointRequest(
+                        37.5665,
+                        126.9780,
+                        20.1,
+                        4.8,
+                        2.3,
+                        87.5,
+                        -100_000_000_000.0
+                );
+
+        WorkoutPayloadCreateRequest request =
+                new WorkoutPayloadCreateRequest(
+                        0.0,
+                        60.0,
+                        420.5,
+                        3182.4,
+                        List.of(invalidTrackPoint),
+                        List.of()
+                );
+
+        InvalidWorkoutPayloadException exception =
+                assertThrows(
+                        InvalidWorkoutPayloadException.class,
+                        () -> workoutPayloadService.create(userId, request)
+                );
+
+        assertEquals(
+                "points[0].timestamp: MySQL DATETIME(6)에 저장할 수 없는 날짜입니다.",
+                exception.getMessage()
+        );
+
+        verifyNoInteractions(workoutPayloadRepository);
+    }
 }
+

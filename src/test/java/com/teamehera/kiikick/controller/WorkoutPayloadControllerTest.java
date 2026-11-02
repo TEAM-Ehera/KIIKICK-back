@@ -6,6 +6,10 @@ import com.teamehera.kiikick.workout.dto.WorkoutPayloadCreateRequest;
 import com.teamehera.kiikick.workout.dto.WorkoutPayloadCreateResponse;
 import com.teamehera.kiikick.workout.service.WorkoutPayloadService;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
@@ -14,6 +18,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.UUID;
+import java.util.stream.Stream;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -127,6 +132,176 @@ class WorkoutPayloadControllerTest {
 
         // DTO 검증에서 중단되므로 Service는 호출되지 않아야 한다.
         verifyNoInteractions(workoutPayloadService);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"\"NaN\"", "1e309", "-1e309"})
+    void totalCalories가_유한하지_않으면_400을_반환한다(
+            String invalidValue
+    ) throws Exception {
+        UUID userId = UUID.randomUUID();
+
+        mockMvc.perform(
+                        post(
+                                "/api/v1/user/{userId}/workout-payloads",
+                                userId
+                        )
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(requestJson(invalidValue, "3182.4"))
+                )
+                .andExpect(status().isBadRequest())
+                .andExpect(
+                        jsonPath("$.message")
+                                .value(
+                                        "totalCalories는 유한한 숫자여야 합니다."
+                                )
+                );
+
+        verifyNoInteractions(workoutPayloadService);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"\"NaN\"", "1e309", "-1e309"})
+    void totalDistance가_유한하지_않으면_400을_반환한다(
+            String invalidValue
+    ) throws Exception {
+        UUID userId = UUID.randomUUID();
+
+        mockMvc.perform(
+                        post(
+                                "/api/v1/user/{userId}/workout-payloads",
+                                userId
+                        )
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(requestJson("420.5", invalidValue))
+                )
+                .andExpect(status().isBadRequest())
+                .andExpect(
+                        jsonPath("$.message")
+                                .value(
+                                        "totalDistance는 유한한 숫자여야 합니다."
+                                )
+                );
+
+        verifyNoInteractions(workoutPayloadService);
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("invalidArrayRequests")
+    void 배열_검증에_실패하면_400을_반환한다(
+            String caseName,
+            String points,
+            String heartRateSamples,
+            String expectedMessage
+    ) throws Exception {
+        UUID userId = UUID.randomUUID();
+
+        mockMvc.perform(
+                        post(
+                                "/api/v1/user/{userId}/workout-payloads",
+                                userId
+                        )
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(arrayRequestJson(
+                                        points,
+                                        heartRateSamples
+                                ))
+                )
+                .andExpect(status().isBadRequest())
+                .andExpect(
+                        jsonPath("$.message")
+                                .value(expectedMessage)
+                );
+
+        verifyNoInteractions(workoutPayloadService);
+    }
+
+    @Test
+    void 빈_배열은_허용한다() throws Exception {
+        UUID userId = UUID.randomUUID();
+        UUID workoutPayloadId = UUID.randomUUID();
+
+        when(workoutPayloadService.create(
+                eq(userId),
+                any(WorkoutPayloadCreateRequest.class)
+        )).thenReturn(
+                new WorkoutPayloadCreateResponse(workoutPayloadId)
+        );
+
+        mockMvc.perform(
+                        post(
+                                "/api/v1/user/{userId}/workout-payloads",
+                                userId
+                        )
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(arrayRequestJson("[]", "[]"))
+                )
+                .andExpect(status().isCreated())
+                .andExpect(
+                        jsonPath("$.workoutPayloadId")
+                                .value(workoutPayloadId.toString())
+                );
+    }
+
+    private static Stream<Arguments> invalidArrayRequests() {
+        return Stream.of(
+                Arguments.of(
+                        "points 배열이 null",
+                        "null",
+                        "[]",
+                        "points는 필수입니다."
+                ),
+                Arguments.of(
+                        "points 배열 요소가 null",
+                        "[null]",
+                        "[]",
+                        "points 배열 요소는 null일 수 없습니다."
+                ),
+                Arguments.of(
+                        "heartRateSamples 배열이 null",
+                        "[]",
+                        "null",
+                        "heartRateSamples는 필수입니다."
+                ),
+                Arguments.of(
+                        "heartRateSamples 배열 요소가 null",
+                        "[]",
+                        "[null]",
+                        "heartRateSamples 배열 요소는 null일 수 없습니다."
+                )
+        );
+    }
+
+    private String arrayRequestJson(
+            String points,
+            String heartRateSamples
+    ) {
+        return """
+                {
+                  "startDate": 750000000.0,
+                  "endDate": 750000600.0,
+                  "totalCalories": 420.5,
+                  "totalDistance": 3182.4,
+                  "points": %s,
+                  "heartRateSamples": %s
+                }
+                """.formatted(points, heartRateSamples);
+    }
+
+    private String requestJson(
+            String totalCalories,
+            String totalDistance
+    ) {
+        return """
+                {
+                  "startDate": 750000000.0,
+                  "endDate": 750000600.0,
+                  "totalCalories": %s,
+                  "totalDistance": %s,
+                  "points": [],
+                  "heartRateSamples": []
+                }
+                """.formatted(totalCalories, totalDistance);
     }
 
     private String validRequestJson() {

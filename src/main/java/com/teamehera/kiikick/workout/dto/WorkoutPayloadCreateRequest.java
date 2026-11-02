@@ -34,8 +34,11 @@ public record WorkoutPayloadCreateRequest(
         Double endDate,
 
         /*
-         * 현재 iOS 명세에는 정확한 최솟값과 최댓값이 정의되어 있지 않으므로
-         * 여기서는 임의의 범위 검증을 추가하지 않고 필수 여부만 검증한다.
+         * 현재 iOS 명세에는 비즈니스 최솟값과 최댓값이 정의되어 있지 않으므로
+         * 임의의 수치 범위는 제한하지 않는다.
+         *
+         * 다만 MySQL DOUBLE에 저장할 수 없는 NaN과 Infinity는
+         * 아래 @AssertTrue 메서드에서 차단한다.
          */
         @NotNull
         @Schema(
@@ -53,23 +56,29 @@ public record WorkoutPayloadCreateRequest(
         )
         Double totalDistance,
 
-        @NotNull
+        @NotNull(message = "points는 필수입니다.")
         @Schema(
                 description = "시간순 GPS 포인트 배열. 빈 배열 허용",
                 requiredMode = Schema.RequiredMode.REQUIRED
         )
-        List<@Valid TrackPointRequest> points,
+        List<
+                @NotNull(
+                        message = "points 배열 요소는 null일 수 없습니다."
+                )
+                @Valid TrackPointRequest
+                > points,
 
-        /*
-         * @Valid를 붙였기 때문에 HeartRateSampleRequest 내부의
-         * timestamp, bpm 검증도 함께 실행된다.
-         */
-        @NotNull
+        @NotNull(message = "heartRateSamples는 필수입니다.")
         @Schema(
                 description = "시간순 심박수 샘플 배열. 빈 배열 허용",
                 requiredMode = Schema.RequiredMode.REQUIRED
         )
-        List<@Valid HeartRateSampleRequest> heartRateSamples
+        List<
+                @NotNull(
+                        message = "heartRateSamples 배열 요소는 null일 수 없습니다."
+                )
+                @Valid HeartRateSampleRequest
+                > heartRateSamples
 ) {
     @JsonIgnore
     @AssertTrue(
@@ -83,5 +92,23 @@ public record WorkoutPayloadCreateRequest(
         return Double.isFinite(startDate)
                 && Double.isFinite(endDate)
                 && endDate >= startDate;
+    }
+
+    @JsonIgnore
+    @AssertTrue(
+            message = "totalCalories는 유한한 숫자여야 합니다."
+    )
+    public boolean isTotalCaloriesFinite() {
+        return totalCalories == null
+                || Double.isFinite(totalCalories);
+    }
+
+    @JsonIgnore
+    @AssertTrue(
+            message = "totalDistance는 유한한 숫자여야 합니다."
+    )
+    public boolean isTotalDistanceFinite() {
+        return totalDistance == null
+                || Double.isFinite(totalDistance);
     }
 }
