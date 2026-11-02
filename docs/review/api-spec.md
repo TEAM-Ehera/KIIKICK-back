@@ -1,0 +1,448 @@
+# KIIKICK API 명세서
+
+[개발 참고용 API 원본](../api-spec.md) · [문서 안내](../README.md)
+
+> **팀 검토용 초안** — 서비스 방향과 API 제안을 논의하기 위한 자료입니다. 전체 명세를 일괄 적용하자는 의미가 아니며, 미합의 항목은 협의 후 확정합니다. 이 폴더의 두 문서만 공유해도 읽을 수 있도록 구성했습니다.
+
+**v0.4 · 2026-11-02 · iOS 협의용 읽기 편집본**
+서비스 시간대: **Asia/Seoul** · 기준 경로: **/api/v1** · 전송: HTTPS / JSON
+
+사용자가 자기 경기의 쿼터를 기록하고 결과를 확인하는 API다. **쿼터가 기록 단위이고, 경기는 쿼터를 묶는 날짜·장소 정보**다. 이 문서는 목표 계약이며 현재 iOS·서버가 모두 이대로 구현됐다는 의미는 아니다.
+
+## 바로가기
+
+- [먼저 알아둘 내용](#overview)
+- [화면별로 호출하는 순서](#flow)
+- [핵심 요청·응답 예시](#examples)
+- [운동 결과를 화면에 표시하는 법](#results)
+- [공통 통신 규칙](#rules)
+- [iOS와 협의할 항목](#agreement)
+- [전체 API 목록](#all-apis)
+
+<a id="overview"></a>
+## 1. 먼저 알아둘 내용
+
+| 이름 | 뜻 | 예시 |
+| --- | --- | --- |
+| 경기 `match` | 같은 날·장소에서 진행한 쿼터 묶음 | 월요일 풋살 |
+| 쿼터 `quarter` | 개인 기록과 운동 측정을 저장하는 단위 | 1쿼터, 2쿼터 |
+| 개인 기록 `stats` | 직접 입력한 골·어시스트 합계 | 2골, 1어시스트 |
+| 포지션 `position` | 해당 쿼터의 대표 포지션 하나 | 허용 코드 목록은 협의 필요 |
+| 운동 원본 `workout` | 워치가 측정한 거리·칼로리·GPS·심박 전체 | 측정 1회 파일 |
+| 운동 요약 `summary` | 서버가 미리 계산해 저장한 지표 | 최고속도·평균심박·Edwards TRIMP |
+
+**확정된 방향:** 개인 기록, 쿼터별 저장, 대표 포지션 하나, GPS·심박 원본 전체 보존, 저장 요약 조회, Edwards TRIMP, 서울 시간대.
+
+**현재 기술 제안:** 쿼터당 운동 파일 하나, Bearer 인증, 중복 방지 키, 경기 버전 검사. iOS 적용 방식은 협의가 필요하다. 미확정 사항은 [협의표](ios-integration.md)에 구분했다.
+
+팀 배정·홈/어웨이 점수·참가자 목록·개별 득점 시각은 사용하지 않는다. 사용자는 자기 경기만 수정하고, 친구 비교는 별도로 허용된 분석 요약만 사용한다.
+
+<a id="flow"></a>
+## 2. 화면별로 호출하는 순서
+
+모든 경로 앞에 `/api/v1`을 붙인다. `{matchId}`와 `{quarterId}`는 앞 단계에서 서버가 반환한 실제 UUID로 바꾼다. 서버 ID가 없는 오프라인 시작 방식은 아직 협의 대상이다.
+
+### 2-1. 경기 준비
+
+| 순서 | 사용자가 하는 일 | 호출 | 보내는 값 / 보관할 값 |
+| --- | --- | --- | --- |
+| 1 | 로그인 | AUTH-01 | 제공자 토큰 / accessToken. 인증 제공자는 미확정 |
+| 2 | 저장한 경기장 선택 | GET /venues | 선택한 venueId |
+| 3 | 새 경기 묶음 생성 | POST /matches | 제목·장소·예정 시각 / matchId와 ETag |
+| 4 | 쿼터 시간 설정 | POST /matches/{matchId}/quarters | durationSeconds / quarterId와 새 ETag |
+| 5 | 준비 완료 | POST /matches/{matchId}/ready | 본문 없음 / 새 ETag |
+
+저장할 새 장소가 있으면 POST /venues를 사용한다. 장소를 재사용하지 않고 경기 생성 시 직접 입력하는 것도 현재 초안에서 가능하다.
+
+### 2-2. 쿼터 진행과 개인 기록
+
+| 순서 | 사용자가 하는 일 | 호출 | iOS에서 할 일 |
+| --- | --- | --- | --- |
+| 1 | 경기 시작 | GAME-01 | 경기 시작 요청 |
+| 2 | 쿼터 시작 | GAME-02 | 해당 quarterId와 워치 측정을 연결 |
+| 3 | 골·어시스트 입력 | GAME-14 | `{goals: 2, assists: 1}`처럼 현재 합계를 전송 |
+| 4 | 쿼터 측정 종료 | GAME-08 | 서버 쿼터 마감과 워치 파일 전송을 조정 |
+| 5 | 포지션 입력 | GAME-10 | 해당 쿼터의 대표 코드 하나 저장 |
+| 6 | 쿼터 완료 | GAME-11 | 다음 쿼터 시작 또는 경기 종료 선택 |
+| 7 | 경기 종료 | GAME-12 | 마지막 쿼터까지 완료한 뒤 호출. 성공은 200 |
+
+골·어시스트 저장은 **현재 합계를 교체**한다. 같은 `{goals: 2, assists: 1}`을 다시 보내도 4골·2어시스트로 더하지 않는다. 포지션·합계 입력을 생략할 수 있는지는 정책 검토 중이며, 현재 초안은 미입력을 null로 표시한다.
+
+### 2-3. 워치 측정 전송과 결과 확인
+
+| 순서 | 처리 주체 | 하는 일 | API / 결과 |
+| --- | --- | --- | --- |
+| 1 | Watch → iPhone | 쿼터 측정 파일 전달 | 기존 WCSession.transferFile. 서버 API가 아님 |
+| 2 | iPhone → 서버 | 해당 쿼터의 운동 원본 업로드 | WORK-01, 새 원본 저장 201 |
+| 3 | 서버 | 원본 보존 후 운동 요약 계산·저장 | 쿼터/경기 종료와 별개 |
+| 4 | iPhone | 저장 요약 조회 | WORK-03, 200과 계산 상태 |
+| 5 | iPhone | 개인 기록·포지션·운동 결과를 함께 표시 | RESULT-04 |
+
+**현재 초안은 서버 쿼터 마감 후 업로드**한다. 파일이 먼저 도착했을 때의 대기 방식은 협의 대상이다. 경기 전체가 종료된 뒤 파일이 도착해도 해당 쿼터에 업로드할 수 있다. 파일을 업로드한 201은 계산 완료라는 뜻이 아니다.
+
+<a id="examples"></a>
+## 3. 핵심 요청·응답 예시
+
+아래 `{matchId}`, `{quarterId}`, `<accessToken>`은 설명용 자리다. API ID는 문서에서 찾기 위한 이름이며 요청 본문에 보내는 값이 아니다. 각 예시는 독립적이며 실제 변경 요청에는 최신 ETag를 사용한다.
+
+### 3-1. 경기 묶음 만들기
+
+```http
+POST /api/v1/matches
+Authorization: Bearer <accessToken>
+Content-Type: application/json
+Idempotency-Key: 00000090-0000-4000-8000-000000000090
+```
+
+```json
+{
+  "title": "월요일 풋살",
+  "venueSnapshot": {
+    "name": "서울 풋살장",
+    "address": null
+  },
+  "scheduledAt": "2026-11-02T19:30:00+09:00"
+}
+```
+
+성공: **201**. 반환된 `data.id`를 matchId로 보관한다. 저장 경기장으로 선택할 때는 venueSnapshot 대신 venueId를 보낸다. 두 필드를 동시에 보내지 않는다.
+
+### 3-2. 쿼터 만들기
+
+```http
+POST /api/v1/matches/{matchId}/quarters
+Authorization: Bearer <accessToken>
+Content-Type: application/json
+Idempotency-Key: 00000091-0000-4000-8000-000000000091
+If-Match: "1"
+```
+
+```json
+{
+  "durationSeconds": 600
+}
+```
+
+600초는 설정한 10분이다. 성공 **201**의 `data.id`가 quarterId다. 응답 ETag를 다음 변경 요청에 사용한다. 실제 측정 시간은 운동 파일의 startDate/endDate로 별도 계산한다.
+
+### 3-3. 쿼터 골·어시스트 합계 저장
+
+```http
+PUT /api/v1/matches/{matchId}/quarters/{quarterId}/stats
+Authorization: Bearer <accessToken>
+Content-Type: application/json
+Idempotency-Key: 00000092-0000-4000-8000-000000000092
+If-Match: "8"
+```
+
+```json
+{
+  "goals": 2,
+  "assists": 1
+}
+```
+
+성공 **200** 응답 예시:
+
+```json
+{
+  "data": {
+    "quarterId": "00000005-0000-4000-8000-000000000005",
+    "goals": 2,
+    "assists": 1,
+    "updatedAt": "2026-11-02T19:40:00+09:00"
+  },
+  "meta": {
+    "requestId": "req-stats-example",
+    "serverTime": "2026-11-02T19:40:00+09:00",
+    "matchVersion": 9
+  }
+}
+```
+
+이 예시의 응답 헤더는 `ETag: "9"`다. 골·어시스트는 필수 0 이상 정수이며, 무득점이면 0을 보낸다. 미입력과 0은 다르다.
+
+### 3-4. 운동 원본 업로드
+
+| 내용 | 계약 |
+| --- | --- |
+| 요청 | `POST /api/v1/quarters/{quarterId}/workout-payloads` |
+| 본문 | 기존 WorkoutPayload의 startDate/endDate, points, heartRateSamples, totalCalories, totalDistance |
+| 날짜 예외 | 원본 날짜는 기존 Apple epoch 숫자 유지. 서울 시각 문자열로 바꾸지 않음 |
+| 새 원본 저장 | 201과 Workout. 응답은 `{data, meta}` 형식 |
+| 같은 원본 재업로드 | 새 키로 보내도 기존 원본이면 200. 동일 멱등 키 재생은 최초 201을 그대로 반환할 수 있음 |
+| 다른 원본 재업로드 | 409 WORKOUT_ALREADY_EXISTS. 현재 초안은 쿼터당 원본 한 건 |
+| 상세 필드·예시 | 아래 운동 업로드 본문 예시 |
+
+현재 초안은 인증·Idempotency-Key·If-Match를 요구한다. **운동 업로드에 경기 버전 검사를 유지할지는 협의 대상**이며, 여기서 변경된 것으로 간주하지 않는다.
+
+### 운동 업로드 본문 예시
+
+쿼터는 URL의 quarterId로 지정한다. 본문에는 아래 센서 원본을 보낸다. 날짜 숫자와 단위를 유지하며, 고강도·가속 등 계산 결과는 서버 응답으로 받는다.
+
+| 필드 | 타입 | 필수 / null | 의미 |
+| --- | --- | --- | --- |
+| startDate / endDate | number | 필수 / null 불가 | Apple epoch 초, 유한수, endDate > startDate |
+| totalCalories | number | 필수 / null 불가 | kcal, 유한수, 0 이상 |
+| totalDistance | number | 필수 / null 불가 | m, 유한수, 0 이상 |
+| points | TrackPointInput[] | 필수 / null 불가 | 빈 배열 허용. null 요소 불가 |
+| heartRateSamples | HeartRateInput[] | 필수 / null 불가 | 빈 배열 허용. null 요소 불가 |
+| points[].latitude / longitude | number | 필수 | degrees; -90~90 / -180~180 |
+| points[].altitude / horizontalAccuracy | number | 필수 | m, 유한수; 원본 무효 표식 보존 |
+| points[].speed | number | 필수 | m/s; -1 무효 또는 0 이상 |
+| points[].course | number | 필수 | -1 무효 또는 0 이상 360 미만 |
+| points[].timestamp | number | 필수 | Apple epoch 초 |
+| heartRateSamples[].timestamp | number | 필수 | Apple epoch 초 |
+| heartRateSamples[].bpm | number | 필수 | 유한수 원본. 품질 미달은 계산에서 제외; 범위 정책 P08 |
+
+```json
+{
+  "startDate": 815274000.0,
+  "endDate": 815274600.0,
+  "totalCalories": 100.0,
+  "totalDistance": 1500.0,
+  "points": [
+    {
+      "latitude": 37.5665,
+      "longitude": 126.978,
+      "altitude": 20.1,
+      "horizontalAccuracy": 4.8,
+      "speed": 2.3,
+      "course": 87.5,
+      "timestamp": 815274001.2
+    }
+  ],
+  "heartRateSamples": [
+    {
+      "timestamp": 815274001.0,
+      "bpm": 142.0
+    }
+  ]
+}
+```
+
+### 3-5. 운동 결과 읽기
+
+```http
+GET /api/v1/quarters/{quarterId}/summary
+Authorization: Bearer <accessToken>
+```
+
+성공 **200**에서 `data`가 null이면 운동 원본 미수신이다. 객체가 있으면 calculationStatus와 각 지표를 읽는다. 아래 결과 준비 상태와 지표 표를 기준으로 읽는다. 상세 DTO는 협의 후 확정한다.
+
+<a id="results"></a>
+## 4. 운동 결과를 화면에 표시하는 법
+
+### 4-1. 결과 준비 상태
+
+| 서버 값 | 뜻 | 화면 처리 |
+| --- | --- | --- |
+| `summary = null` | 운동 파일을 아직 받지 못함 | 측정 데이터 대기 표시 |
+| `PROCESSING` | 원본은 저장됐고 계산 중 | 처리 중 표시, Retry-After 이후 재조회 |
+| `READY` | 제공 지표 계산 완료 | 값 표시 |
+| `PARTIAL` | 일부 지표만 계산 가능 | 계산된 값 표시, null 지표는 미측정/기준 필요 안내 |
+| `FAILED` | 계산 실패 | 재계산 안내. 원본 업로드 실패와 구분 |
+
+`0`은 계산·입력된 실제 값이고, `null`은 값이 없다는 뜻이다. `metricStatus`는 지표별로 값이 없는 이유를 알려준다. GET 조회가 전체 GPS·심박 재계산을 실행하지는 않는다.
+
+### 4-2. 화면 이름과 응답 필드
+
+| 화면에 표시할 값 | JSON 필드 | 단위 |
+| --- | --- | --- |
+| 최고속도 | maxSpeedMps | m/s |
+| 이동거리 | totalDistanceM | m |
+| 소모 칼로리 | totalCaloriesKcal | kcal |
+| 평균속력 | averageSpeedMps | m/s |
+| 고강도 주행거리 | highIntensityDistanceM | m |
+| 가속 횟수 | accelerationCount | 회 |
+| 감속 횟수 | decelerationCount | 회 |
+| 방향전환 횟수 | directionChangeCount | 회 |
+| 평균 심박수 | averageHeartRateBpm | bpm |
+| 최고 심박수 | maxHeartRateBpm | bpm |
+| 운동 부하 | trimpEdwards | AU |
+
+화면에서 km/h로 표시하려면 m/s에 3.6을 곱한다. Edwards 계산 기준인 hrMaxReferenceBpm은 이번 쿼터의 관측 최고심박수와 다르다. 계산 기준의 미확정 임계값은 iOS와 서버가 각자 임의로 정하지 않는다.
+
+<a id="rules"></a>
+## 5. 공통 통신 규칙
+
+### 5-1. 시간
+
+| 대상 | 형식·기준 |
+| --- | --- |
+| 서비스 화면·날짜별 통계 | Asia/Seoul |
+| 일반 요청·응답 날짜 | `2026-11-02T19:30:00+09:00`처럼 +09:00이 포함된 문자열 |
+| 워치 원본 업로드 날짜 | 2001-01-01 UTC부터 경과한 초(Double). 기존 Apple epoch 유지 |
+| 서버 DB 내부 | UTC 저장 유지. 일반 API 출력 시 서울 시각으로 변환 |
+
+서울 시간대로 맞춘다고 Apple epoch 숫자에 iOS가 9시간을 더하면 안 된다. 같은 시각을 다른 표현으로 변환하는 것이다. 날짜 query는 URLComponents/URLQueryItem으로 구성하고 최종 URL의 `+`가 `%2B`인지 확인해 공백으로 해석되지 않게 한다.
+
+### 5-2. 요청 헤더
+
+| 이름 | 쉬운 설명 | 언제 필요한가 |
+| --- | --- | --- |
+| Authorization | 로그인한 사용자 확인 | 공개 인증 API 외 모든 요청 |
+| Content-Type | 본문이 JSON임을 표시 | JSON 본문을 보내는 요청 |
+| Idempotency-Key | 같은 저장 요청의 재전송을 식별하는 UUID | 토큰 교환/갱신 외 변경 API |
+| If-Match | 내가 읽었던 경기 버전 | 현재 초안의 기존 경기·쿼터 변경. 상세별 예외 확인 |
+| ETag | 서버가 알려주는 경기 버전 | 응답에서 읽어 다음 변경 요청의 If-Match로 사용 |
+
+재시도는 같은 Idempotency-Key를 유지한다. 내용을 바꾼 새 요청에는 새 키를 쓴다. 세부 재생·충돌 규칙은 iOS와 서버가 적용 전에 함께 확정한다.
+
+### 5-3. 응답과 오류
+
+성공은 `{data, meta}`, 오류는 `{error, meta}`다. 204는 응답 본문이 없다. iOS가 성공 응답을 기존 DTO 최상위에서 바로 읽는다면 공통 응답 래퍼를 추가해야 한다. 목록의 다음 페이지 정보는 meta.pagination에 있다.
+
+| 상태 코드 | 뜻 | iOS 대응 |
+| --- | --- | --- |
+| 200 / 201 | 조회·변경 성공 / 새 원본 생성 | data 사용. 업로드 성공과 계산 완료는 구별 |
+| 202 | 요청은 받았으나 후속 처리 중 | Location/조회 API로 확인 |
+| 204 | 본문 없는 성공 | JSON 디코딩을 시도하지 않음 |
+| 401 | 인증 실패·만료 | 토큰 갱신 또는 로그인 |
+| 409 | 상태·중복 충돌 | error.code별 처리. 무조건 같은 행동 반복 금지 |
+| 412 / 428 | 버전 불일치 / 버전 헤더 누락 | 최신 경기 조회 후 처리 |
+| 422 | 입력 검증 오류 | 해당 입력 또는 부족 데이터 확인 |
+| 응답 유실 | 저장됐는지 알 수 없음 | 같은 키로 복구. 새 기록을 무조건 생성하지 않음 |
+
+<a id="agreement"></a>
+## 6. iOS와 협의할 항목
+
+[협의용 체크리스트](ios-integration.md)에 **현재 명세 / iOS 변경점 / 결정할 내용**을 모았다. 우선순위는 아래와 같다.
+
+1. 서버 quarterId와 워치 측정 파일을 어떻게 연결할지.
+2. 골·어시스트·포지션을 워치에서 iPhone으로 어떻게 함께 전달할지.
+3. 오프라인 시작, 전송 실패, 앱 재실행 뒤에도 연결과 중복 식별자를 유지할지.
+4. 새 URL·응답 래퍼·인증·날짜 형식을 어느 시점에 함께 적용할지.
+5. 쿼터당 재측정 파일 수, 업로드 시 경기 버전 검사, 서버 마감과 파일 도착 순서를 어떻게 처리할지.
+
+서버가 계산하는 지표의 임계값·산식은 정책 목록에서 정한다. 아래 전체 목록 중 오프라인 조작 명령 큐는 지원 여부 검토 중인 기술 초안이다.
+
+<a id="all-apis"></a>
+## 7. 전체 API 목록
+
+
+총 **67개 경로/Method 계약**이다. 명령 동기화는 지원 범위 검토 중인 기술 초안도 포함한다. 각 행의 성공 상태는 아래 상세 문서와 함께 읽는다.
+
+### 인증·온보딩·마이페이지
+
+| API ID | 기능 | Method | 경로 | 성공 |
+| --- | --- | --- | --- | --- |
+| AUTH-01 | 로그인·가입 토큰 교환 | `POST` | `/auth/exchange` | 200 |
+| AUTH-02 | 로그인 세션 갱신 | `POST` | `/auth/refresh` | 200 |
+| AUTH-03 | 로그아웃 | `POST` | `/auth/logout` | 204 |
+| AUTH-04 | 내 프로필 조회 | `GET` | `/users/me` | 200 |
+| AUTH-05 | 내 프로필 수정 | `PATCH` | `/users/me` | 200 |
+| AUTH-06 | 온보딩 완료 | `PUT` | `/users/me/onboarding` | 200 |
+| AUTH-07 | 현재 동의 목록 조회 | `GET` | `/users/me/consents` | 200 |
+| AUTH-08 | 동의 부여·철회 | `PUT` | `/users/me/consents/{purpose}` | 200 |
+| AUTH-09 | 회원 탈퇴 요청 | `POST` | `/users/me/deletion-requests` | 202 |
+| AUTH-10 | 탈퇴 처리 상태 조회 | `GET` | `/users/me/deletion-requests/{deletionId}` | 200 |
+
+### 알림·기기
+
+| API ID | 기능 | Method | 경로 | 성공 |
+| --- | --- | --- | --- | --- |
+| NOTI-01 | 알림 목록 조회 | `GET` | `/notifications` | 200 |
+| NOTI-02 | 읽지 않은 알림 수 조회 | `GET` | `/notifications/unread-count` | 200 |
+| NOTI-03 | 알림 읽음 처리 | `PUT` | `/notifications/{notificationId}/read` | 200 |
+| NOTI-04 | 기기 등록·푸시 설정 갱신 | `PUT` | `/devices/{deviceId}` | 200 |
+| NOTI-05 | 기기 등록 해제 | `DELETE` | `/devices/{deviceId}` | 204 |
+
+### 경기장·개인 경기·쿼터 세팅
+
+| API ID | 기능 | Method | 경로 | 성공 |
+| --- | --- | --- | --- | --- |
+| SET-01 | 저장 경기장 목록·검색 | `GET` | `/venues` | 200 |
+| SET-02 | 저장 경기장 상세 | `GET` | `/venues/{venueId}` | 200 |
+| SET-03 | 경기장 저장 | `POST` | `/venues` | 201 |
+| SET-04 | 경기장 수정 | `PATCH` | `/venues/{venueId}` | 200 |
+| SET-05 | 경기장 삭제 | `DELETE` | `/venues/{venueId}` | 204 |
+| SET-06 | 내 경기 목록 | `GET` | `/matches` | 200 |
+| SET-07 | 개인 경기 묶음 생성 | `POST` | `/matches` | 201 |
+| SET-08 | 경기 상세·최신 버전 | `GET` | `/matches/{matchId}` | 200 |
+| SET-09 | 경기 설정 수정 | `PATCH` | `/matches/{matchId}` | 200 |
+| SET-10 | 경기 준비 완료 | `POST` | `/matches/{matchId}/ready` | 200 |
+| SET-11 | 시작 전 경기 취소 | `POST` | `/matches/{matchId}/cancel` | 200 |
+| SET-16 | 쿼터 목록 | `GET` | `/matches/{matchId}/quarters` | 200 |
+| SET-17 | 쿼터 추가 | `POST` | `/matches/{matchId}/quarters` | 201 |
+| SET-18 | 미시작 쿼터 시간 수정 | `PATCH` | `/matches/{matchId}/quarters/{quarterId}` | 200 |
+| SET-19 | 미사용 마지막 쿼터 삭제 | `DELETE` | `/matches/{matchId}/quarters/{quarterId}` | 204 |
+
+### 개인 쿼터 진행·기록
+
+| API ID | 기능 | Method | 경로 | 성공 |
+| --- | --- | --- | --- | --- |
+| GAME-01 | 경기 시작 | `POST` | `/matches/{matchId}/start` | 200 |
+| GAME-02 | 쿼터 시작 | `POST` | `/matches/{matchId}/quarters/{quarterId}/start` | 200 |
+| GAME-08 | 쿼터 측정 마감 | `POST` | `/matches/{matchId}/quarters/{quarterId}/end` | 200 |
+| GAME-09 | 쿼터 대표 포지션 조회 | `GET` | `/matches/{matchId}/quarters/{quarterId}/position` | 200 |
+| GAME-10 | 쿼터 대표 포지션 저장·수정 | `PUT` | `/matches/{matchId}/quarters/{quarterId}/position` | 200 |
+| GAME-11 | 쿼터 완료 확정 | `POST` | `/matches/{matchId}/quarters/{quarterId}/complete` | 200 |
+| GAME-12 | 경기 묶음 종료 | `POST` | `/matches/{matchId}/end` | 200 |
+| GAME-13 | 쿼터 골·어시스트 조회 | `GET` | `/matches/{matchId}/quarters/{quarterId}/stats` | 200 |
+| GAME-14 | 쿼터 골·어시스트 합계 저장·수정 | `PUT` | `/matches/{matchId}/quarters/{quarterId}/stats` | 200 |
+
+### 홈
+
+| API ID | 기능 | Method | 경로 | 성공 |
+| --- | --- | --- | --- | --- |
+| HOME-01 | 홈 요약 조회 | `GET` | `/home` | 200 |
+
+### 친구
+
+| API ID | 기능 | Method | 경로 | 성공 |
+| --- | --- | --- | --- | --- |
+| FRIEND-01 | 친구 검색 | `GET` | `/users/search` | 200 |
+| FRIEND-02 | 친구·사용자 공개 프로필 조회 | `GET` | `/users/{userId}/profile` | 200 |
+| FRIEND-03 | 내 친구 목록 조회 | `GET` | `/friends` | 200 |
+| FRIEND-04 | 보낸·받은 친구 요청 목록 | `GET` | `/friend-requests` | 200 |
+| FRIEND-05 | 친구 요청 보내기 | `POST` | `/friend-requests` | 201 |
+| FRIEND-06 | 친구 요청 수락 | `POST` | `/friend-requests/{requestId}/accept` | 200 |
+| FRIEND-07 | 친구 요청 취소·거절 | `DELETE` | `/friend-requests/{requestId}` | 204 |
+| FRIEND-08 | 친구 삭제 | `DELETE` | `/friends/{userId}` | 204 |
+| FRIEND-09 | 사용자 차단 | `PUT` | `/users/{userId}/block` | 204 |
+| FRIEND-10 | 사용자 차단 해제 | `DELETE` | `/users/{userId}/block` | 204 |
+
+### 개인 경기·쿼터 결과
+
+| API ID | 기능 | Method | 경로 | 성공 |
+| --- | --- | --- | --- | --- |
+| RESULT-01 | 개인 경기 결과 | `GET` | `/matches/{matchId}/result` | 200 |
+| RESULT-03 | 경기 내 쿼터별 결과 | `GET` | `/matches/{matchId}/result/quarters` | 200 |
+| RESULT-04 | 개별 쿼터 결과 | `GET` | `/quarters/{quarterId}/result` | 200 |
+
+### 개인 분석
+
+| API ID | 기능 | Method | 경로 | 성공 |
+| --- | --- | --- | --- | --- |
+| STAT-01 | 개인 기간 통계 | `GET` | `/analytics/summary` | 200 |
+| STAT-02 | 지표 추이 | `GET` | `/analytics/trends` | 200 |
+| STAT-03 | 이전 개인 경기와 비교 | `GET` | `/analytics/match-comparison` | 200 |
+| STAT-04 | 쿼터별 포지션 분포 | `GET` | `/analytics/positions` | 200 |
+| STAT-05 | 친구와 개인 기록 비교 | `GET` | `/analytics/friend-comparison` | 200 |
+
+### 운동 원본·요약
+
+| API ID | 기능 | Method | 경로 | 성공 |
+| --- | --- | --- | --- | --- |
+| WORK-01 | 쿼터 운동 원본 업로드 | `POST` | `/quarters/{quarterId}/workout-payloads` | 201 / 200 |
+| WORK-02 | 저장 운동 기본값 조회 | `GET` | `/quarters/{quarterId}/workout` | 200 |
+| WORK-03 | 쿼터 운동 요약 조회 | `GET` | `/quarters/{quarterId}/summary` | 200 |
+| WORK-04 | GPS 원본 페이지 조회 | `GET` | `/quarters/{quarterId}/track-points` | 200 |
+| WORK-05 | 심박 원본 페이지 조회 | `GET` | `/quarters/{quarterId}/heart-rate-samples` | 200 |
+| WORK-06 | Edwards 기준 최대심박수 설정 | `PUT` | `/quarters/{quarterId}/summary/settings` | 202 |
+| WORK-07 | 운동 요약 재계산 요청 | `POST` | `/quarters/{quarterId}/summary/recalculate` | 202 |
+
+### 명령 동기화
+
+| API ID | 기능 | Method | 경로 | 성공 |
+| --- | --- | --- | --- | --- |
+| WATCH-01 | 오프라인 명령 배치 반영 | `POST` | `/sync/operations` | 200 |
+| WATCH-02 | 명령 처리 결과 조회 | `GET` | `/sync/operations/{operationId}` | 200 |
+
+
+## 8. 공유 범위
+
+이 공유본은 API 개요와 iOS 협의표를 요약한 검토 자료입니다. 함께 제공하는 [개발 참고용 원본](../api-spec.md)에서 각 API의 상세 요청·응답·오류를 확인할 수 있습니다. 기능·ERD·계산 문서도 원본의 링크로 연결됩니다. 개발 중에는 원본을 기준으로 읽습니다.
+
+이번 v0.4는 읽는 순서·예시·협의 항목을 정리하고 서울 시간대 입출력을 반영했다. API 경로·Method·필수 헤더와 운동 원본 검증 규칙은 v0.3 초안에서 임의로 변경하지 않았다. 운동 업로드 버전 검사와 샘플 경계 처리는 협의표의 개선 제안이며, 합의 전 적용된 것으로 읽지 않는다. 서버 코드·실제 DB·iOS 구현은 이번 문서 편집으로 바뀌지 않는다.

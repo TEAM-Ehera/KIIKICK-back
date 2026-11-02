@@ -1,0 +1,377 @@
+// v0.4 쿼터 중심 개인 기록 설계. 기능·API·ERD 문서와 같은 모델을 사용합니다.
+Table "users" {
+  "id" BINARY(16) [pk, not null]
+  "nickname" VARCHAR(16)
+  "avatar_url" TEXT
+  "onboarding_completed_at" DATETIME(6)
+  "deletion_requested_at" DATETIME(6)
+  "created_at" DATETIME(6) [not null]
+  "updated_at" DATETIME(6) [not null]
+  "deleted_at" DATETIME(6)
+}
+
+Table "auth_identities" {
+  "id" BINARY(16) [pk, not null]
+  "user_id" BINARY(16) [not null]
+  "provider" VARCHAR(64) [not null]
+  "subject" VARCHAR(255) [not null]
+  "created_at" DATETIME(6) [not null]
+
+  Indexes {
+    (provider, subject) [unique, name: "uk_identity_provider_subject"]
+  }
+}
+
+Table "user_consents" {
+  "id" BINARY(16) [pk, not null]
+  "user_id" BINARY(16) [not null]
+  "purpose" VARCHAR(64) [not null]
+  "policy_version" VARCHAR(64) [not null]
+  "granted" BOOLEAN [not null]
+  "recorded_at" DATETIME(6) [not null]
+
+  Indexes {
+    (user_id, purpose, recorded_at, id) [name: "idx_consent_current"]
+  }
+}
+
+Table "venues" {
+  "id" BINARY(16) [pk, not null]
+  "owner_id" BINARY(16) [not null]
+  "name" VARCHAR(255) [not null]
+  "address" TEXT
+  "created_at" DATETIME(6) [not null]
+  "updated_at" DATETIME(6) [not null]
+
+  Indexes {
+    (owner_id, updated_at, id) [name: "idx_venue_owner"]
+  }
+}
+
+Table "matches" {
+  Note: '개인 기록의 경기 묶음. 날짜·장소 등 공통 정보를 보관하며 팀·참가자·팀 점수는 관리하지 않음.'
+  "id" BINARY(16) [pk, not null]
+  "owner_id" BINARY(16) [not null]
+  "venue_id" BINARY(16)
+  "title" VARCHAR(255)
+  "venue_name_snapshot" VARCHAR(255)
+  "venue_address_snapshot" TEXT
+  "scheduled_at" DATETIME(6)
+  "status" VARCHAR(32) [not null]
+  "started_at" DATETIME(6)
+  "ended_at" DATETIME(6)
+  "version" BIGINT [not null]
+  "created_at" DATETIME(6) [not null]
+  "updated_at" DATETIME(6) [not null]
+
+  Indexes {
+    (owner_id, status, scheduled_at, id) [name: "idx_match_owner_status"]
+    (status, ended_at, id) [name: "idx_match_completed"]
+  }
+}
+
+Table "quarters" {
+  Note: '기록의 중심 단위. match_id는 이 쿼터가 속한 경기 묶음을 가리킴. 개인 기록·포지션·운동 측정은 quarter_id로 연결.'
+  "id" BINARY(16) [pk, not null]
+  "match_id" BINARY(16) [not null]
+  "number" INT [not null]
+  "duration_seconds" INT [not null]
+  "status" VARCHAR(32) [not null]
+  "started_at" DATETIME(6)
+  "ended_at" DATETIME(6)
+  "created_at" DATETIME(6) [not null]
+  "updated_at" DATETIME(6) [not null]
+
+  Indexes {
+    (match_id, number) [unique, name: "uk_quarter_number"]
+    (match_id, status, number) [name: "idx_quarter_status"]
+  }
+}
+
+Table "quarter_player_stats" {
+  Note: '쿼터별 개인 골·어시스트 원본 합계. 경기 전체 합계는 쿼터 기록의 SUM으로 계산. 행 미생성과 명시적 0골·0어시스트 입력을 구별.'
+  "quarter_id" BINARY(16) [pk, not null]
+  "goals" INT [not null]
+  "assists" INT [not null]
+  "updated_at" DATETIME(6) [not null]
+}
+
+Table "quarter_positions" {
+  Note: '쿼터마다 대표 포지션 하나. 소유자는 quarters → matches.owner_id로 확인.'
+  "quarter_id" BINARY(16) [pk, not null]
+  "position_code" VARCHAR(32) [not null]
+  "updated_at" DATETIME(6) [not null]
+}
+
+Table "quarter_summaries" {
+  Note: '쿼터별 조회용 운동 지표. 원본 변경 시 재계산. 계산 기준·버전·지표별 상태를 보관하며 미계산은 null. docs/dbdiagram/quarter-summary.md 참조.'
+  "quarter_id" BINARY(16) [pk, not null]
+  "workout_payload_id" BINARY(16) [not null]
+  "calculation_status" VARCHAR(32) [not null]
+  "calculation_version" VARCHAR(64) [not null]
+  "calculation_parameters" JSON [not null]
+  "metric_status" JSON [not null]
+  "source_payload_hash" VARCHAR(64) [not null]
+  "duration_seconds" DOUBLE
+  "max_speed_mps" DOUBLE
+  "total_distance_m" DOUBLE
+  "total_calories_kcal" DOUBLE
+  "average_speed_mps" DOUBLE
+  "high_intensity_distance_m" DOUBLE
+  "acceleration_count" INT
+  "deceleration_count" INT
+  "direction_change_count" INT
+  "average_heart_rate_bpm" DOUBLE
+  "max_heart_rate_bpm" DOUBLE
+  "trimp_edwards" DOUBLE
+  "hr_max_reference_bpm" DOUBLE
+  "valid_hr_duration_seconds" DOUBLE
+  "valid_gps_duration_seconds" DOUBLE
+  "calculated_at" DATETIME(6)
+  "updated_at" DATETIME(6) [not null]
+}
+
+Table "friend_pairs" {
+  "id" BINARY(16) [pk, not null]
+  "user_low_id" BINARY(16) [not null]
+  "user_high_id" BINARY(16) [not null]
+  "requester_id" BINARY(16) [not null]
+  "status" VARCHAR(32) [not null]
+  "accepted_at" DATETIME(6)
+  "created_at" DATETIME(6) [not null]
+
+  Indexes {
+    (user_low_id, user_high_id) [unique, name: "uk_friend_pair"]
+  }
+}
+
+Table "user_blocks" {
+  "blocker_id" BINARY(16) [not null]
+  "blocked_id" BINARY(16) [not null]
+  "created_at" DATETIME(6) [not null]
+
+  Indexes {
+    (blocker_id, blocked_id) [pk]
+    (blocked_id, blocker_id) [name: "idx_block_reverse"]
+  }
+}
+
+Table "notifications" {
+  "id" BINARY(16) [pk, not null]
+  "recipient_id" BINARY(16) [not null]
+  "type" VARCHAR(32) [not null]
+  "title" VARCHAR(255) [not null]
+  "body" TEXT
+  "target_type" VARCHAR(32) [not null]
+  "target_id" BINARY(16) [not null]
+  "dedup_key" VARCHAR(64) [not null]
+  "read_at" DATETIME(6)
+  "created_at" DATETIME(6) [not null]
+
+  Indexes {
+    dedup_key [unique, name: "uk_notification_dedup"]
+    (recipient_id, created_at, id) [name: "idx_notification_list"]
+    (recipient_id, read_at) [name: "idx_notification_unread"]
+  }
+}
+
+Table "auth_sessions" {
+  "id" BINARY(16) [pk, not null]
+  "user_id" BINARY(16) [not null]
+  "device_id" BINARY(16)
+  "refresh_token_hash" VARCHAR(64) [not null]
+  "refresh_generation" BIGINT [not null]
+  "expires_at" DATETIME(6) [not null]
+  "revoked_at" DATETIME(6)
+  "created_at" DATETIME(6) [not null]
+}
+
+Table "devices" {
+  "id" BINARY(16) [pk, not null]
+  "user_id" BINARY(16) [not null]
+  "platform" VARCHAR(32) [not null]
+  "push_token_ciphertext" TEXT
+  "push_enabled" BOOLEAN [not null]
+  "last_seen_at" DATETIME(6) [not null]
+  "revoked_at" DATETIME(6)
+}
+
+Table "account_deletion_requests" {
+  "id" BINARY(16) [pk, not null]
+  "user_id" BINARY(16) [not null]
+  "status" VARCHAR(32) [not null]
+  "requested_at" DATETIME(6) [not null]
+  "completed_at" DATETIME(6)
+  "failure_code" VARCHAR(64)
+}
+
+Table "idempotency_records" {
+  "id" BINARY(16) [pk, not null]
+  "user_id" BINARY(16) [not null]
+  "method" VARCHAR(16) [not null]
+  "canonical_path" VARCHAR(255) [not null]
+  "idempotency_key" BINARY(16) [not null]
+  "request_hash" VARCHAR(64) [not null]
+  "status" VARCHAR(32) [not null]
+  "response_status" INT
+  "response_headers" JSON
+  "response_body" JSON
+  "created_at" DATETIME(6) [not null]
+  "expires_at" DATETIME(6) [not null]
+
+  Indexes {
+    (user_id, method, canonical_path, idempotency_key) [unique, name: "uk_idempotency_scope"]
+    expires_at [name: "idx_idempotency_expiry"]
+  }
+}
+
+Table "sync_operations" {
+  "id" BINARY(16) [pk, not null]
+  "user_id" BINARY(16) [not null]
+  "device_id" BINARY(16)
+  "operation_id" BINARY(16) [not null]
+  "requested_match_id" BINARY(16) [not null]
+  "match_id" BINARY(16)
+  "expected_version" BIGINT [not null]
+  "type" VARCHAR(32) [not null]
+  "payload_hash" VARCHAR(64) [not null]
+  "status" VARCHAR(32) [not null]
+  "result" JSON [not null]
+  "processed_at" DATETIME(6) [not null]
+
+  Indexes {
+    (user_id, operation_id) [unique, name: "uk_sync_operation"]
+  }
+}
+
+Table "workout_payloads" {
+  Note: '쿼터별 운동 측정. 쿼터당 측정 하나를 가정한 UNIQUE 제약. user_id는 연결된 경기 소유자와 같아야 함. 서버 업로드 시 quarterId·재전송 식별자 보완 필요.'
+  "id" BINARY(16) [pk, not null]
+  "quarter_id" BINARY(16) [not null]
+  "user_id" BINARY(16) [not null]
+  "start_date" DATETIME(6) [not null]
+  "end_date" DATETIME(6) [not null]
+  "total_calories" DOUBLE [not null]
+  "total_distance" DOUBLE [not null]
+
+  Indexes {
+    quarter_id [unique, name: "uk_workout_quarter"]
+    (quarter_id, id) [unique, name: "uk_workout_quarter_id"]
+    (user_id, start_date) [name: "idx_workout_user_start"]
+  }
+}
+
+Table "track_points" {
+  Note: 'GPS 원본 전체 보존. sample_seq는 배열 순서. speed/course의 무효값 -1도 보존.'
+  "id" BIGINT [pk, not null, increment]
+  "workout_payload_id" BINARY(16) [not null]
+  "sample_seq" INT [not null]
+  "latitude" DOUBLE [not null]
+  "longitude" DOUBLE [not null]
+  "altitude" DOUBLE [not null]
+  "horizontal_accuracy" DOUBLE [not null]
+  "speed" DOUBLE [not null]
+  "course" DOUBLE [not null]
+  "timestamp" DATETIME(6) [not null]
+
+  Indexes {
+    (workout_payload_id, sample_seq) [unique, name: "uk_track_payload_seq"]
+  }
+}
+
+Table "heart_rate_samples" {
+  Note: '심박 원본 전체 보존. sample_seq는 배열 순서.'
+  "id" BIGINT [pk, not null, increment]
+  "workout_payload_id" BINARY(16) [not null]
+  "sample_seq" INT [not null]
+  "timestamp" DATETIME(6) [not null]
+  "bpm" DOUBLE [not null]
+
+  Indexes {
+    (workout_payload_id, sample_seq) [unique, name: "uk_heart_payload_seq"]
+  }
+}
+
+Ref "fk_01_auth_identities":"users"."id" <? "auth_identities"."user_id" [update: restrict, delete: restrict]
+
+Ref "fk_02_user_consents":"users"."id" <? "user_consents"."user_id" [update: restrict, delete: restrict]
+
+Ref "fk_03_venues":"users"."id" <? "venues"."owner_id" [update: restrict, delete: restrict]
+
+Ref "fk_04_matches":"users"."id" <? "matches"."owner_id" [update: restrict, delete: restrict]
+
+Ref "fk_08_friend_pairs":"users"."id" <? "friend_pairs"."user_low_id" [update: restrict, delete: restrict]
+
+Ref "fk_09_friend_pairs":"users"."id" <? "friend_pairs"."user_high_id" [update: restrict, delete: restrict]
+
+Ref "fk_10_friend_pairs":"users"."id" <? "friend_pairs"."requester_id" [update: restrict, delete: restrict]
+
+Ref "fk_11_user_blocks":"users"."id" <? "user_blocks"."blocker_id" [update: restrict, delete: restrict]
+
+Ref "fk_12_user_blocks":"users"."id" <? "user_blocks"."blocked_id" [update: restrict, delete: restrict]
+
+Ref "fk_13_notifications":"users"."id" <? "notifications"."recipient_id" [update: restrict, delete: restrict]
+
+Ref "fk_14_auth_sessions":"users"."id" <? "auth_sessions"."user_id" [update: restrict, delete: restrict]
+
+Ref "fk_15_devices":"users"."id" <? "devices"."user_id" [update: restrict, delete: restrict]
+
+Ref "fk_16_account_deletion_requests":"users"."id" <? "account_deletion_requests"."user_id" [update: restrict, delete: restrict]
+
+Ref "fk_17_idempotency_records":"users"."id" <? "idempotency_records"."user_id" [update: restrict, delete: restrict]
+
+Ref "fk_18_sync_operations":"users"."id" <? "sync_operations"."user_id" [update: restrict, delete: restrict]
+
+Ref "fk_19_workout_payloads":"users"."id" <? "workout_payloads"."user_id" [update: restrict, delete: restrict]
+
+Ref "fk_20_matches":"venues"."id" ?<? "matches"."venue_id" [update: restrict, delete: set null]
+
+Ref "fk_22_quarters":"matches"."id" <? "quarters"."match_id" [update: restrict, delete: restrict]
+
+Ref "fk_26_sync_operations":"matches"."id" ?<? "sync_operations"."match_id" [update: restrict, delete: restrict]
+
+Ref "fk_36_auth_sessions":"devices"."id" ?<? "auth_sessions"."device_id" [update: restrict, delete: set null]
+
+Ref "fk_37_sync_operations":"devices"."id" ?<? "sync_operations"."device_id" [update: restrict, delete: set null]
+
+Ref "fk_38_track_points":"workout_payloads"."id" <? "track_points"."workout_payload_id" [update: restrict, delete: restrict]
+
+Ref "fk_39_heart_rate_samples":"workout_payloads"."id" <? "heart_rate_samples"."workout_payload_id" [update: restrict, delete: restrict]
+
+Ref "fk_quarter_player_stats_quarter":"quarters"."id" <? "quarter_player_stats"."quarter_id" [update: restrict, delete: restrict]
+
+Ref "fk_quarter_positions_quarter":"quarters"."id" <? "quarter_positions"."quarter_id" [update: restrict, delete: restrict]
+
+Ref "fk_workout_payloads_quarter":"quarters"."id" <? "workout_payloads"."quarter_id" [update: restrict, delete: restrict]
+
+TableGroup authentication {
+  users
+  auth_identities
+  auth_sessions
+  user_consents
+  devices
+  account_deletion_requests
+}
+TableGroup quarter_records {
+  venues
+  matches
+  quarters
+  quarter_player_stats
+  quarter_summaries
+  quarter_positions
+  workout_payloads
+  track_points
+  heart_rate_samples
+}
+TableGroup social {
+  friend_pairs
+  user_blocks
+  notifications
+}
+TableGroup synchronization {
+  idempotency_records
+  sync_operations
+}
+
+Ref "fk_summary_quarter_id":"quarters"."id" <? "quarter_summaries"."quarter_id" [update: restrict, delete: restrict]
+Ref "fk_summary_workout_payload_id":"workout_payloads".("quarter_id", "id") <? "quarter_summaries".("quarter_id", "workout_payload_id") [update: restrict, delete: restrict]
