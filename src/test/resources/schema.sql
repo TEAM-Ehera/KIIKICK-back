@@ -108,6 +108,7 @@ CREATE TABLE heart_rate_samples (
 CREATE TABLE quarter_summaries (
     quarter_id BINARY(16) PRIMARY KEY,
     workout_payload_id BINARY(16) NOT NULL,
+    calculation_job_id BINARY(16) NOT NULL,
     calculation_status VARCHAR(32) NOT NULL,
     calculation_version VARCHAR(64) NOT NULL,
     calculation_parameters VARCHAR(4000) NOT NULL,

@@ -18,6 +18,8 @@ import java.util.UUID;
 import static com.teamehera.kiikick.global.jdbc.JdbcValueConverter.uuidToBytes;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 @JdbcTest
@@ -56,13 +58,14 @@ class WorkoutPayloadRepositoryTest {
                 new HeartRateSample(workoutId, 0, now, 142),
                 new HeartRateSample(workoutId, 1, now.plusSeconds(5), 145)
         ));
-        summaryRepository.saveProcessing(
+        UUID calculationJobId = summaryRepository.saveProcessing(
                 quarterId, workoutId, "v1", "{}", "{}", "hash", now
         );
 
         QuarterSummary processing = summaryRepository.findByQuarterId(quarterId).orElseThrow();
         QuarterSummary ready = new QuarterSummary(
-                quarterId, workoutId, "READY", "v1", "{}", "{}", "hash",
+                quarterId, workoutId, calculationJobId,
+                "READY", "v1", "{}", "{}", "hash",
                 1800.0, 7.2, 3182.4, 420.5, 1.76, null,
                 3, 2, 4, 143.5, 171.0, 55.0, 190.0,
                 1700.0, 1750.0, now.plusMinutes(31), now.plusMinutes(31)
@@ -73,8 +76,139 @@ class WorkoutPayloadRepositoryTest {
                 () -> assertEquals(quarterId, workoutRepository.findByQuarterId(quarterId).orElseThrow().quarterId()),
                 () -> assertEquals(2, trackPointRepository.findPage(workoutId, 0, 10).size()),
                 () -> assertEquals(2, heartRateRepository.findAllForCalculation(workoutId).size()),
+                () -> assertEquals(calculationJobId, processing.calculationJobId()),
                 () -> assertEquals("PROCESSING", processing.calculationStatus()),
                 () -> assertEquals("READY", summaryRepository.findByQuarterId(quarterId).orElseThrow().calculationStatus())
+        );
+    }
+
+    @Test
+    void 이전_작업이_늦게_완료되어도_최신_결과를_덮어쓰지_않는다() {
+        LocalDateTime now = LocalDateTime.of(2026, 11, 3, 2, 0);
+        SummaryFixture fixture = createSummaryFixture(now);
+        UUID oldJobId = summaryRepository.saveProcessing(
+                fixture.quarterId(), fixture.workoutId(), "v1", "{}", "{}", "hash", now
+        );
+        UUID latestJobId = summaryRepository.saveProcessing(
+                fixture.quarterId(), fixture.workoutId(), "v2", "{}", "{}", "hash", now.plusSeconds(1)
+        );
+
+        assertEquals(0, summaryRepository.updateCalculated(
+                readySummary(fixture, oldJobId, "v1", 100.0, now.plusSeconds(3)), "hash"
+        ));
+        assertEquals(1, summaryRepository.updateCalculated(
+                readySummary(fixture, latestJobId, "v2", 200.0, now.plusSeconds(2)), "hash"
+        ));
+
+        QuarterSummary saved = summaryRepository.findByQuarterId(fixture.quarterId()).orElseThrow();
+        assertAll(
+                () -> assertEquals(latestJobId, saved.calculationJobId()),
+                () -> assertEquals("v2", saved.calculationVersion()),
+                () -> assertEquals(200.0, saved.totalDistanceM())
+        );
+    }
+
+    @Test
+    void 이전_작업의_실패가_최신_작업을_실패로_바꾸지_않는다() {
+        LocalDateTime now = LocalDateTime.of(2026, 11, 3, 2, 0);
+        SummaryFixture fixture = createSummaryFixture(now);
+        UUID oldJobId = summaryRepository.saveProcessing(
+                fixture.quarterId(), fixture.workoutId(), "v1", "{}", "{}", "hash", now
+        );
+        UUID latestJobId = summaryRepository.saveProcessing(
+                fixture.quarterId(), fixture.workoutId(), "v2", "{}", "{}", "hash", now.plusSeconds(1)
+        );
+
+        assertEquals(0, summaryRepository.markFailed(
+                fixture.quarterId(), "hash", oldJobId, now.plusSeconds(2)
+        ));
+        assertEquals("PROCESSING", summaryRepository.findByQuarterId(fixture.quarterId())
+                .orElseThrow().calculationStatus());
+        assertEquals(1, summaryRepository.markFailed(
+                fixture.quarterId(), "hash", latestJobId, now.plusSeconds(3)
+        ));
+        assertEquals("FAILED", summaryRepository.findByQuarterId(fixture.quarterId())
+                .orElseThrow().calculationStatus());
+    }
+
+    @Test
+    void 같은_원본과_버전으로_재계산해도_이전_작업을_거절한다() {
+        LocalDateTime now = LocalDateTime.of(2026, 11, 3, 2, 0);
+        SummaryFixture fixture = createSummaryFixture(now);
+        UUID oldJobId = summaryRepository.saveProcessing(
+                fixture.quarterId(), fixture.workoutId(), "v1", "{}", "{}", "hash", now
+        );
+        UUID latestJobId = summaryRepository.saveProcessing(
+                fixture.quarterId(), fixture.workoutId(), "v1", "{}", "{}", "hash", now.plusSeconds(1)
+        );
+
+        assertNotEquals(oldJobId, latestJobId);
+        assertEquals(0, summaryRepository.updateCalculated(
+                readySummary(fixture, oldJobId, "v1", 100.0, now.plusSeconds(2)), "hash"
+        ));
+        assertEquals(1, summaryRepository.updateCalculated(
+                readySummary(fixture, latestJobId, "v1", 200.0, now.plusSeconds(3)), "hash"
+        ));
+    }
+
+    @Test
+    void 정상적인_PROCESSING_FAILED_전이만_허용한다() {
+        LocalDateTime now = LocalDateTime.of(2026, 11, 3, 2, 0);
+        SummaryFixture fixture = createSummaryFixture(now);
+        UUID calculationJobId = summaryRepository.saveProcessing(
+                fixture.quarterId(), fixture.workoutId(), "v1", "{}", "{}", "hash", now
+        );
+
+        assertEquals(1, summaryRepository.markFailed(
+                fixture.quarterId(), "hash", calculationJobId, now.plusSeconds(1)
+        ));
+        assertEquals("FAILED", summaryRepository.findByQuarterId(fixture.quarterId())
+                .orElseThrow().calculationStatus());
+    }
+
+    @Test
+    void 완료된_작업의_중복_완료와_실패를_거절한다() {
+        LocalDateTime now = LocalDateTime.of(2026, 11, 3, 2, 0);
+        SummaryFixture fixture = createSummaryFixture(now);
+        UUID calculationJobId = summaryRepository.saveProcessing(
+                fixture.quarterId(), fixture.workoutId(), "v1", "{}", "{}", "hash", now
+        );
+        QuarterSummary ready = readySummary(
+                fixture, calculationJobId, "v1", 100.0, now.plusSeconds(1)
+        );
+
+        assertEquals(1, summaryRepository.updateCalculated(ready, "hash"));
+        assertEquals(0, summaryRepository.updateCalculated(ready, "hash"));
+        assertEquals(0, summaryRepository.markFailed(
+                fixture.quarterId(), "hash", calculationJobId, now.plusSeconds(2)
+        ));
+        assertEquals("READY", summaryRepository.findByQuarterId(fixture.quarterId())
+                .orElseThrow().calculationStatus());
+    }
+
+    @Test
+    void 재계산을_시작하면_이전_결과를_초기화한다() {
+        LocalDateTime now = LocalDateTime.of(2026, 11, 3, 2, 0);
+        SummaryFixture fixture = createSummaryFixture(now);
+        UUID oldJobId = summaryRepository.saveProcessing(
+                fixture.quarterId(), fixture.workoutId(), "v1", "{}", "{}", "hash", now
+        );
+        assertEquals(1, summaryRepository.updateCalculated(
+                readySummary(fixture, oldJobId, "v1", 100.0, now.plusSeconds(1)), "hash"
+        ));
+
+        UUID latestJobId = summaryRepository.saveProcessing(
+                fixture.quarterId(), fixture.workoutId(), "v2", "{}", "{}", "hash", now.plusSeconds(2)
+        );
+        QuarterSummary processing = summaryRepository.findByQuarterId(fixture.quarterId()).orElseThrow();
+
+        assertAll(
+                () -> assertEquals(latestJobId, processing.calculationJobId()),
+                () -> assertEquals("PROCESSING", processing.calculationStatus()),
+                () -> assertEquals("v2", processing.calculationVersion()),
+                () -> assertNull(processing.durationSeconds()),
+                () -> assertNull(processing.totalDistanceM()),
+                () -> assertNull(processing.calculatedAt())
         );
     }
 
@@ -120,6 +254,34 @@ class WorkoutPayloadRepositoryTest {
         );
     }
 
+    private SummaryFixture createSummaryFixture(LocalDateTime now) {
+        UUID userId = UUID.randomUUID();
+        UUID matchId = UUID.randomUUID();
+        UUID quarterId = UUID.randomUUID();
+        UUID workoutId = UUID.randomUUID();
+        insertParents(userId, matchId, quarterId, now);
+        workoutRepository.save(new WorkoutPayload(
+                workoutId, quarterId, userId, now, now.plusMinutes(30), 10, 100
+        ));
+        return new SummaryFixture(quarterId, workoutId);
+    }
+
+    private QuarterSummary readySummary(
+            SummaryFixture fixture,
+            UUID calculationJobId,
+            String calculationVersion,
+            double totalDistanceM,
+            LocalDateTime calculatedAt
+    ) {
+        return new QuarterSummary(
+                fixture.quarterId(), fixture.workoutId(), calculationJobId,
+                "READY", calculationVersion, "{}", "{}", "hash",
+                1800.0, 7.2, totalDistanceM, 420.5, 1.76, null,
+                3, 2, 4, 143.5, 171.0, 55.0, 190.0,
+                1700.0, 1750.0, calculatedAt, calculatedAt
+        );
+    }
+
     private void insertParents(UUID userId, UUID matchId, UUID quarterId, LocalDateTime now) {
         jdbcTemplate.update(
                 "INSERT INTO users (id, created_at, updated_at) VALUES (?, ?, ?)",
@@ -140,5 +302,8 @@ class WorkoutPayloadRepositoryTest {
                 """,
                 uuidToBytes(quarterId), uuidToBytes(matchId), now, now
         );
+    }
+
+    private record SummaryFixture(UUID quarterId, UUID workoutId) {
     }
 }

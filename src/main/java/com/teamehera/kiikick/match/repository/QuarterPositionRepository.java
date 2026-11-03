@@ -6,7 +6,7 @@ import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
-import java.util.List;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -58,22 +58,32 @@ public class QuarterPositionRepository {
     }
 
     public Map<String, Integer> countByOwnerId(UUID ownerId) {
-        List<Map.Entry<String, Integer>> entries = jdbcTemplate.query(
+
+        //완료된 경기에서 완료된 쿼터들의 포지션별 횟수 조회
+        return jdbcTemplate.query(
                 """
                 SELECT p.position_code, COUNT(*) AS position_count
-                FROM quarter_positions p
-                JOIN quarters q ON q.id = p.quarter_id
+                FROM quarters q
                 JOIN matches m ON m.id = q.match_id
-                WHERE m.owner_id = ? AND q.status = 'COMPLETED'
+               -- LEFT JOIN -> 포지션 기록이 없어도 쿼터가 조회결과에 남음
+               -- 포지션 미입력 시 position_code는 NULL 이 됨.
+                LEFT JOIN quarter_positions p ON p.quarter_id = q.id
+                WHERE m.owner_id = ?
+                  AND m.status = 'COMPLETED'
+                  AND q.status = 'COMPLETED'
                 GROUP BY p.position_code
                 """,
-                (rs, rowNum) -> Map.entry(
-                        rs.getString("position_code"), rs.getInt("position_count")
-                ),
+                rs -> {
+                    Map<String, Integer> counts = new HashMap<>();
+                    while (rs.next()) {
+                        counts.put(
+                                rs.getString("position_code"),
+                                rs.getInt("position_count")
+                        );
+                    }
+                    return counts;
+                },
                 uuidToBytes(ownerId)
         );
-        return entries.stream().collect(java.util.stream.Collectors.toMap(
-                Map.Entry::getKey, Map.Entry::getValue
-        ));
     }
 }

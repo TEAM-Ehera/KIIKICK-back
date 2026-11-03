@@ -9,11 +9,13 @@ import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.time.LocalDateTime;
+import java.util.Map;
 import java.util.UUID;
 
 import static com.teamehera.kiikick.global.jdbc.JdbcValueConverter.uuidToBytes;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @JdbcTest
 @Import({QuarterPlayerStatsRepository.class, QuarterPositionRepository.class})
@@ -44,25 +46,112 @@ class P1RepositoryTest {
         );
     }
 
+    @Test
+    void 완료_경기의_완료_쿼터에_등록된_포지션을_집계한다() {
+        LocalDateTime now = LocalDateTime.of(2026, 11, 3, 4, 0);
+        UUID userId = UUID.randomUUID();
+        UUID matchId = UUID.randomUUID();
+        UUID quarterId = UUID.randomUUID();
+        insertUser(userId, now);
+        insertMatch(matchId, userId, "COMPLETED", now);
+        insertQuarter(quarterId, matchId, 1, "COMPLETED", now);
+        positionRepository.upsert(quarterId, "FW", now);
+
+        assertEquals(1, positionRepository.countByOwnerId(userId).get("FW"));
+    }
+
+    @Test
+    void 포지션이_없는_완료_쿼터를_null_버킷에_집계한다() {
+        LocalDateTime now = LocalDateTime.of(2026, 11, 3, 4, 0);
+        UUID userId = UUID.randomUUID();
+        UUID matchId = UUID.randomUUID();
+        UUID quarterId = UUID.randomUUID();
+        insertUser(userId, now);
+        insertMatch(matchId, userId, "COMPLETED", now);
+        insertQuarter(quarterId, matchId, 1, "COMPLETED", now);
+
+        Map<String, Integer> counts = positionRepository.countByOwnerId(userId);
+
+        assertAll(
+                () -> assertTrue(counts.containsKey(null)),
+                () -> assertEquals(1, counts.get(null))
+        );
+    }
+
+    @Test
+    void 진행_중_경기의_완료_쿼터는_집계에서_제외한다() {
+        LocalDateTime now = LocalDateTime.of(2026, 11, 3, 4, 0);
+        UUID userId = UUID.randomUUID();
+        UUID matchId = UUID.randomUUID();
+        UUID quarterId = UUID.randomUUID();
+        insertUser(userId, now);
+        insertMatch(matchId, userId, "IN_PROGRESS", now);
+        insertQuarter(quarterId, matchId, 1, "COMPLETED", now);
+        positionRepository.upsert(quarterId, "MF", now);
+
+        assertTrue(positionRepository.countByOwnerId(userId).isEmpty());
+    }
+
+    @Test
+    void 완료_경기의_미완료_쿼터는_집계에서_제외한다() {
+        LocalDateTime now = LocalDateTime.of(2026, 11, 3, 4, 0);
+        UUID userId = UUID.randomUUID();
+        UUID matchId = UUID.randomUUID();
+        UUID quarterId = UUID.randomUUID();
+        insertUser(userId, now);
+        insertMatch(matchId, userId, "COMPLETED", now);
+        insertQuarter(quarterId, matchId, 1, "IN_PROGRESS", now);
+        positionRepository.upsert(quarterId, "DF", now);
+
+        assertTrue(positionRepository.countByOwnerId(userId).isEmpty());
+    }
+
+    @Test
+    void 대상_완료_쿼터가_없으면_빈_맵을_반환한다() {
+        LocalDateTime now = LocalDateTime.of(2026, 11, 3, 4, 0);
+        UUID userId = UUID.randomUUID();
+        insertUser(userId, now);
+
+        assertTrue(positionRepository.countByOwnerId(userId).isEmpty());
+    }
+
     private void insertParents(UUID userId, UUID matchId, UUID quarterId, LocalDateTime now) {
+        insertUser(userId, now);
+        insertMatch(matchId, userId, "COMPLETED", now);
+        insertQuarter(quarterId, matchId, 1, "COMPLETED", now);
+    }
+
+    private void insertUser(UUID userId, LocalDateTime now) {
         jdbcTemplate.update(
                 "INSERT INTO users (id, created_at, updated_at) VALUES (?, ?, ?)",
                 uuidToBytes(userId), now, now
         );
+    }
+
+    private void insertMatch(UUID matchId, UUID userId, String status, LocalDateTime now) {
         jdbcTemplate.update(
                 """
                 INSERT INTO matches (id, owner_id, status, version, created_at, updated_at)
-                VALUES (?, ?, 'COMPLETED', 1, ?, ?)
+                VALUES (?, ?, ?, 1, ?, ?)
                 """,
-                uuidToBytes(matchId), uuidToBytes(userId), now, now
+                uuidToBytes(matchId), uuidToBytes(userId), status, now, now
         );
+    }
+
+    private void insertQuarter(
+            UUID quarterId,
+            UUID matchId,
+            int number,
+            String status,
+            LocalDateTime now
+    ) {
         jdbcTemplate.update(
                 """
                 INSERT INTO quarters (
                     id, match_id, number, duration_seconds, status, created_at, updated_at
-                ) VALUES (?, ?, 1, 1200, 'COMPLETED', ?, ?)
+                ) VALUES (?, ?, ?, 1200, ?, ?, ?)
                 """,
-                uuidToBytes(quarterId), uuidToBytes(matchId), now, now
+                uuidToBytes(quarterId), uuidToBytes(matchId), number, status, now, now
         );
     }
 }
