@@ -84,7 +84,7 @@ tasks.register('mysqlIntegrationTest', Test) {
         }
 
         String jdbcUrl = "jdbc:mysql://${host}:${port}/${database}" +
-                "?sslMode=DISABLED&connectionTimeZone=UTC" +
+                "?sslMode=REQUIRED&connectionTimeZone=UTC" +
                 "&forceConnectionTimeZoneToSession=true&characterEncoding=UTF-8"
 
         systemProperty 'spring.datasource.url', jdbcUrl
