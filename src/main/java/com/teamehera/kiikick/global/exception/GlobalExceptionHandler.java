@@ -8,28 +8,28 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import java.util.Map;
 
-/*
- * 여러 Controller에서 발생한 예외를 공통으로 처리한다.
- */
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
-    // 사용자가 존재하지 않으면 HTTP 404 반환
+    // 사용자가 존재하지 않거나 이미 삭제된 경우 HTTP 404를 반환한다.
     @ExceptionHandler(UserNotFoundException.class)
     public ResponseEntity<Map<String, String>> handleNotFound(
-            UserNotFoundException e
+            UserNotFoundException exception
     ) {
         return ResponseEntity
                 .status(HttpStatus.NOT_FOUND)
-                .body(Map.of("message", e.getMessage()));
+                .body(Map.of(
+                        "message",
+                        exception.getMessage()
+                ));
     }
 
-    // @Valid 검증 실패 시 HTTP 400 반환
+    // @Valid 요청 검증이 실패한 경우 HTTP 400을 반환한다.
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<Map<String, String>> handleValidation(
-            MethodArgumentNotValidException e
+            MethodArgumentNotValidException exception
     ) {
-        String message = e.getBindingResult()
+        String message = exception.getBindingResult()
                 .getFieldErrors()
                 .stream()
                 .findFirst()
@@ -39,5 +39,21 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .badRequest()
                 .body(Map.of("message", message));
+    }
+
+    /*
+     * Apple epoch 변환처럼 WorkoutPayload 값 자체가 잘못된 경우
+     * 서버 오류 500이 아닌 요청 오류 400을 반환한다.
+     */
+    @ExceptionHandler(InvalidWorkoutPayloadException.class)
+    public ResponseEntity<Map<String, String>> handleInvalidWorkoutPayload(
+            InvalidWorkoutPayloadException exception
+    ) {
+        return ResponseEntity
+                .badRequest()
+                .body(Map.of(
+                        "message",
+                        exception.getMessage()
+                ));
     }
 }

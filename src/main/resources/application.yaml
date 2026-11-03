@@ -3,10 +3,15 @@ spring:
     name: KIIKICK-back
 
   datasource:
-    url: jdbc:mysql://${DB_HOST}:${DB_PORT:3306}/${DB_NAME:kiikick}?sslMode=REQUIRED&serverTimezone=Asia/Seoul&characterEncoding=UTF-8
+    url: jdbc:mysql://${DB_HOST}:${DB_PORT:3306}/${DB_NAME:kiikick}?sslMode=REQUIRED&connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true&characterEncoding=UTF-8
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
+
+# Nginx 같은 리버스 프록시가 전달하는 원래 요청의 HTTPS 정보를 반영한다.
+# 이를 통해 Swagger가 운영 환경의 서버 URL을 http가 아닌 https로 생성한다.
+server:
+  forward-headers-strategy: framework
 
 management:
   endpoints:
