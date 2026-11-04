@@ -104,6 +104,16 @@ public class MatchRepository {
         );
     }
 
+    public int incrementVersion(UUID id, UUID ownerId, long expectedVersion) {
+        return jdbcTemplate.update(
+                """
+                UPDATE matches SET version = version + 1, updated_at = CURRENT_TIMESTAMP(6)
+                WHERE id = ? AND owner_id = ? AND version = ?
+                """,
+                uuidToBytes(id), uuidToBytes(ownerId), expectedVersion
+        );
+    }
+
     public int updateStatus(
             UUID id, UUID ownerId, long expectedVersion, String currentStatus,
             String nextStatus, java.time.LocalDateTime startedAt,

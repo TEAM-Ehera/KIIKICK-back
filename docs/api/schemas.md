@@ -347,19 +347,6 @@ calculation_job_id, calculation_parameters와 source_payload_hash는 내부 작�
 | metric | string | 필수 | 비교 지표 |
 | delta | number | nullable | 두 값 유효할 때 차이 |
 
-<a id="home"></a>
-## Home
-
-| 필드 | 타입 | 필수 / null | 의미 |
-| --- | --- | --- | --- |
-| activeMatches | Match[] | 필수 | 본인 진행 경기 최대 5개 |
-| readyMatches | Match[] | 필수 | 본인 준비 경기 최대 5개 |
-| recentMatches | Match[] | 필수 | 본인 최근 완료 경기 |
-| recentQuarterResults | QuarterResult[] | 필수 | 최근 완료 쿼터와 저장 요약. 원본 배열 제외 |
-| unreadNotificationCount | integer | 필수 | 본인 알림 수 |
-| emptyReason | string | nullable | NO_MATCHES/NO_COMPLETED_QUARTERS 또는 null |
-| updatedAt | timestamp | 필수 | 응답 구성 시각 |
-
 <a id="operationresult"></a>
 ## OperationResult
 

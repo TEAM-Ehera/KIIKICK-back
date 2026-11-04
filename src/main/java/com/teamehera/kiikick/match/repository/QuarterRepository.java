@@ -73,6 +73,17 @@ public class QuarterRepository {
         );
     }
 
+    public List<Quarter> findPageAfter(UUID matchId, int number, UUID id, int limit) {
+        return jdbcTemplate.query(
+                """
+                SELECT * FROM quarters WHERE match_id = ?
+                  AND (number > ? OR (number = ? AND id > ?))
+                ORDER BY number ASC, id ASC LIMIT ?
+                """,
+                rowMapper, uuidToBytes(matchId), number, number, uuidToBytes(id), limit
+        );
+    }
+
     public int findNextNumber(UUID matchId) {
         Integer number = jdbcTemplate.queryForObject(
                 "SELECT COALESCE(MAX(number), 0) + 1 FROM quarters WHERE match_id = ?",

@@ -23,14 +23,7 @@ public record MatchSettings(Field<String> title, Field<UUID> venueId,
     public record Snapshot(String name, String address) {}
 
     public static MatchSettings parse(ObjectMapper json, byte[] body) {
-        JsonNode root;
-        try {
-            root = json.reader().with(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
-                    .with(StreamReadFeature.STRICT_DUPLICATE_DETECTION)
-                    .readTree(body);
-        } catch (JacksonException exception) {
-            throw new MatchController.InvalidRequest();
-        }
+        JsonNode root = readBody(json, body);
         checkObject(root, "body", Set.of("title", "venueId", "venueSnapshot", "scheduledAt"));
         var venueId = new Field<>(root.has("venueId"), uuid(text(root, "venueId", 36)));
         var snapshot = new Field<>(root.has("venueSnapshot"), snapshot(root.get("venueSnapshot")));
@@ -42,7 +35,20 @@ public record MatchSettings(Field<String> title, Field<UUID> venueId,
                 new Field<>(root.has("scheduledAt"), scheduledAt(text(root, "scheduledAt", 40))));
     }
 
-    private static void checkObject(JsonNode node, String field, Set<String> allowed) {
+    static JsonNode readBody(ObjectMapper json, byte[] body) {
+        if (body == null) {
+            throw new MatchController.InvalidRequest();
+        }
+        try {
+            return json.reader().with(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
+                    .with(StreamReadFeature.STRICT_DUPLICATE_DETECTION)
+                    .readTree(body);
+        } catch (JacksonException exception) {
+            throw new MatchController.InvalidRequest();
+        }
+    }
+
+    static void checkObject(JsonNode node, String field, Set<String> allowed) {
         if (node == null || !node.isObject()) {
             throw new InvalidSettings(List.of(field));
         }
@@ -105,7 +111,7 @@ public record MatchSettings(Field<String> title, Field<UUID> venueId,
     public static final class InvalidSettings extends RuntimeException {
         private final List<String> fields;
 
-        private InvalidSettings(List<String> fields) {
+        InvalidSettings(List<String> fields) {
             this.fields = fields;
         }
 

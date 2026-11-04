@@ -5,10 +5,13 @@ import com.teamehera.kiikick.match.service.MatchDetailQuery;
 import com.teamehera.kiikick.match.service.MatchListQuery;
 import com.teamehera.kiikick.match.service.MatchMutation;
 import com.teamehera.kiikick.match.service.MatchSettingsService;
+import com.teamehera.kiikick.match.service.MatchOwnership;
+import com.teamehera.kiikick.match.service.QuarterSettingsService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -24,6 +27,9 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 @MatchApiController
@@ -31,20 +37,28 @@ import java.util.UUID;
 public class MatchController {
 
     static final String PATH = "/api/v1/matches";
+    private static final String QUARTERS = "/{matchId}/quarters";
+    private static final String QUARTER = QUARTERS + "/{quarterId}";
+
     private final MatchListQuery list;
     private final MatchDetailQuery detail;
     private final MatchSettingsService settings;
     private final MatchMutation mutation;
+    private final MatchOwnership ownership;
+    private final QuarterSettingsService quarters;
     private final ObjectMapper json;
     private final Duration retention;
 
     public MatchController(MatchListQuery list, MatchDetailQuery detail, MatchSettingsService settings,
-                           MatchMutation mutation, ObjectMapper json,
+                           MatchMutation mutation, MatchOwnership ownership, QuarterSettingsService quarters,
+                           ObjectMapper json,
                            @Value("${kiikick.match.idempotency-retention:P1D}") Duration retention) {
         this.list = list;
         this.detail = detail;
         this.settings = settings;
         this.mutation = mutation;
+        this.ownership = ownership;
+        this.quarters = quarters;
         this.json = json;
         this.retention = retention;
     }
@@ -69,7 +83,7 @@ public class MatchController {
         UUID actor = actor(principal);
         var request = new MatchMutation.Request(actor, null, "POST", PATH, key(key), ifMatch, body);
         return replay(mutation.create(request, expiresAt(), () ->
-                serialize(settings.create(actor, parse(body)), 201)));
+                serialize(settings.create(actor, MatchSettings.parse(json, body)), 201)));
     }
 
     @PatchMapping(path = "/{matchId}", consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -80,28 +94,106 @@ public class MatchController {
         var request = new MatchMutation.Request(actor(principal), matchId, "PATCH",
                 PATH + "/" + matchId, key(key), ifMatch, body);
         return replay(mutation.execute(request, expiresAt(), match -> {}, match ->
-                serialize(settings.update(match, parse(body)), 200)));
+                serialize(settings.update(match, MatchSettings.parse(json, body)), 200)));
     }
 
-    private MatchSettings parse(byte[] body) {
-        if (body == null) {
+    @GetMapping(QUARTERS)
+    public ResponseEntity<QuarterSettingsService.Page> listQuarters(
+            Principal principal, @PathVariable UUID matchId, @RequestParam(required = false) String cursor,
+            @RequestParam(required = false) Integer limit) {
+        var page = quarters.list(actor(principal), matchId, cursor, limit);
+        return ResponseEntity.ok().eTag(MatchMutation.etag(page.meta().matchVersion())).body(page);
+    }
+
+    @PostMapping(path = QUARTERS, consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<String> addQuarter(
+            Principal principal, @PathVariable UUID matchId,
+            @RequestHeader(value = "Idempotency-Key", required = false) String key,
+            @RequestHeader(value = HttpHeaders.IF_MATCH, required = false) String ifMatch,
+            @RequestBody(required = false) byte[] body) {
+        String path = quarterPath(matchId);
+        var request = new MatchMutation.Request(actor(principal), matchId, "POST", path, key(key), ifMatch, body);
+        return replay(mutation.execute(request, expiresAt(), match -> {}, match -> {
+            var quarter = quarters.add(match, duration(body));
+            return serializeQuarter(quarter, 201, path + "/" + quarter.id());
+        }));
+    }
+
+    @PatchMapping(path = QUARTER, consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<String> updateQuarter(
+            Principal principal, @PathVariable UUID matchId, @PathVariable UUID quarterId,
+            @RequestHeader(value = "Idempotency-Key", required = false) String key,
+            @RequestHeader(value = HttpHeaders.IF_MATCH, required = false) String ifMatch,
+            @RequestBody(required = false) byte[] body) {
+        UUID actor = actor(principal);
+        var request = new MatchMutation.Request(actor, matchId, "PATCH", quarterPath(matchId) + "/" + quarterId,
+                key(key), ifMatch, body);
+        return replay(mutation.execute(request, expiresAt(),
+                match -> ownership.requireQuarter(actor, matchId, quarterId),
+                match -> serializeQuarter(quarters.update(match, quarterId, duration(body)), 200, null)));
+    }
+
+    @DeleteMapping(QUARTER)
+    public ResponseEntity<String> deleteQuarter(
+            Principal principal, @PathVariable UUID matchId, @PathVariable UUID quarterId,
+            @RequestHeader(value = "Idempotency-Key", required = false) String key,
+            @RequestHeader(value = HttpHeaders.IF_MATCH, required = false) String ifMatch,
+            @RequestBody(required = false) byte[] body) {
+        UUID actor = actor(principal);
+        if (body != null) {
             throw new InvalidRequest();
         }
-        return MatchSettings.parse(json, body);
+        var request = new MatchMutation.Request(actor, matchId, "DELETE", quarterPath(matchId) + "/" + quarterId,
+                key(key), ifMatch, null);
+        // A successful DELETE replay can only recheck the parent because the quarter is gone.
+        return replay(mutation.execute(request, expiresAt(), match -> {},
+                match -> ownership.requireQuarter(actor, matchId, quarterId), match -> {
+                    long version = quarters.delete(match, quarterId);
+                    return new MatchMutation.Response(204,
+                            json.writeValueAsString(Map.of(HttpHeaders.ETAG, MatchMutation.etag(version))), null);
+                }));
+    }
+
+    private static String quarterPath(UUID matchId) {
+        return PATH + "/" + matchId + "/quarters";
+    }
+
+    private int duration(byte[] body) {
+        var root = MatchSettings.readBody(json, body);
+        MatchSettings.checkObject(root, "body", Set.of("durationSeconds"));
+        var duration = root.path("durationSeconds");
+        if (!duration.isIntegralNumber() || !duration.canConvertToInt() || duration.asInt() <= 0) {
+            throw new MatchSettings.InvalidSettings(List.of("durationSeconds"));
+        }
+        return duration.asInt();
+    }
+
+    private MatchMutation.Response serializeQuarter(QuarterSettingsService.Response quarter, int status, String location) {
+        var meta = MatchApiResponse.Meta.create();
+        var body = new MatchDetailQuery.VersionedResponse<>(quarter,
+                new MatchDetailQuery.DetailMeta(meta.requestId(), meta.serverTime(), quarter.matchVersion()));
+        return serialize(body, quarter.matchVersion(), status, location);
     }
 
     private MatchMutation.Response serialize(Match match, int status) {
+        return serialize(MatchDetailQuery.Detail.from(match), match.version(), status,
+                status == 201 ? PATH + "/" + match.id() : null);
+    }
+
+    private MatchMutation.Response serialize(Object body, long version, int status, String location) {
         var headers = new LinkedHashMap<String, String>();
-        headers.put(HttpHeaders.ETAG, MatchMutation.etag(match.version()));
-        if (status == 201) {
-            headers.put(HttpHeaders.LOCATION, PATH + "/" + match.id());
+        headers.put(HttpHeaders.ETAG, MatchMutation.etag(version));
+        if (location != null) {
+            headers.put(HttpHeaders.LOCATION, location);
         }
-        return new MatchMutation.Response(status, json.writeValueAsString(headers),
-                json.writeValueAsString(MatchDetailQuery.Detail.from(match)));
+        return new MatchMutation.Response(status, json.writeValueAsString(headers), json.writeValueAsString(body));
     }
 
     private ResponseEntity<String> replay(MatchMutation.Response response) {
-        var result = ResponseEntity.status(response.status()).contentType(MediaType.APPLICATION_JSON);
+        var result = ResponseEntity.status(response.status());
+        if (response.bodyJson() != null) {
+            result.contentType(MediaType.APPLICATION_JSON);
+        }
         var headers = json.readTree(response.headersJson());
         headers.properties().forEach(entry -> result.header(entry.getKey(), entry.getValue().asText()));
         return result.body(response.bodyJson());
