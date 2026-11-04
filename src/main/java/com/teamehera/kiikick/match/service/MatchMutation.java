@@ -76,7 +76,8 @@ public class MatchMutation {
             }
         }, () -> {
             Response response = change.apply(match);
-            if (lockMatch(request).version() != Math.addExact(match.version(), 1)) {
+            var updated = matches.findByIdAndOwnerId(request.matchId(), request.actorUserId());
+            if (updated.isEmpty() || updated.orElseThrow().version() != Math.addExact(match.version(), 1)) {
                 throw new IllegalStateException("A successful mutation must increment the match version once");
             }
             return response;
@@ -97,14 +98,17 @@ public class MatchMutation {
     public Response executeUnversioned(Request request, LocalDateTime expiresAt, Runnable checkAccess,
                                        Supplier<Response> change) {
         // Serialize writes and retries for resources without a version precondition.
-        users.findByIdForUpdate(request.actorUserId())
-                .orElseThrow(() -> new Rejected(401, "UNAUTHENTICATED", null));
+        lockOwner(request.actorUserId());
         checkAccess.run();
         return executeOnce(request, expiresAt, () -> {
             if (request.ifMatch() != null) {
                 throw new Rejected(400, "INVALID_REQUEST", null);
             }
         }, change);
+    }
+
+    private void lockOwner(UUID actor) {
+        users.findByIdForUpdate(actor).orElseThrow(() -> new Rejected(401, "UNAUTHENTICATED", null));
     }
 
     private Response executeOnce(Request request, LocalDateTime expiresAt,
@@ -144,6 +148,8 @@ public class MatchMutation {
     }
 
     private Match lockMatch(Request request) {
+        // Venue deletion locks the owner before changing referenced matches. Match writes use the same order.
+        lockOwner(request.actorUserId());
         return matches.findByIdAndOwnerIdForUpdate(request.matchId(), request.actorUserId())
                 .orElseThrow(() -> new Rejected(404, "RESOURCE_NOT_FOUND", null));
     }

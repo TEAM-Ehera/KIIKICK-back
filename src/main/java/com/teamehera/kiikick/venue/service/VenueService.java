@@ -1,6 +1,7 @@
 package com.teamehera.kiikick.venue.service;
 
 import com.teamehera.kiikick.match.api.MatchApiResponse;
+import com.teamehera.kiikick.match.repository.MatchRepository;
 import com.teamehera.kiikick.match.service.MatchListQuery.InvalidListRequest;
 import com.teamehera.kiikick.match.service.MatchListQuery.Pagination;
 import com.teamehera.kiikick.match.service.MatchOwnership.ResourceNotFound;
@@ -24,9 +25,11 @@ import static com.teamehera.kiikick.match.api.MatchApiResponse.fromUtc;
 @Service
 public class VenueService {
     private final VenueRepository venues;
+    private final MatchRepository matches;
 
-    public VenueService(VenueRepository venues) {
+    public VenueService(VenueRepository venues, MatchRepository matches) {
         this.venues = venues;
+        this.matches = matches;
     }
 
     public Page list(UUID actor, String query, String cursor, Integer limit) {
@@ -73,7 +76,9 @@ public class VenueService {
     }
 
     public void delete(UUID actor, UUID venueId) {
-        // The foreign key clears the live venue reference. Historical snapshots belong to the match.
+        requireVenue(actor, venueId);
+        // Detach before the foreign key cascade so affected matches get a new version and retain their snapshots.
+        matches.detachVenue(venueId);
         if (venues.deleteByIdAndOwnerId(venueId, actor) != 1) {
             throw new ResourceNotFound();
         }

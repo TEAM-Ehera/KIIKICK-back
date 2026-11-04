@@ -14,9 +14,13 @@ import tools.jackson.databind.ObjectMapper;
 
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -57,6 +61,12 @@ class VenueControllerTest {
                         Map.of("venueId", venueId))).andExpect(status().isCreated())
                 .andReturn().getResponse().getHeader("Location");
 
+        String secondMatchPath = mvc.perform(write(post("/api/v1/matches"), owner, UUID.randomUUID(),
+                        Map.of("venueId", venueId))).andExpect(status().isCreated())
+                .andReturn().getResponse().getHeader("Location");
+        String unrelatedMatchPath = mvc.perform(write(post("/api/v1/matches"), owner, UUID.randomUUID(), Map.of()))
+                .andExpect(status().isCreated()).andReturn().getResponse().getHeader("Location");
+
         mvc.perform(get(venuePath).principal(other::toString)).andExpect(status().isNotFound());
         mvc.perform(write(patch(venuePath), other, UUID.randomUUID(), Map.of("name", "Other")))
                 .andExpect(status().isNotFound());
@@ -70,8 +80,10 @@ class VenueControllerTest {
                                 """))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.name").value("Renamed"))
                 .andExpect(jsonPath("$.data.address").value(nullValue()));
-        mvc.perform(get(matchPath).principal(owner::toString))
-                .andExpect(jsonPath("$.data.venueSnapshot.name").value("Original"));
+        var before = mvc.perform(get(matchPath).principal(owner::toString))
+                .andExpect(header().string("ETag", tag(1)))
+                .andExpect(jsonPath("$.data.venueSnapshot.name").value("Original")).andReturn().getResponse();
+        String previousTag = before.getHeader("ETag");
 
         UUID deleteKey = UUID.randomUUID();
         for (int attempt = 0; attempt < 2; attempt++) {
@@ -80,9 +92,18 @@ class VenueControllerTest {
         }
         mvc.perform(get(venuePath).principal(owner::toString)).andExpect(status().isNotFound());
         mvc.perform(get(matchPath).principal(owner::toString))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.data.venueId").value(nullValue()))
+                .andExpect(status().isOk()).andExpect(header().string("ETag", tag(2)))
+                .andExpect(jsonPath("$.data.venueId").value(nullValue()))
                 .andExpect(jsonPath("$.data.venueSnapshot.name").value("Original"))
                 .andExpect(jsonPath("$.data.venueSnapshot.address").value("Seoul"));
+        mvc.perform(get(secondMatchPath).principal(owner::toString))
+                .andExpect(header().string("ETag", tag(2))).andExpect(jsonPath("$.data.venueId").value(nullValue()));
+        mvc.perform(get(unrelatedMatchPath).principal(owner::toString))
+                .andExpect(header().string("ETag", tag(1)));
+        mvc.perform(write(patch(matchPath), owner, UUID.randomUUID(), Map.of("title", "Updated"))
+                        .header("If-Match", previousTag))
+                .andExpect(status().isPreconditionFailed()).andExpect(jsonPath("$.error.code").value("VERSION_CONFLICT"))
+                .andExpect(jsonPath("$.error.details.currentVersion").value(2));
     }
 
     @Test
@@ -116,6 +137,42 @@ class VenueControllerTest {
         mvc.perform(write(post(VENUES), owner, UUID.randomUUID(), Map.of("name", "Court"))
                         .header("If-Match", "1"))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void venueDeletionSerializesWithMatchSettingsUpdate() throws Exception {
+        String venue = mvc.perform(write(post(VENUES), owner, UUID.randomUUID(), Map.of("name", "Court")))
+                .andExpect(status().isCreated()).andReturn().getResponse().getHeader("Location");
+        var reference = Map.of("venueId", venue.substring(VENUES.length() + 1));
+        String match = mvc.perform(write(post("/api/v1/matches"), owner, UUID.randomUUID(), reference))
+                .andExpect(status().isCreated()).andReturn().getResponse().getHeader("Location");
+
+        var ready = new CountDownLatch(2);
+        try (var workers = Executors.newFixedThreadPool(2)) {
+            var update = workers.submit(() -> {
+                ready.countDown();
+                assertTrue(ready.await(5, TimeUnit.SECONDS));
+                return mvc.perform(write(patch(match), owner, UUID.randomUUID(), reference).header("If-Match", tag(1)))
+                        .andReturn().getResponse().getStatus();
+            });
+            var delete = workers.submit(() -> {
+                ready.countDown();
+                assertTrue(ready.await(5, TimeUnit.SECONDS));
+                return mvc.perform(delete(venue).principal(owner::toString).header("Idempotency-Key", UUID.randomUUID()))
+                        .andReturn().getResponse().getStatus();
+            });
+            int updated = update.get(10, TimeUnit.SECONDS);
+            assertTrue(updated == 200 || updated == 412);
+            assertEquals(204, delete.get(10, TimeUnit.SECONDS));
+            mvc.perform(get(match).principal(owner::toString))
+                    .andExpect(header().string("ETag", tag(updated == 200 ? 3 : 2)))
+                    .andExpect(jsonPath("$.data.venueId").value(nullValue()))
+                    .andExpect(jsonPath("$.data.venueSnapshot.name").value("Court"));
+        }
+    }
+
+    private static String tag(long version) {
+        return Character.toString('"') + version + '"';
     }
 
     private void create(UUID actor, String name) throws Exception {
