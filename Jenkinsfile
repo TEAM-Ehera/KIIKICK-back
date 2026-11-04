@@ -19,7 +19,7 @@ pipeline {
             }
         }
         stage('Package') {
-            when { branch 'main' }
+            when { branch 'develop' }
             steps {
                 sh './gradlew --no-daemon bootJar'
                 archiveArtifacts artifacts: 'build/libs/*.jar', fingerprint: true

@@ -5,8 +5,8 @@
 ## Jenkins
 
 1. JDK 21과 Git이 설치된 빌드 에이전트에 `jdk21` 레이블을 붙인다.
-2. GitHub Branch Source를 사용하는 Multibranch Pipeline에 저장소를 연결하고 PR과 `main`을 검색하도록 설정한다. Jenkins에 접근 가능한 GitHub 웹훅을 연결하거나 주기적 브랜치 검색을 사용한다. 저장소 연결에는 읽기와 PR 상태 게시에 필요한 권한을 부여한다.
-3. PR에서 Gradle 테스트와 JUnit 결과를 확인한다. `main` 빌드에서는 JAR를 보관한다. 운영 배포 연결과 MySQL 이행 테스트는 각 환경과 기준 스키마가 준비된 뒤 별도 검증한다.
+2. GitHub Branch Source를 사용하는 Multibranch Pipeline에 저장소를 연결하고 PR과 `develop`을 검색하도록 설정한다. Jenkins에 접근 가능한 GitHub 웹훅을 연결하거나 주기적 브랜치 검색을 사용한다. 저장소 연결에는 읽기와 PR 상태 게시에 필요한 권한을 부여한다.
+3. PR에서 Gradle 테스트와 JUnit 결과를 확인한다. `develop` 빌드에서는 JAR를 보관한다. 운영 배포 연결과 MySQL 이행 테스트는 각 환경과 기준 스키마가 준비된 뒤 별도 검증한다.
 
 ## AWS 설치 순서
 
