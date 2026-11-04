@@ -748,10 +748,10 @@ class MatchControllerTest {
                 .andExpect(jsonPath("$.data.calculationStatus").value("PARTIAL"))
                 .andExpect(jsonPath("$.data.totalDistanceM").value(1500.0))
                 .andExpect(jsonPath("$.data.totalCaloriesKcal").value(100.0))
-                .andExpect(jsonPath("$.data.durationSeconds").value(nullValue()))
-                .andExpect(jsonPath("$.data.averageSpeedMps").value(nullValue()))
+                .andExpect(jsonPath("$.data.durationSeconds").value(600.0))
+                .andExpect(jsonPath("$.data.averageSpeedMps").value(2.5))
                 .andExpect(jsonPath("$.data.metricStatus.totalDistanceM.status").value("READY"))
-                .andExpect(jsonPath("$.data.metricStatus.averageSpeedMps.status").value("MISSING_INPUT"))
+                .andExpect(jsonPath("$.data.metricStatus.averageSpeedMps.status").value("READY"))
                 .andExpect(jsonPath("$.data.calculationJobId").doesNotExist())
                 .andExpect(jsonPath("$.data.sourcePayloadHash").doesNotExist());
     }
@@ -789,13 +789,20 @@ class MatchControllerTest {
                 .andExpect(jsonPath("$.data.metricStatus.trimpEdwards.status").value("MISSING_INPUT"))
                 .andExpect(jsonPath("$.data.averageHeartRateBpm").value(142.0));
 
+        var firstGpsTime = workouts.findById(pending.workoutPayloadId()).orElseThrow().startDate().plusSeconds(2);
+        trackPoints.saveAll(List.of(
+                new TrackPoint(pending.workoutPayloadId(), 1, 37, 127, 20, 5, 2, 0, firstGpsTime),
+                new TrackPoint(pending.workoutPayloadId(), 2, 37, 127, 20, 5, 2, 0, firstGpsTime.plusSeconds(4))));
         summaries.saveProcessing(quarterId, pending.workoutPayloadId(), "v2",
                 json.writeValueAsString(java.util.Map.of("hrMaxReferenceBpm", 200)),
                 "{}", pending.sourcePayloadHash(), pending.updatedAt());
         summaryCalculation.process(pendingSummary(quarterId));
         mvc.perform(get(path).principal(actor::toString))
                 .andExpect(status().isOk()).andExpect(header().string("ETag", tag(11)))
-                .andExpect(jsonPath("$.data.calculationVersion").value("v2"))
+                .andExpect(jsonPath("$.data.calculationVersion").value("v3"))
+                .andExpect(jsonPath("$.data.calculationStatus").value("READY"))
+                .andExpect(jsonPath("$.data.validGpsDurationSeconds").value(4.0))
+                .andExpect(jsonPath("$.data.highIntensityDistanceM").value(0.0))
                 .andExpect(jsonPath("$.data.averageHeartRateBpm").value(142.0))
                 .andExpect(jsonPath("$.data.validHrDurationSeconds").value(6.0))
                 .andExpect(jsonPath("$.data.trimpEdwards").value(0.3))

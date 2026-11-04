@@ -197,7 +197,7 @@ v0.4. 표의 모든 키는 응답에 포함한다. nullable 값은 null이며 �
 | calculationStatus | enum | 필수 | PROCESSING/PARTIAL/READY/FAILED |
 | calculationVersion | string | 필수 | 계산 알고리즘 버전 |
 | metricStatus | object | 필수 | 각 지표 키 → {status,reason}. READY/MISSING_INPUT/INSUFFICIENT_DATA/FAILED |
-| durationSeconds | number | nullable | 계산에 사용한 실제 운동 시간; 초 |
+| durationSeconds | number | nullable | 운동 시작~종료 경과 시간, 휴식 포함; 초 |
 | maxSpeedMps | number | nullable | 유효 최고속도; m/s |
 | totalDistanceM | number | nullable | 누적 거리; m |
 | totalCaloriesKcal | number | nullable | 활동 칼로리; kcal |

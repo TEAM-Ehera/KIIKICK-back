@@ -6,6 +6,7 @@ import com.teamehera.kiikick.workout.domain.WorkoutPayload;
 import com.teamehera.kiikick.workout.repository.HeartRateSampleRepository;
 import com.teamehera.kiikick.workout.repository.QuarterSummaryRepository;
 import com.teamehera.kiikick.workout.repository.QuarterSummaryRepository.PendingCalculation;
+import com.teamehera.kiikick.workout.repository.TrackPointRepository;
 import com.teamehera.kiikick.workout.repository.WorkoutPayloadRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,14 +32,17 @@ public class QuarterSummaryCalculation {
 
     private final WorkoutPayloadRepository workouts;
     private final HeartRateSampleRepository heartRates;
+    private final TrackPointRepository tracks;
     private final QuarterSummaryRepository summaries;
     private final MatchRepository matches;
     private final ObjectMapper json;
 
     public QuarterSummaryCalculation(WorkoutPayloadRepository workouts, QuarterSummaryRepository summaries,
-                                     HeartRateSampleRepository heartRates, MatchRepository matches, ObjectMapper json) {
+                                     HeartRateSampleRepository heartRates, TrackPointRepository tracks,
+                                     MatchRepository matches, ObjectMapper json) {
         this.workouts = workouts;
         this.heartRates = heartRates;
+        this.tracks = tracks;
         this.summaries = summaries;
         this.matches = matches;
         this.json = json;
@@ -59,7 +63,7 @@ public class QuarterSummaryCalculation {
         int updated = calculated != null
                 ? summaries.updateCalculated(calculated, pending.sourcePayloadHash())
                 : summaries.markFailed(pending.quarterId(), pending.sourcePayloadHash(),
-                        pending.calculationJobId(), metricStatus(null), now);
+                        pending.calculationJobId(), json.writeValueAsString(metricStatuses(null, null)), now);
         if (updated == 1 && matches.incrementVersion(match.id(), match.ownerId(), match.version()) != 1) {
             throw new IllegalStateException("Could not advance the match version after publishing a summary");
         }
@@ -84,24 +88,34 @@ public class QuarterSummaryCalculation {
                     "maxGapSeconds", HeartRateSummary.MAX_GAP_SECONDS, "interpolation", "LINEAR",
                     "duplicateTimestamp", "LAST_VALID", "aboveHrMax", "EXCLUDE_FROM_TRIMP",
                     "zoneBoundaries", "LOWER_INCLUSIVE_UPPER_EXCLUSIVE_LAST_INCLUSIVE")));
+        var movement = MovementSummary.calculate(workout, tracks.findAllForCalculation(workout.id()), heart);
+        parameters.set("movementPolicy", json.valueToTree(Map.of(
+                "maxAccuracyM", MovementSummary.MAX_ACCURACY_M, "maxSpeedMps", MovementSummary.MAX_SPEED_MPS,
+                "maxGapSeconds", MovementSummary.MAX_GAP_SECONDS, "minMovingSpeedMps", MovementSummary.MIN_MOVING_SPEED_MPS,
+                "accelerationThresholdMps2", MovementSummary.ACCELERATION_THRESHOLD,
+                "turnDegrees", MovementSummary.TURN_DEGREES, "minEventSeconds", MovementSummary.MIN_EVENT_SECONDS,
+                "highIntensityHrRatio", HeartRateSummary.HIGH_INTENSITY_HR_RATIO,
+                "averageSpeedTime", "ELAPSED_INCLUDING_PAUSES", "duplicateTimestamp", "LAST_VALID")));
         var now = LocalDateTime.now(ZoneOffset.UTC);
-        // Active duration and the average-speed denominator depend on the unresolved pause policy.
+        var statuses = metricStatuses(heart, movement);
+        boolean ready = statuses.values().stream().allMatch(status -> "READY".equals(status.status()));
         return new QuarterSummary(pending.quarterId(), workout.id(), pending.calculationJobId(),
-                "PARTIAL", "v2", json.writeValueAsString(parameters), metricStatus(heart),
-                pending.sourcePayloadHash(), null, null, workout.totalDistance(), workout.totalCalories(),
-                null, null, null, null, null, heart.averageBpm(), heart.maxBpm(), heart.trimp(),
-                heart.referenceBpm(), heart.validSeconds(), null, now, now);
+                ready ? "READY" : "PARTIAL", "v3", json.writeValueAsString(parameters), json.writeValueAsString(statuses),
+                pending.sourcePayloadHash(), movement.elapsedSeconds(), movement.maxSpeed(),
+                workout.totalDistance(), workout.totalCalories(), movement.averageSpeed(), movement.highIntensityDistance(),
+                movement.accelerations(), movement.decelerations(), movement.turns(), heart.averageBpm(),
+                heart.maxBpm(), heart.trimp(), heart.referenceBpm(), heart.validSeconds(), movement.validSeconds(), now, now);
     }
 
-    private String metricStatus(HeartRateSummary.Result heart) {
+    private static Map<String, MetricStatus> metricStatuses(HeartRateSummary.Result heart, MovementSummary.Result movement) {
         var statuses = new LinkedHashMap<String, MetricStatus>();
         for (String metric : METRICS) {
-            statuses.put(metric, status(metric, heart));
+            statuses.put(metric, status(metric, heart, movement));
         }
-        return json.writeValueAsString(statuses);
+        return statuses;
     }
 
-    private static MetricStatus status(String metric, HeartRateSummary.Result heart) {
+    private static MetricStatus status(String metric, HeartRateSummary.Result heart, MovementSummary.Result movement) {
         if (heart == null) {
             return new MetricStatus("FAILED", "INVALID_SOURCE");
         }
@@ -114,8 +128,21 @@ public class QuarterSummaryCalculation {
             case "validHrDurationSeconds" -> sampleStatus(heart.validSeconds());
             case "hrMaxReferenceBpm" -> referenceStatus(heart);
             case "trimpEdwards" -> heart.referenceBpm() == null ? referenceStatus(heart) : sampleStatus(heart.trimp());
-            default -> new MetricStatus("MISSING_INPUT", "CALCULATION_POLICY_OR_VALID_DATA_REQUIRED");
+            case "durationSeconds" -> available(movement.elapsedSeconds(), "INVALID_WORKOUT_DURATION");
+            case "averageSpeedMps" -> available(movement.averageSpeed(), "INVALID_WORKOUT_DURATION");
+            case "maxSpeedMps" -> available(movement.maxSpeed(), "INSUFFICIENT_VALID_GPS_DATA");
+            case "validGpsDurationSeconds" -> available(movement.validSeconds(), "INSUFFICIENT_VALID_GPS_DATA");
+            case "accelerationCount" -> available(movement.accelerations(), "INSUFFICIENT_VALID_GPS_DATA");
+            case "decelerationCount" -> available(movement.decelerations(), "INSUFFICIENT_VALID_GPS_DATA");
+            case "directionChangeCount" -> available(movement.turns(), "INSUFFICIENT_VALID_COURSE_DATA");
+            case "highIntensityDistanceM" -> heart.referenceBpm() == null ? referenceStatus(heart)
+                    : available(movement.highIntensityDistance(), "INSUFFICIENT_OVERLAPPING_GPS_AND_HEART_RATE_DATA");
+            default -> throw new IllegalArgumentException("Unknown summary metric: " + metric);
         };
+    }
+
+    private static MetricStatus available(Number value, String reason) {
+        return value == null ? new MetricStatus("INSUFFICIENT_DATA", reason) : new MetricStatus("READY", null);
     }
 
     private static MetricStatus sampleStatus(Double value) {
