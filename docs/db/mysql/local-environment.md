@@ -49,7 +49,7 @@ docker exec kiikick-migration-mysql sh -c '
 '
 ```
 
-빈 DB 시나리오는 새 볼륨에 이행 SQL을 적용한다. 기존 데이터 시나리오를 처음 준비할 때는 별도 빈 볼륨에서 아래 두 파일부터 적용한다.
+빈 DB 시나리오는 [DB 이행 검증](migration-verification.md)의 순서대로 기존 스키마와 V001을 적용한다. 기존 데이터 시나리오를 처음 준비할 때는 별도 빈 볼륨에서 아래 두 파일부터 적용한다.
 
 ```sh
 cat docs/db/mysql/create-tables.sql docs/db/mysql/legacy-migration-fixture.sql |
