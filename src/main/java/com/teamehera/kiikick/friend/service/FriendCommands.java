@@ -16,6 +16,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.UUID;
+import java.util.function.Function;
 import java.util.function.Supplier;
 
 import static com.teamehera.kiikick.match.api.MatchApiResponse.fromUtc;
@@ -47,9 +48,15 @@ public class FriendCommands {
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public MatchMutation.Response forRequest(MatchMutation.Request request, LocalDateTime expiresAt, UUID requestId,
                                              Supplier<MatchMutation.Response> command) {
+        return forRequestWithAccess(request, expiresAt, requestId, () -> {}, command);
+    }
+
+    private MatchMutation.Response forRequestWithAccess(MatchMutation.Request request, LocalDateTime expiresAt,
+                                                       UUID requestId, Runnable checkAccess,
+                                                       Supplier<MatchMutation.Response> command) {
         UUID actor = request.actorUserId();
         pairs.findByIdAndUserId(requestId, actor).ifPresent(pair -> lockUsers(actor, other(pair, actor)));
-        return mutation.executeUnversioned(request, expiresAt, command);
+        return mutation.executeUnversioned(request, expiresAt, checkAccess, command);
     }
 
     private void lockUsers(UUID actor, UUID target) {
@@ -61,9 +68,18 @@ public class FriendCommands {
         }
     }
 
-    public Request send(UUID actor, UUID target) {
-        requireDistinct(actor, target);
-        query.profile(actor, target);
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public MatchMutation.Response send(MatchMutation.Request request, LocalDateTime expiresAt, UUID target,
+                                       Function<Request, MatchMutation.Response> serialize) {
+        UUID actor = request.actorUserId();
+        lockUsers(actor, target);
+        return mutation.executeUnversioned(request, expiresAt, () -> {
+            requireDistinct(actor, target);
+            query.profile(actor, target);
+        }, () -> serialize.apply(createPending(actor, target)));
+    }
+
+    private Request createPending(UUID actor, UUID target) {
         pairs.findByUsers(actor, target).ifPresent(pair -> {
             throw rejected("PENDING".equals(pair.status()) && !actor.equals(pair.requesterId())
                     ? "REQUEST_ALREADY_RECEIVED" : "RELATIONSHIP_EXISTS");
@@ -74,12 +90,24 @@ public class FriendCommands {
         return response(pair);
     }
 
-    public Request accept(UUID actor, UUID requestId) {
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public MatchMutation.Response accept(MatchMutation.Request request, LocalDateTime expiresAt, UUID requestId,
+                                         Function<Request, MatchMutation.Response> serialize) {
+        UUID actor = request.actorUserId();
+        return forRequestWithAccess(request, expiresAt, requestId,
+                () -> requireVisibleRequestRecipient(actor, requestId),
+                () -> serialize.apply(acceptPending(actor, requestId)));
+    }
+
+    private void requireVisibleRequestRecipient(UUID actor, UUID requestId) {
         var pair = pairs.findById(requestId).orElseThrow(ResourceNotFound::new);
         if (!actor.equals(other(pair, pair.requesterId()))) {
             throw rejected("FORBIDDEN");
         }
         query.profile(actor, pair.requesterId());
+    }
+
+    private Request acceptPending(UUID actor, UUID requestId) {
         if (pairs.accept(requestId, actor, now()) != 1) {
             throw rejected("INVALID_STATE");
         }

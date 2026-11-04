@@ -77,8 +77,7 @@ public class FriendController {
             @RequestBody(required = false) byte[] body) {
         var request = request(principal, "POST", REQUESTS, key, ifMatch, body);
         UUID target = target(body);
-        return replay(commands.forUser(request, expiresAt(), target,
-                () -> response(201, commands.send(request.actorUserId(), target))));
+        return replay(commands.send(request, expiresAt(), target, result -> response(201, result)));
     }
 
     @PostMapping(REQUEST + "/accept")
@@ -88,8 +87,7 @@ public class FriendController {
             @RequestBody(required = false) byte[] body) {
         var request = request(principal, "POST", REQUESTS + "/" + requestId + "/accept", key, ifMatch, body);
         requireNoBody(body);
-        return replay(commands.forRequest(request, expiresAt(), requestId,
-                () -> response(200, commands.accept(request.actorUserId(), requestId))));
+        return replay(commands.accept(request, expiresAt(), requestId, result -> response(200, result)));
     }
 
     @DeleteMapping(REQUEST)

@@ -146,6 +146,25 @@ class FriendControllerTest {
         mvc.perform(get("/api/v1/friends").principal(first::toString)).andExpect(jsonPath("$.data.length()").value(0));
     }
 
+    @Test
+    void blockRevokesAccessToPreviouslySuccessfulSendAndAcceptReplays() throws Exception {
+        UUID sendKey = UUID.randomUUID();
+        var sent = mvc.perform(send(first, second, sendKey)).andExpect(status().isCreated())
+                .andReturn().getResponse();
+        String id = json.readTree(sent.getContentAsString()).at("/data/id").stringValue();
+        String acceptPath = REQUESTS + "/" + id + "/accept";
+        UUID acceptKey = UUID.randomUUID();
+        var accepted = mvc.perform(post(acceptPath).principal(second::toString).header("Idempotency-Key", acceptKey))
+                .andExpect(status().isOk()).andReturn().getResponse();
+        mvc.perform(post(acceptPath).principal(second::toString).header("Idempotency-Key", acceptKey))
+                .andExpect(status().isOk()).andExpect(content().string(accepted.getContentAsString()));
+
+        mvc.perform(write(put("/api/v1/users/" + first + "/block"), second)).andExpect(status().isNoContent());
+        mvc.perform(send(first, second, sendKey)).andExpect(status().isNotFound());
+        mvc.perform(post(acceptPath).principal(second::toString).header("Idempotency-Key", acceptKey))
+                .andExpect(status().isNotFound());
+    }
+
     private Callable<Integer> concurrentSend(UUID actor, UUID target, CountDownLatch ready) {
         return () -> {
             ready.countDown();
