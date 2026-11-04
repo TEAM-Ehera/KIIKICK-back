@@ -1,0 +1,26 @@
+name: kiikick-migration
+
+services:
+  mysql:
+    image: ${MYSQL_IMAGE:?Set MYSQL_IMAGE to the MySQL image tag used for this test}
+    command: ["--default-time-zone=+00:00", "--require-secure-transport=ON"]
+    environment:
+      MYSQL_DATABASE: kiikick_migration
+      MYSQL_USER: kiikick_local
+      MYSQL_PASSWORD: kiikick-local-dev
+      MYSQL_ROOT_PASSWORD: kiikick-local-root
+    ports:
+      - "127.0.0.1:${MYSQL_LOCAL_PORT:-13306}:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - mysql --host=127.0.0.1 --ssl-mode=REQUIRED --user="$$MYSQL_USER" --password="$$MYSQL_PASSWORD" --database="$$MYSQL_DATABASE" --execute="SELECT 1"
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
+volumes:
+  mysql-data:
