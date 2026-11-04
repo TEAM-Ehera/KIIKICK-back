@@ -1,6 +1,6 @@
 # Docker 기반 로컬 MySQL
 
-저장소의 JDBC 설정은 MySQL과 TLS, UTC 세션을 사용한다. 서버의 정확한 엔진 버전과 DB 설정은 운영 담당자가 확인한 값을 기준으로 맞춘다. 확인 전에는 `mysql:8.4`로 로컬 동작만 점검할 수 있다.
+저장소의 JDBC 설정은 MySQL과 TLS, UTC 세션을 사용한다. 서버의 정확한 엔진 버전과 DB 설정은 운영 담당자가 확인한 값을 기준으로 맞춘다. 확인 전에는 `mysql:8.4.13`로 로컬 동작만 점검할 수 있다.
 
 ## 서버와 비교할 값
 
@@ -25,20 +25,38 @@ SELECT @@character_set_database AS database_charset,
 저장소 루트에서 실행한다. 아래 태그는 서버 버전 확인 전 로컬 점검 예시다.
 
 ```sh
-export MYSQL_IMAGE=mysql:8.4
-docker-compose -f docs/db/mysql/compose.yaml up -d --wait
+export MYSQL_IMAGE=mysql:8.4.13
+docker run -d --name kiikick-migration-mysql \
+  -p 127.0.0.1:13306:3306 \
+  -v kiikick-migration_mysql-data:/var/lib/mysql \
+  -e MYSQL_DATABASE=kiikick_migration \
+  -e MYSQL_USER=kiikick_local \
+  -e MYSQL_PASSWORD=kiikick-local-dev \
+  -e MYSQL_ROOT_PASSWORD=kiikick-local-root \
+  "$MYSQL_IMAGE" --default-time-zone=+00:00 --require-secure-transport=ON
 ```
 
-Compose 플러그인을 설치한 환경에서는 `docker-compose` 대신 `docker compose`를 사용한다. 빈 DB 시나리오는 초기 상태의 DB에 이행 SQL을 적용한다. 기존 데이터 시나리오는 별도 Compose 프로젝트 또는 초기화한 로컬 DB에서 아래 두 파일부터 적용한다.
+기존 Compose 컨테이너가 같은 볼륨을 사용 중이면 먼저 `docker stop kiikick-migration-mysql-1`로 중지한다. 위 명령이 같은 볼륨을 연결하므로 기존 테스트 데이터가 이어진다.
+
+아래 쿼리가 성공하면 MySQL에 TLS로 접속할 수 있다. 초기화 중이면 잠시 후 다시 실행한다.
+
+```sh
+docker exec kiikick-migration-mysql sh -c '
+  MYSQL_PWD="$MYSQL_PASSWORD" mysql --host=127.0.0.1 --ssl-mode=REQUIRED \
+    --user="$MYSQL_USER" --database="$MYSQL_DATABASE" --execute="SELECT VERSION(), @@session.time_zone"
+'
+```
+
+빈 DB 시나리오는 새 볼륨에 이행 SQL을 적용한다. 기존 데이터 시나리오를 처음 준비할 때는 별도 빈 볼륨에서 아래 두 파일부터 적용한다.
 
 ```sh
 cat docs/db/mysql/create-tables.sql docs/db/mysql/legacy-migration-fixture.sql |
-  docker-compose -f docs/db/mysql/compose.yaml exec -T mysql sh -c '
+  docker exec -i kiikick-migration-mysql sh -c '
     MYSQL_PWD="$MYSQL_PASSWORD" mysql --host=127.0.0.1 --ssl-mode=REQUIRED \
       --user="$MYSQL_USER" --database="$MYSQL_DATABASE"
   '
 ```
 
-로컬 백엔드 연결 값은 `DB_HOST=127.0.0.1`, `DB_PORT=13306`, `DB_NAME=kiikick_migration`, `DB_USERNAME=kiikick_local`, `DB_PASSWORD=kiikick-local-dev`다. 포트를 바꾸려면 Compose의 `MYSQL_LOCAL_PORT`와 백엔드의 `DB_PORT`에 같은 값을 사용한다.
+로컬 백엔드 연결 값은 `DB_HOST=127.0.0.1`, `DB_PORT=13306`, `DB_NAME=kiikick_migration`, `DB_USERNAME=kiikick_local`, `DB_PASSWORD=kiikick-local-dev`다. 포트를 바꾸면 백엔드의 `DB_PORT`도 맞춘다.
 
-`docker-compose -f docs/db/mysql/compose.yaml down`은 볼륨을 보존한다. 빈 상태에서 재검증할 때는 별도 프로젝트와 포트를 사용하거나, 삭제해도 되는 로컬 테스트 데이터인지 확인한 뒤 `down -v`로 초기화한다. 적용 전후 비교 항목은 [DB 이행 검증](migration-verification.md)을 따른다.
+중지와 재시작은 `docker stop kiikick-migration-mysql`과 `docker start kiikick-migration-mysql`을 사용한다. 별도의 검증 환경을 함께 실행하려면 컨테이너 이름, 호스트 포트, 볼륨 이름을 각각 다르게 지정한다. 적용 전후 비교 항목은 [DB 이행 검증](migration-verification.md)을 따른다.
