@@ -5,6 +5,8 @@ import com.teamehera.kiikick.match.service.MatchMutation;
 import com.teamehera.kiikick.match.service.MatchSettingsService.InvalidState;
 import com.teamehera.kiikick.match.service.QuarterLifecycleService.ActiveQuarterExists;
 import com.teamehera.kiikick.match.service.QuarterLifecycleService.QuarterNotEnded;
+import com.teamehera.kiikick.global.exception.InvalidWorkoutPayloadException;
+import com.teamehera.kiikick.workout.service.QuarterWorkoutUpload;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpHeaders;
 import com.teamehera.kiikick.match.service.MatchOwnership.ResourceNotFound;
@@ -83,6 +85,29 @@ public class MatchApiExceptionHandler {
     @ExceptionHandler(QuarterNotEnded.class)
     public ResponseEntity<MatchApiResponse.Failure> quarterNotEnded(HttpServletRequest request) {
         return failure(HttpStatus.CONFLICT, "QUARTER_NOT_ENDED", "쿼터 측정을 먼저 마감해주세요.",
+                Map.of(), request);
+    }
+
+    @ExceptionHandler(QuarterWorkoutUpload.WorkoutAlreadyExists.class)
+    public ResponseEntity<MatchApiResponse.Failure> workoutAlreadyExists(HttpServletRequest request) {
+        return failure(HttpStatus.CONFLICT, "WORKOUT_ALREADY_EXISTS", "이미 다른 운동 원본이 저장되어 있습니다.",
+                Map.of(), request);
+    }
+
+    @ExceptionHandler(QuarterWorkoutUpload.InvalidInput.class)
+    public ResponseEntity<MatchApiResponse.Failure> invalidWorkoutField(
+            QuarterWorkoutUpload.InvalidInput exception, HttpServletRequest request) {
+        return invalidSettings(new MatchSettings.InvalidSettings(java.util.List.of(exception.getMessage())), request);
+    }
+
+    @ExceptionHandler(InvalidWorkoutPayloadException.class)
+    public ResponseEntity<MatchApiResponse.Failure> invalidWorkoutDate(HttpServletRequest request) {
+        return invalidSettings(new MatchSettings.InvalidSettings(java.util.List.of("body")), request);
+    }
+
+    @ExceptionHandler(QuarterWorkoutController.PayloadTooLarge.class)
+    public ResponseEntity<MatchApiResponse.Failure> workoutTooLarge(HttpServletRequest request) {
+        return failure(HttpStatus.valueOf(413), "PAYLOAD_TOO_LARGE", "운동 원본 크기 제한을 초과했습니다.",
                 Map.of(), request);
     }
 

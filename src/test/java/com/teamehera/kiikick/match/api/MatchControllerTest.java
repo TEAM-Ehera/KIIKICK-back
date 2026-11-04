@@ -6,6 +6,9 @@ import com.teamehera.kiikick.match.repository.QuarterRepository;
 import com.teamehera.kiikick.user.repository.UserRepository;
 import com.teamehera.kiikick.venue.domain.Venue;
 import com.teamehera.kiikick.venue.repository.VenueRepository;
+import com.teamehera.kiikick.workout.repository.QuarterSummaryRepository;
+import com.teamehera.kiikick.workout.repository.TrackPointRepository;
+import com.teamehera.kiikick.workout.repository.WorkoutPayloadRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -13,6 +16,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import tools.jackson.databind.ObjectMapper;
@@ -44,6 +48,9 @@ class MatchControllerTest {
     @Autowired MatchRepository matches;
     @Autowired QuarterRepository quarters;
     @Autowired QuarterPlayerStatsRepository stats;
+    @Autowired WorkoutPayloadRepository workouts;
+    @Autowired QuarterSummaryRepository summaries;
+    @MockitoSpyBean TrackPointRepository trackPoints;
 
     @DynamicPropertySource
     static void database(DynamicPropertyRegistry properties) {
@@ -553,6 +560,102 @@ class MatchControllerTest {
     private MockHttpServletRequestBuilder putPosition(String path, UUID key, long version, String code) {
         return write(put(path), actor, key, json.writeValueAsString(java.util.Map.of("positionCode", code)))
                 .header("If-Match", tag(version));
+    }
+
+    private static final String WORKOUT = """
+            {
+              "startDate": 815274000, "endDate": 815274600,
+              "totalCalories": 100, "totalDistance": 1500,
+              "points": [{"latitude":37.5,"longitude":127,"altitude":20,"horizontalAccuracy":5,
+                          "speed":-1,"course":-1,"timestamp":815274001}],
+              "heartRateSamples": [{"timestamp":815274001,"bpm":142}]
+            }
+            """;
+
+    @Test
+    void delayedWorkoutUploadReplaysAndRejectsDifferentSource() throws Exception {
+        String path = completedQuarterUploadPath();
+        UUID quarterId = UUID.fromString(path.split("/")[4]);
+        UUID key = UUID.randomUUID();
+        var created = mvc.perform(workoutUpload(path, actor, key, 8, WORKOUT))
+                .andExpect(status().isCreated()).andExpect(header().string("ETag", tag(9)))
+                .andExpect(jsonPath("$.data.quarterId").value(quarterId.toString()))
+                .andReturn().getResponse();
+        mvc.perform(workoutUpload(path, actor, key, 8, WORKOUT))
+                .andExpect(status().isCreated()).andExpect(content().string(created.getContentAsString()));
+        var stored = workouts.findByQuarterId(quarterId).orElseThrow();
+        mvc.perform(workoutUpload(path, actor, UUID.randomUUID(), 9, WORKOUT.replace("1500", "1500.0")))
+                .andExpect(status().isOk()).andExpect(header().string("ETag", tag(10)))
+                .andExpect(jsonPath("$.data.id").value(stored.id().toString()));
+        mvc.perform(workoutUpload(path, actor, UUID.randomUUID(), 10, WORKOUT.replace("1500", "1600")))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("WORKOUT_ALREADY_EXISTS"));
+        mvc.perform(workoutUpload(path, other, UUID.randomUUID(), 10, WORKOUT))
+                .andExpect(status().isNotFound());
+        assertEquals(1, trackPoints.findAllForCalculation(stored.id()).size());
+        assertEquals("PROCESSING", summaries.findByQuarterId(quarterId).orElseThrow().calculationStatus());
+    }
+
+    @Test
+    void workoutRejectsInvalidSamplesAndRollsBackWhenSampleWriteFails() throws Exception {
+        String path = completedQuarterUploadPath();
+        UUID quarterId = UUID.fromString(path.split("/")[4]);
+        mvc.perform(workoutUpload(path, actor, UUID.randomUUID(), 8, WORKOUT.replace("815274001", "815274601")))
+                .andExpect(status().isUnprocessableContent());
+
+        UUID key = UUID.randomUUID();
+        org.mockito.Mockito.doThrow(new IllegalStateException("sample write failed"))
+                .doCallRealMethod().when(trackPoints).saveAll(org.mockito.ArgumentMatchers.anyList());
+        try {
+            mvc.perform(workoutUpload(path, actor, key, 8, WORKOUT)).andExpect(status().isInternalServerError());
+        } catch (jakarta.servlet.ServletException exception) {
+            assertEquals("sample write failed", exception.getCause().getMessage());
+        }
+        assertTrue(workouts.findByQuarterId(quarterId).isEmpty());
+        assertTrue(summaries.findByQuarterId(quarterId).isEmpty());
+        mvc.perform(workoutUpload(path, actor, key, 8, WORKOUT)).andExpect(status().isCreated());
+    }
+
+    @Test
+    void concurrentWorkoutUploadsWithOneKeyReplayOneStoredSource() throws Exception {
+        String path = completedQuarterUploadPath();
+        UUID quarterId = UUID.fromString(path.split("/")[4]);
+        UUID key = UUID.randomUUID();
+        var ready = new CountDownLatch(2);
+        Callable<String> send = () -> {
+            ready.countDown();
+            assertTrue(ready.await(5, TimeUnit.SECONDS));
+            return mvc.perform(workoutUpload(path, actor, key, 8, WORKOUT))
+                    .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        };
+        try (var pool = Executors.newFixedThreadPool(2)) {
+            var first = pool.submit(send);
+            var second = pool.submit(send);
+            assertEquals(first.get(10, TimeUnit.SECONDS), second.get(10, TimeUnit.SECONDS));
+        }
+        var workout = workouts.findByQuarterId(quarterId).orElseThrow();
+        assertEquals(1, trackPoints.findAllForCalculation(workout.id()).size());
+        assertEquals(workout.id(), summaries.findByQuarterId(quarterId).orElseThrow().workoutPayloadId());
+    }
+
+    private String completedQuarterUploadPath() throws Exception {
+        String match = create(actor, "{}");
+        String quarter = addQuarter(match + "/quarters", 1);
+        mvc.perform(transition(match, "ready", actor, UUID.randomUUID(), 2)).andExpect(status().isOk());
+        mvc.perform(transition(match, "start", actor, UUID.randomUUID(), 3)).andExpect(status().isOk());
+        String path = "/api/v1/quarters/" + quarter.substring(quarter.lastIndexOf('/') + 1) + "/workout-payloads";
+        mvc.perform(workoutUpload(path, actor, UUID.randomUUID(), 4, WORKOUT))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.error.code").value("QUARTER_NOT_ENDED"));
+        mvc.perform(transition(quarter, "start", actor, UUID.randomUUID(), 4)).andExpect(status().isOk());
+        mvc.perform(transition(quarter, "end", actor, UUID.randomUUID(), 5)).andExpect(status().isOk());
+        mvc.perform(transition(quarter, "complete", actor, UUID.randomUUID(), 6)).andExpect(status().isOk());
+        mvc.perform(transition(match, "end", actor, UUID.randomUUID(), 7)).andExpect(status().isOk());
+        return path;
+    }
+
+    private static MockHttpServletRequestBuilder workoutUpload(String path, UUID owner, UUID key,
+                                                              long version, String body) {
+        return write(post(path), owner, key, body).header("If-Match", tag(version));
     }
 
     private int startConcurrently(String quarter, CountDownLatch ready) throws Exception {

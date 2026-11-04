@@ -315,7 +315,7 @@ public class MatchController {
     }
 
     // The Bearer adapter must expose the verified internal UUID as the servlet principal name.
-    private static UUID actor(Principal principal) {
+    static UUID actor(Principal principal) {
         UUID id = principal == null ? null : canonicalUuid(principal.getName());
         if (id == null) {
             throw new Unauthenticated();
@@ -323,7 +323,7 @@ public class MatchController {
         return id;
     }
 
-    private static UUID key(String value) {
+    static UUID key(String value) {
         UUID id = canonicalUuid(value);
         if (id == null) {
             throw new InvalidRequest();
