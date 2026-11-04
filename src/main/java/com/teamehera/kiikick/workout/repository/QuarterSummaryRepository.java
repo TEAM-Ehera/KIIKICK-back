@@ -3,12 +3,14 @@ package com.teamehera.kiikick.workout.repository;
 import com.teamehera.kiikick.workout.domain.QuarterSummary;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -20,6 +22,7 @@ import static com.teamehera.kiikick.global.jdbc.JdbcValueConverter.uuidToBytes;
 public class QuarterSummaryRepository {
 
     private final JdbcTemplate jdbcTemplate;
+    private final NamedParameterJdbcTemplate namedJdbc;
     private final RowMapper<QuarterSummary> rowMapper = (rs, rowNum) ->
             new QuarterSummary(
                     bytesToUuid(rs.getBytes("quarter_id")),
@@ -51,6 +54,7 @@ public class QuarterSummaryRepository {
 
     public QuarterSummaryRepository(JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
+        this.namedJdbc = new NamedParameterJdbcTemplate(jdbcTemplate);
     }
 
     @Transactional
@@ -139,6 +143,13 @@ public class QuarterSummaryRepository {
                 uuidToBytes(workoutPayloadId), uuidToBytes(calculationJobId),
                 calculationVersion, calculationParameters, metricStatus,
                 sourcePayloadHash, updatedAt, uuidToBytes(quarterId)
+        );
+    }
+
+    public List<QuarterSummary> findByQuarterIds(List<UUID> quarterIds) {
+        return namedJdbc.query(
+                "SELECT * FROM quarter_summaries WHERE quarter_id IN (:quarterIds)",
+                Map.of("quarterIds", quarterIds.stream().map(id -> uuidToBytes(id)).toList()), rowMapper
         );
     }
 

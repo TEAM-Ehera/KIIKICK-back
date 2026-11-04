@@ -76,7 +76,15 @@
 | 중단·재측정 | 미정 | 미정 | 미정 | 미정 |
 | 업로드 버전 검사·센서 경계 처리 | 개선안 검토 | 미정 | 미정 | 미정 |
 
-## 5. 코드 확인 근거
+## 5. 결과 화면 연동 예시
+
+1. 쿼터 완료 직후 `GET /api/v1/quarters/{quarterId}/result`로 해당 쿼터 결과를 조회한다. 경기 진행 중에도 완료된 쿼터는 조회할 수 있다.
+2. 경기 종료 후 `GET /api/v1/matches/{matchId}/result`로 경기 합계와 요약 상태별 개수를 표시하고, `GET /api/v1/matches/{matchId}/result/quarters?limit=20`으로 쿼터 목록을 받는다. 미입력 골·어시스트 합계는 null, 명시적 무득점 합계는 0이다.
+3. 운동 파일이 나중에 도착하면 결과를 다시 조회한다. 예를 들어 업로드 직후 `workout`과 `summary.calculationStatus = "PROCESSING"`이 표시된다. 페이지 요청이 409 CURSOR_SNAPSHOT_CHANGED를 받으면 커서를 제거하고 첫 페이지부터 다시 읽는다.
+
+[개별 쿼터 응답 예시](results.md#result-04)
+
+## 6. 코드 확인 근거
 
 - [WorkoutPayload](https://github.com/DeveloperAcademy-POSTECH/2026-C6-A03-KIIKICK-iOS/blob/33f55613ce17a91ce9656b780e92e84960540578/KIIKICK/KIIKICK%20Global/Data/WorkoutPayload.swift)
 - [워치·폰 SessionManager](https://github.com/DeveloperAcademy-POSTECH/2026-C6-A03-KIIKICK-iOS/blob/33f55613ce17a91ce9656b780e92e84960540578/KIIKICK/KIIKICK%20Global/SessionManager.swift)

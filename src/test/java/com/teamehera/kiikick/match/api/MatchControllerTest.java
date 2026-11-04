@@ -764,7 +764,8 @@ class MatchControllerTest {
         var time = LocalDateTime.of(2026, 11, 4, 0, 0);
         workouts.save(new WorkoutPayload(workoutId, quarterId, actor, time, time.plusMinutes(1), 0, -1));
         summaries.saveProcessing(quarterId, workoutId, "v1", "{}", "{}", "a".repeat(64), time);
-        summaryCalculation.process(pendingSummary(quarterId));
+        var job = pendingSummary(quarterId);
+        summaryCalculation.process(job);
 
         mvc.perform(get(upload.replace("/workout-payloads", "/summary")).principal(actor::toString))
                 .andExpect(status().isOk()).andExpect(header().string("ETag", tag(9)))
@@ -772,6 +773,8 @@ class MatchControllerTest {
                 .andExpect(jsonPath("$.data.metricStatus.totalDistanceM.status").value("FAILED"))
                 .andExpect(jsonPath("$.data.totalDistanceM").value(nullValue()));
         assertTrue(workouts.findById(workoutId).isPresent());
+        mvc.perform(get(MATCHES + "/" + job.matchId() + "/result").principal(actor::toString))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.summaryAvailability.failed").value(1));
     }
 
     @Test
@@ -869,6 +872,87 @@ class MatchControllerTest {
         mvc.perform(get(summary).principal(actor::toString))
                 .andExpect(header().string("ETag", tag(14)))
                 .andExpect(jsonPath("$.data.hrMaxReferenceBpm").value(190.0));
+    }
+
+    @Test
+    void resultsFollowMatchLifecycleAndShowLateWorkoutWithoutLosingDirectRecords() throws Exception {
+        String match = create(actor, "{}");
+        String matchResult = match + "/result";
+        String first = addQuarter(match + "/quarters", 1);
+        String second = addQuarter(match + "/quarters", 2);
+        String firstQuarterId = first.substring(first.lastIndexOf('/') + 1);
+        String secondQuarterId = second.substring(second.lastIndexOf('/') + 1);
+        String firstResult = "/api/v1/quarters/" + firstQuarterId + "/result";
+        String secondResult = "/api/v1/quarters/" + secondQuarterId + "/result";
+        for (String path : List.of(matchResult, matchResult + "/quarters", firstResult)) {
+            mvc.perform(get(path).principal(actor::toString))
+                    .andExpect(status().isConflict()).andExpect(jsonPath("$.error.code").value("RESULT_NOT_READY"));
+            mvc.perform(get(path).principal(other::toString)).andExpect(status().isNotFound());
+        }
+
+        mvc.perform(transition(match, "ready", actor, UUID.randomUUID(), 3)).andExpect(status().isOk());
+        mvc.perform(transition(match, "start", actor, UUID.randomUUID(), 4)).andExpect(status().isOk());
+        mvc.perform(transition(first, "start", actor, UUID.randomUUID(), 5)).andExpect(status().isOk());
+        String zeros = json.writeValueAsString(java.util.Map.of("goals", 0, "assists", 0));
+        mvc.perform(putStats(first + "/stats", UUID.randomUUID(), 6, zeros)).andExpect(status().isOk());
+        mvc.perform(transition(first, "end", actor, UUID.randomUUID(), 7)).andExpect(status().isOk());
+        mvc.perform(putPosition(first + "/position", UUID.randomUUID(), 8, "TEST_FIRST")).andExpect(status().isOk());
+        mvc.perform(transition(first, "complete", actor, UUID.randomUUID(), 9)).andExpect(status().isOk());
+        mvc.perform(get(firstResult).principal(actor::toString))
+                .andExpect(status().isOk()).andExpect(header().string("ETag", tag(10)))
+                .andExpect(jsonPath("$.data.stats.goals").value(0))
+                .andExpect(jsonPath("$.data.position.positionCode").value("TEST_FIRST"))
+                .andExpect(jsonPath("$.data.workout").value(nullValue()))
+                .andExpect(jsonPath("$.data.summary").value(nullValue()));
+        mvc.perform(get(matchResult).principal(actor::toString)).andExpect(status().isConflict());
+
+        mvc.perform(transition(second, "start", actor, UUID.randomUUID(), 10)).andExpect(status().isOk());
+        mvc.perform(transition(second, "end", actor, UUID.randomUUID(), 11)).andExpect(status().isOk());
+        mvc.perform(transition(second, "complete", actor, UUID.randomUUID(), 12)).andExpect(status().isOk());
+        mvc.perform(transition(match, "end", actor, UUID.randomUUID(), 13)).andExpect(status().isOk());
+
+        mvc.perform(get(matchResult).principal(actor::toString))
+                .andExpect(status().isOk()).andExpect(header().string("ETag", tag(14)))
+                .andExpect(jsonPath("$.data.quarterCount").value(2))
+                .andExpect(jsonPath("$.data.goals").value(nullValue()))
+                .andExpect(jsonPath("$.data.assists").value(nullValue()))
+                .andExpect(jsonPath("$.data.missingStatsQuarterIds[0]").value(secondQuarterId))
+                .andExpect(jsonPath("$.data.summaryAvailability.missing").value(2));
+        mvc.perform(get(secondResult).principal(actor::toString))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.stats").value(nullValue()));
+        var page = mvc.perform(get(matchResult + "/quarters").principal(actor::toString).param("limit", "1"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data[0].quarter.number").value(1))
+                .andExpect(jsonPath("$.data[0].stats.goals").value(0))
+                .andReturn().getResponse();
+        String cursor = json.readTree(page.getContentAsString()).at("/meta/pagination/nextCursor").stringValue();
+        mvc.perform(get(matchResult + "/quarters").principal(actor::toString).param("cursor", cursor))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data[0].quarter.number").value(2))
+                .andExpect(jsonPath("$.meta.pagination.hasNext").value(false));
+
+        String upload = "/api/v1/quarters/" + firstQuarterId + "/workout-payloads";
+        mvc.perform(workoutUpload(upload, actor, UUID.randomUUID(), 14, WORKOUT)).andExpect(status().isCreated());
+        mvc.perform(get(matchResult + "/quarters").principal(actor::toString).param("cursor", cursor))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.error.code").value("CURSOR_SNAPSHOT_CHANGED"));
+        mvc.perform(get(matchResult).principal(actor::toString))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.summaryAvailability.processing").value(1))
+                .andExpect(jsonPath("$.data.summaryAvailability.missing").value(1));
+        summaryCalculation.process(pendingSummary(UUID.fromString(firstQuarterId)));
+        mvc.perform(get(firstResult).principal(actor::toString))
+                .andExpect(status().isOk()).andExpect(header().string("ETag", tag(16)))
+                .andExpect(jsonPath("$.data.stats.goals").value(0))
+                .andExpect(jsonPath("$.data.workout.points").doesNotExist())
+                .andExpect(jsonPath("$.data.summary.calculationStatus").value("PARTIAL"));
+        mvc.perform(get(matchResult).principal(actor::toString))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.summaryAvailability.partial").value(1));
+    }
+
+    @Test
+    void swaggerListsTheThreeResultEndpoints() throws Exception {
+        mvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.paths['/api/v1/matches/{matchId}/result'].get").exists())
+                .andExpect(jsonPath("$.paths['/api/v1/matches/{matchId}/result/quarters'].get").exists())
+                .andExpect(jsonPath("$.paths['/api/v1/quarters/{quarterId}/result'].get").exists());
     }
 
     private QuarterSummaryRepository.PendingCalculation pendingSummary(UUID quarterId) {
