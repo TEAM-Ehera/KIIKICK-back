@@ -3,6 +3,7 @@ package com.teamehera.kiikick.match.api;
 import com.teamehera.kiikick.match.domain.Match;
 import com.teamehera.kiikick.match.service.MatchDetailQuery;
 import com.teamehera.kiikick.match.service.MatchListQuery;
+import com.teamehera.kiikick.match.service.MatchLifecycleService;
 import com.teamehera.kiikick.match.service.MatchMutation;
 import com.teamehera.kiikick.match.service.MatchSettingsService;
 import com.teamehera.kiikick.match.service.MatchOwnership;
@@ -43,6 +44,7 @@ public class MatchController {
     private final MatchListQuery list;
     private final MatchDetailQuery detail;
     private final MatchSettingsService settings;
+    private final MatchLifecycleService lifecycle;
     private final MatchMutation mutation;
     private final MatchOwnership ownership;
     private final QuarterSettingsService quarters;
@@ -51,11 +53,12 @@ public class MatchController {
 
     public MatchController(MatchListQuery list, MatchDetailQuery detail, MatchSettingsService settings,
                            MatchMutation mutation, MatchOwnership ownership, QuarterSettingsService quarters,
-                           ObjectMapper json,
+                           MatchLifecycleService lifecycle, ObjectMapper json,
                            @Value("${kiikick.match.idempotency-retention:P1D}") Duration retention) {
         this.list = list;
         this.detail = detail;
         this.settings = settings;
+        this.lifecycle = lifecycle;
         this.mutation = mutation;
         this.ownership = ownership;
         this.quarters = quarters;
@@ -95,6 +98,22 @@ public class MatchController {
                 PATH + "/" + matchId, key(key), ifMatch, body);
         return replay(mutation.execute(request, expiresAt(), match -> {}, match ->
                 serialize(settings.update(match, MatchSettings.parse(json, body)), 200)));
+    }
+
+    @PostMapping("/{matchId}/{action:ready|start|cancel|end}")
+    public ResponseEntity<String> transition(
+            Principal principal, @PathVariable UUID matchId, @PathVariable String action,
+            @RequestHeader(value = "Idempotency-Key", required = false) String key,
+            @RequestHeader(value = HttpHeaders.IF_MATCH, required = false) String ifMatch,
+            @RequestBody(required = false) byte[] body) {
+        UUID actor = actor(principal);
+        if (body != null) {
+            throw new InvalidRequest();
+        }
+        var request = new MatchMutation.Request(actor, matchId, "POST",
+                PATH + "/" + matchId + "/" + action, key(key), ifMatch, null);
+        return replay(mutation.execute(request, expiresAt(), match -> {}, match ->
+                serialize(lifecycle.transition(match, action), 200)));
     }
 
     @GetMapping(QUARTERS)
