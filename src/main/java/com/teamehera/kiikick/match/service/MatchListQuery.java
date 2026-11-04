@@ -91,5 +91,9 @@ public class MatchListQuery {
         private InvalidListRequest(String code) {
             super(code);
         }
+
+        public static InvalidListRequest of(String code) {
+            return new InvalidListRequest(code);
+        }
     }
 }
