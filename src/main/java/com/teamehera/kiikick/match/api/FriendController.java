@@ -23,6 +23,7 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -48,26 +49,30 @@ public class FriendController {
     }
 
     @GetMapping("/users/search")
-    public FriendQuery.Page<FriendQuery.Profile> search(Principal principal, @RequestParam(required = false) String query,
+    public ResponseEntity<FriendQuery.Page<FriendQuery.Profile>> search(Principal principal, @RequestParam(required = false) String query,
             @RequestParam(required = false) String cursor, @RequestParam(required = false) Integer limit) {
-        return this.query.search(MatchController.actor(principal), query, cursor, limit);
+        var page = this.query.search(MatchController.actor(principal), query, cursor, limit);
+        return ok(page, page.meta().requestId());
     }
 
     @GetMapping("/users/{userId}/profile")
-    public MatchApiResponse.Success<FriendQuery.Profile> profile(Principal principal, @PathVariable UUID userId) {
-        return success(query.profile(MatchController.actor(principal), userId));
+    public ResponseEntity<MatchApiResponse.Success<FriendQuery.Profile>> profile(Principal principal, @PathVariable UUID userId) {
+        var result = success(query.profile(MatchController.actor(principal), userId));
+        return ok(result, result.meta().requestId());
     }
 
     @GetMapping(FRIENDS)
-    public FriendQuery.Page<FriendQuery.Friend> friends(Principal principal, @RequestParam(required = false) String cursor,
+    public ResponseEntity<FriendQuery.Page<FriendQuery.Friend>> friends(Principal principal, @RequestParam(required = false) String cursor,
                                                        @RequestParam(required = false) Integer limit) {
-        return query.friends(MatchController.actor(principal), cursor, limit);
+        var page = query.friends(MatchController.actor(principal), cursor, limit);
+        return ok(page, page.meta().requestId());
     }
 
     @GetMapping(REQUESTS)
-    public FriendQuery.Page<FriendQuery.Request> requests(Principal principal, @RequestParam String direction,
+    public ResponseEntity<FriendQuery.Page<FriendQuery.Request>> requests(Principal principal, @RequestParam String direction,
             @RequestParam(required = false) String cursor, @RequestParam(required = false) Integer limit) {
-        return query.requests(MatchController.actor(principal), direction, cursor, limit);
+        var page = query.requests(MatchController.actor(principal), direction, cursor, limit);
+        return ok(page, page.meta().requestId());
     }
 
     @PostMapping(path = REQUESTS, consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -181,18 +186,32 @@ public class FriendController {
     }
 
     private MatchMutation.Response response(int status, FriendQuery.Request request) {
-        return new MatchMutation.Response(status, "{}", request == null ? null : json.writeValueAsString(success(request)));
+        var meta = MatchApiResponse.Meta.create();
+        String headers = json.writeValueAsString(Map.of(MatchApiResponse.REQUEST_ID_HEADER, meta.requestId().toString()));
+        return new MatchMutation.Response(status, headers,
+                request == null ? null : json.writeValueAsString(new MatchApiResponse.Success<>(request, meta)));
+    }
+
+    private static <T> ResponseEntity<T> ok(T body, UUID requestId) {
+        return ResponseEntity.ok().header(MatchApiResponse.REQUEST_ID_HEADER, requestId.toString()).body(body);
     }
 
     private static <T> MatchApiResponse.Success<T> success(T data) {
         return new MatchApiResponse.Success<>(data, MatchApiResponse.Meta.create());
     }
 
-    private static ResponseEntity<String> replay(MatchMutation.Response result) {
+    private ResponseEntity<String> replay(MatchMutation.Response result) {
         var response = ResponseEntity.status(result.status());
         if (result.bodyJson() != null) {
             response.contentType(MediaType.APPLICATION_JSON);
         }
-        return response.body(result.bodyJson());
+        var headers = json.readTree(result.headersJson());
+        String requestId = headers.path(MatchApiResponse.REQUEST_ID_HEADER).asText("");
+        if (requestId.isEmpty()) {
+            // Older replay rows contain only the response body, or no body for 204.
+            requestId = result.bodyJson() == null ? UUID.randomUUID().toString()
+                    : json.readTree(result.bodyJson()).at("/meta/requestId").asText();
+        }
+        return response.header(MatchApiResponse.REQUEST_ID_HEADER, requestId).body(result.bodyJson());
     }
 }

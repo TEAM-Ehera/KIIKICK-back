@@ -113,6 +113,8 @@ public class MatchApiExceptionHandler {
         if (status == HttpStatus.UNAUTHORIZED) {
             response.header(HttpHeaders.WWW_AUTHENTICATE, "Bearer");
         }
-        return response.body(new MatchApiResponse.Failure(error, MatchApiResponse.Meta.create()));
+        var meta = MatchApiResponse.Meta.create();
+        return response.header(MatchApiResponse.REQUEST_ID_HEADER, meta.requestId().toString())
+                .body(new MatchApiResponse.Failure(error, meta));
     }
 }

@@ -165,6 +165,26 @@ class FriendControllerTest {
                 .andExpect(status().isNotFound());
     }
 
+    @Test
+    void requestIdMatchesResponseMetadataAndIsReplayedForNoContent() throws Exception {
+        var profile = mvc.perform(get(profile(second)).principal(first::toString))
+                .andExpect(status().isOk()).andReturn().getResponse();
+        assertEquals(json.readTree(profile.getContentAsString()).at("/meta/requestId").stringValue(),
+                profile.getHeader("X-Request-Id"));
+        var error = mvc.perform(get(SEARCH).principal(first::toString).param("query", "x"))
+                .andExpect(status().isUnprocessableContent()).andReturn().getResponse();
+        assertEquals(json.readTree(error.getContentAsString()).at("/meta/requestId").stringValue(),
+                error.getHeader("X-Request-Id"));
+        UUID key = UUID.randomUUID();
+        String path = "/api/v1/users/" + second + "/block";
+        var block = mvc.perform(put(path).principal(first::toString).header("Idempotency-Key", key))
+                .andExpect(status().isNoContent()).andExpect(header().exists("X-Request-Id"))
+                .andReturn().getResponse();
+        mvc.perform(put(path).principal(first::toString).header("Idempotency-Key", key))
+                .andExpect(status().isNoContent()).andExpect(header().string("X-Request-Id",
+                        block.getHeader("X-Request-Id")));
+    }
+
     private Callable<Integer> concurrentSend(UUID actor, UUID target, CountDownLatch ready) {
         return () -> {
             ready.countDown();
