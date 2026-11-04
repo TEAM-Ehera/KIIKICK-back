@@ -1,5 +1,7 @@
 package com.teamehera.kiikick.match.api;
 
+import com.teamehera.kiikick.friend.service.FriendCommands;
+import com.teamehera.kiikick.friend.service.FriendQuery;
 import com.teamehera.kiikick.match.service.MatchListQuery.InvalidListRequest;
 import com.teamehera.kiikick.match.service.MatchMutation;
 import com.teamehera.kiikick.match.service.MatchResultQuery.ResultNotReady;
@@ -27,6 +29,23 @@ import java.util.Map;
 @Order(0)
 @RestControllerAdvice(annotations = MatchApiController.class)
 public class MatchApiExceptionHandler {
+
+    @ExceptionHandler(FriendQuery.InvalidSearch.class)
+    public ResponseEntity<MatchApiResponse.Failure> invalidFriendSearch(HttpServletRequest request) {
+        return invalidSettings(new MatchSettings.InvalidSettings(java.util.List.of("query")), request);
+    }
+
+    @ExceptionHandler(FriendCommands.Rejected.class)
+    public ResponseEntity<MatchApiResponse.Failure> friendRejected(
+            FriendCommands.Rejected exception, HttpServletRequest request) {
+        String code = exception.getMessage();
+        return switch (code) {
+            case "SELF_RELATION_NOT_ALLOWED" -> failure(HttpStatus.UNPROCESSABLE_CONTENT, code,
+                    "본인을 대상으로 지정할 수 없습니다.", Map.of(), request);
+            case "FORBIDDEN" -> failure(HttpStatus.FORBIDDEN, code, "수신자만 요청을 수락할 수 있습니다.", Map.of(), request);
+            default -> failure(HttpStatus.CONFLICT, code, "현재 친구 관계를 확인해주세요.", Map.of(), request);
+        };
+    }
 
     @ExceptionHandler(ResourceNotFound.class)
     public ResponseEntity<MatchApiResponse.Failure> notFound(HttpServletRequest request) {
@@ -174,6 +193,8 @@ public class MatchApiExceptionHandler {
         if (status == HttpStatus.UNAUTHORIZED) {
             response.header(HttpHeaders.WWW_AUTHENTICATE, "Bearer");
         }
-        return response.body(new MatchApiResponse.Failure(error, MatchApiResponse.Meta.create()));
+        var meta = MatchApiResponse.Meta.create();
+        return response.header(MatchApiResponse.REQUEST_ID_HEADER, meta.requestId().toString())
+                .body(new MatchApiResponse.Failure(error, meta));
     }
 }

@@ -92,9 +92,21 @@ public class MatchMutation {
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public Response create(Request request, LocalDateTime expiresAt, Supplier<Response> change) {
-        // The owner row serializes retries before a match row exists.
+        return executeUnversioned(request, expiresAt, change);
+    }
+
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public Response executeUnversioned(Request request, LocalDateTime expiresAt, Supplier<Response> change) {
+        return executeUnversioned(request, expiresAt, () -> {}, change);
+    }
+
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public Response executeUnversioned(Request request, LocalDateTime expiresAt, Runnable checkAccess,
+                                       Supplier<Response> change) {
+        // Serialize writes and retries for resources without a version precondition.
         users.findByIdForUpdate(request.actorUserId())
                 .orElseThrow(() -> new Rejected(401, "UNAUTHENTICATED", null));
+        checkAccess.run();
         return executeOnce(request, expiresAt, () -> {
             if (request.ifMatch() != null) {
                 throw new Rejected(400, "INVALID_REQUEST", null);
