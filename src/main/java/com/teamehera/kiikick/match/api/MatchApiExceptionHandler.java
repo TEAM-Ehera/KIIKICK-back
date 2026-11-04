@@ -6,6 +6,7 @@ import com.teamehera.kiikick.match.service.MatchSettingsService.InvalidState;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpHeaders;
 import com.teamehera.kiikick.match.service.MatchOwnership.ResourceNotFound;
+import com.teamehera.kiikick.notification.service.NotificationService;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -81,6 +82,27 @@ public class MatchApiExceptionHandler {
                 request);
     }
 
+    @ExceptionHandler(NotificationService.DeviceOwnershipConflict.class)
+    public ResponseEntity<MatchApiResponse.Failure> deviceOwnershipConflict(HttpServletRequest request) {
+        return failure(HttpStatus.CONFLICT, "DEVICE_OWNERSHIP_CONFLICT", "새 기기 ID로 등록해주세요.", Map.of(), request);
+    }
+
+    @ExceptionHandler(NotificationService.InvalidDeviceState.class)
+    public ResponseEntity<MatchApiResponse.Failure> invalidDeviceState(HttpServletRequest request) {
+        return failure(HttpStatus.CONFLICT, "INVALID_STATE", "기기 등록 상태를 확인해주세요.", Map.of(), request);
+    }
+
+    @ExceptionHandler(NotificationService.MissingPushToken.class)
+    public ResponseEntity<MatchApiResponse.Failure> missingPushToken(HttpServletRequest request) {
+        return invalidSettings(new MatchSettings.InvalidSettings(java.util.List.of("pushToken")), request);
+    }
+
+    @ExceptionHandler(NotificationService.PushTokenUnavailable.class)
+    public ResponseEntity<MatchApiResponse.Failure> pushTokenUnavailable(HttpServletRequest request) {
+        return failure(HttpStatus.SERVICE_UNAVAILABLE, "TEMPORARILY_UNAVAILABLE",
+                "푸시 토큰을 지금 저장할 수 없습니다.", Map.of(), request);
+    }
+
     private ResponseEntity<MatchApiResponse.Failure> failure(
             HttpStatus status, String code, String message, Map<String, ?> details, HttpServletRequest request
     ) {
@@ -94,6 +116,8 @@ public class MatchApiExceptionHandler {
         if (status == HttpStatus.UNAUTHORIZED) {
             response.header(HttpHeaders.WWW_AUTHENTICATE, "Bearer");
         }
-        return response.body(new MatchApiResponse.Failure(error, MatchApiResponse.Meta.create()));
+        var meta = MatchApiResponse.Meta.create();
+        return response.header(MatchApiResponse.REQUEST_ID_HEADER, meta.requestId().toString())
+                .body(new MatchApiResponse.Failure(error, meta));
     }
 }

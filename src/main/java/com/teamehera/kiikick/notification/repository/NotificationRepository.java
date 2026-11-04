@@ -16,6 +16,24 @@ import static com.teamehera.kiikick.global.jdbc.JdbcValueConverter.uuidToBytes;
 
 @Repository
 public class NotificationRepository {
+    private static final String VISIBLE = """
+            FROM notifications n
+            WHERE n.recipient_id = ?
+              AND ((n.target_type = 'MATCH' AND EXISTS (
+                    SELECT 1 FROM matches m WHERE m.id = n.target_id AND m.owner_id = n.recipient_id
+                  )) OR (n.target_type = 'FRIEND_REQUEST' AND EXISTS (
+                    SELECT 1 FROM friend_pairs p
+                    JOIN users sender ON sender.id = p.requester_id AND sender.deleted_at IS NULL
+                    WHERE p.id = n.target_id AND p.status = 'PENDING' AND p.requester_id <> n.recipient_id
+                      AND (p.user_low_id = n.recipient_id OR p.user_high_id = n.recipient_id)
+                      AND NOT EXISTS (
+                          SELECT 1 FROM user_blocks b
+                          WHERE (b.blocker_id = n.recipient_id AND b.blocked_id = p.requester_id)
+                             OR (b.blocked_id = n.recipient_id AND b.blocker_id = p.requester_id)
+                      )
+                  )))
+            """;
+
 
     private final JdbcTemplate jdbcTemplate;
     private final RowMapper<Notification> rowMapper = (rs, rowNum) -> new Notification(
@@ -68,6 +86,27 @@ public class NotificationRepository {
                 Integer.class, uuidToBytes(recipientId)
         );
         return count == null ? 0 : count;
+    }
+
+    public Optional<Notification> findVisible(UUID id, UUID recipient) {
+        return jdbcTemplate.query("SELECT n.* " + VISIBLE + " AND n.id = ?",
+                rowMapper, uuidToBytes(recipient), uuidToBytes(id)).stream().findFirst();
+    }
+
+    public List<Notification> findVisiblePage(UUID recipient, boolean unread, LocalDateTime before,
+                                              UUID beforeId, int limit) {
+        String sql = "SELECT n.* " + VISIBLE + (unread ? " AND n.read_at IS NULL" : "");
+        String order = " ORDER BY n.created_at DESC, n.id DESC LIMIT ?";
+        if (before == null) {
+            return jdbcTemplate.query(sql + order, rowMapper, uuidToBytes(recipient), limit);
+        }
+        return jdbcTemplate.query(sql + " AND (n.created_at < ? OR (n.created_at = ? AND n.id < ?))" + order,
+                rowMapper, uuidToBytes(recipient), before, before, uuidToBytes(beforeId), limit);
+    }
+
+    public long countVisibleUnread(UUID recipient) {
+        return jdbcTemplate.queryForObject("SELECT COUNT(*) " + VISIBLE + " AND n.read_at IS NULL",
+                Long.class, uuidToBytes(recipient));
     }
 
     public int markRead(UUID id, UUID recipientId, LocalDateTime readAt) {
