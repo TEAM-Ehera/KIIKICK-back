@@ -5,6 +5,7 @@ import com.teamehera.kiikick.match.domain.Quarter;
 import com.teamehera.kiikick.match.repository.MatchRepository;
 import com.teamehera.kiikick.match.repository.QuarterRepository;
 import com.teamehera.kiikick.match.service.MatchOwnership;
+import com.teamehera.kiikick.match.service.MatchDetailQuery;
 import com.teamehera.kiikick.user.repository.UserRepository;
 import com.teamehera.kiikick.venue.domain.Venue;
 import com.teamehera.kiikick.venue.repository.VenueRepository;
@@ -50,6 +51,14 @@ class P0CoreRepositoryTest {
         }
         quarterRepository.save(new Quarter(quarter, match, 1, 60, "READY", null, null, now, now));
         var ownership = new MatchOwnership(matchRepository, quarterRepository);
+
+        var detail = new MatchDetailQuery(ownership).find(owner, match);
+        var body = java.util.Objects.requireNonNull(detail.getBody());
+        assertEquals("\"1\"", detail.getHeaders().getETag());
+        assertEquals(1, body.meta().matchVersion());
+        assertEquals(owner, body.data().ownerId());
+        assertEquals("2026-11-04T09:00+09:00", body.data().createdAt().toString());
+        assertNull(body.data().venueSnapshot());
 
         assertAll(
                 () -> assertEquals(match, ownership.requireMatch(owner, match).id()),
