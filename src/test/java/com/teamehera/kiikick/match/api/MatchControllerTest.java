@@ -441,6 +441,66 @@ class MatchControllerTest {
         }
     }
 
+    @Test
+    void quarterStatsDistinguishMissingFromZeroAndReplaceWithoutAccumulating() throws Exception {
+        String match = create(actor, "{}");
+        String quarter = addQuarter(match + "/quarters", 1);
+        String path = quarter + "/stats";
+        mvc.perform(get(path).principal(actor::toString))
+                .andExpect(status().isOk()).andExpect(header().string("ETag", tag(2)))
+                .andExpect(jsonPath("$.data").value(nullValue()))
+                .andExpect(jsonPath("$.meta.matchVersion").value(2));
+        mvc.perform(get(path).principal(other::toString)).andExpect(status().isNotFound());
+
+        String anotherMatch = create(actor, "{}");
+        String wrongParent = anotherMatch + quarter.substring(match.length()) + "/stats";
+        mvc.perform(get(wrongParent).principal(actor::toString)).andExpect(status().isNotFound());
+        mvc.perform(putStats(wrongParent, UUID.randomUUID(), 1, "{}")).andExpect(status().isNotFound());
+
+        mvc.perform(transition(match, "ready", actor, UUID.randomUUID(), 2)).andExpect(status().isOk());
+        mvc.perform(transition(match, "start", actor, UUID.randomUUID(), 3)).andExpect(status().isOk());
+        mvc.perform(putStats(path, UUID.randomUUID(), 4, "{\"goals\":0,\"assists\":0}"))
+                .andExpect(status().isConflict());
+        mvc.perform(transition(quarter, "start", actor, UUID.randomUUID(), 4)).andExpect(status().isOk());
+
+        for (String invalid : new String[]{"{}", "{\"goals\":-1,\"assists\":0}",
+                "{\"goals\":0,\"assists\":1.5}", "{\"goals\":2147483648,\"assists\":0}",
+                "{\"goals\":\"0\",\"assists\":0}", "{\"goals\":0,\"assists\":0,\"userId\":null}"}) {
+            mvc.perform(putStats(path, UUID.randomUUID(), 5, invalid))
+                    .andExpect(status().isUnprocessableContent())
+                    .andExpect(jsonPath("$.error.code").value("VALIDATION_FAILED"));
+        }
+        mvc.perform(putStats(path, UUID.randomUUID(), 5, "{\"goals\":0,\"assists\":0}"))
+                .andExpect(status().isOk()).andExpect(header().string("ETag", tag(6)))
+                .andExpect(jsonPath("$.data.goals").value(0)).andExpect(jsonPath("$.data.assists").value(0));
+        mvc.perform(get(path).principal(actor::toString))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.goals").value(0));
+
+        UUID key = UUID.randomUUID();
+        String totals = "{\"goals\":2,\"assists\":1}";
+        var saved = mvc.perform(putStats(path, key, 6, totals))
+                .andExpect(status().isOk()).andExpect(header().string("ETag", tag(7)))
+                .andExpect(jsonPath("$.data.updatedAt").isNotEmpty())
+                .andReturn().getResponse();
+        mvc.perform(putStats(path, key, 6, totals))
+                .andExpect(status().isOk()).andExpect(content().string(saved.getContentAsString()));
+        mvc.perform(transition(quarter, "end", actor, UUID.randomUUID(), 7)).andExpect(status().isOk());
+        mvc.perform(transition(quarter, "complete", actor, UUID.randomUUID(), 8)).andExpect(status().isOk());
+        mvc.perform(putStats(path, UUID.randomUUID(), 9, totals))
+                .andExpect(status().isOk()).andExpect(header().string("ETag", tag(10)))
+                .andExpect(jsonPath("$.data.goals").value(2)).andExpect(jsonPath("$.data.assists").value(1));
+        mvc.perform(transition(match, "end", actor, UUID.randomUUID(), 10)).andExpect(status().isOk());
+        mvc.perform(putStats(path, UUID.randomUUID(), 11, "{\"goals\":0,\"assists\":0}"))
+                .andExpect(status().isConflict());
+        mvc.perform(get(path).principal(actor::toString))
+                .andExpect(status().isOk()).andExpect(header().string("ETag", tag(11)))
+                .andExpect(jsonPath("$.data.goals").value(2)).andExpect(jsonPath("$.data.assists").value(1));
+    }
+
+    private MockHttpServletRequestBuilder putStats(String path, UUID key, long version, String body) {
+        return write(put(path), actor, key, body).header("If-Match", tag(version));
+    }
+
     private int startConcurrently(String quarter, CountDownLatch ready) throws Exception {
         ready.countDown();
         assertTrue(ready.await(5, TimeUnit.SECONDS));
