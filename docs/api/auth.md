@@ -91,7 +91,7 @@ Content-Type: application/json
 | `sessionId` | UUID | O | 불가 | — | 로그아웃 대상 세션 ID |
 | `accessToken` | string | O | 불가 | — | 서버 인증에 사용하는 비밀값. 로그 금지 |
 | `refreshToken` | string | O | 불가 | — | 갱신 시 회전하는 비밀값. 로그 금지 |
-| `expiresAt` | timestamp | O | 불가 | — | access token 만료 시각. 예시의 수명은 확정값 아님 |
+| `expiresAt` | timestamp | O | 불가 | — | 발급 시점부터 15분인 access token 만료 시각 |
 | `user` | UserSelf | O | 불가 | — | 본인 계정·온보딩 정보 |
 
 ```http
@@ -217,7 +217,7 @@ Content-Type: application/json
 | `sessionId` | UUID | O | 불가 | — | 로그아웃 대상 세션 ID |
 | `accessToken` | string | O | 불가 | — | 서버 인증에 사용하는 비밀값. 로그 금지 |
 | `refreshToken` | string | O | 불가 | — | 갱신 시 회전하는 비밀값. 로그 금지 |
-| `expiresAt` | timestamp | O | 불가 | — | access token 만료 시각. 예시의 수명은 확정값 아님 |
+| `expiresAt` | timestamp | O | 불가 | — | 발급 시점부터 15분인 access token 만료 시각 |
 | `user` | UserSelf | O | 불가 | — | 본인 계정·온보딩 정보 |
 
 ```http
@@ -319,7 +319,7 @@ Query parameter: 없음.
 ### 처리 규칙
 
 1. 다른 세션의 로그아웃이 현재 세션 전체 로그아웃을 의미하지 않는다.
-2. 같은 본인 세션의 반복 폐기는 204. access token의 즉시 무효화 방식은 인증 구현에서 보장한다.
+2. 같은 본인 세션의 반복 폐기는 204. Refresh Token 세션은 폐기하지만 기존 Access Token은 만료까지 최대 15분간 유효할 수 있다.
 
 ### 요청 예시
 
