@@ -175,7 +175,7 @@ public class QuarterSummaryRepository {
         return jdbcTemplate.update(
                 """
                 UPDATE quarter_summaries SET
-                    calculation_status = ?, metric_status = ?,
+                    calculation_status = ?, metric_status = ?, calculation_version = ?, calculation_parameters = ?,
                     duration_seconds = ?, max_speed_mps = ?, total_distance_m = ?,
                     total_calories_kcal = ?, average_speed_mps = ?,
                     high_intensity_distance_m = ?, acceleration_count = ?,
@@ -189,7 +189,7 @@ public class QuarterSummaryRepository {
                   AND calculation_job_id = ?
                   AND calculation_status = 'PROCESSING'
                 """,
-                summary.calculationStatus(), summary.metricStatus(),
+                summary.calculationStatus(), summary.metricStatus(), summary.calculationVersion(), summary.calculationParameters(),
                 summary.durationSeconds(), summary.maxSpeedMps(),
                 summary.totalDistanceM(), summary.totalCaloriesKcal(),
                 summary.averageSpeedMps(), summary.highIntensityDistanceM(),
