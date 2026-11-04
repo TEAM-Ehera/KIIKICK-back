@@ -2,8 +2,13 @@ package com.teamehera.kiikick.repository;
 
 import com.teamehera.kiikick.auth.domain.AuthIdentity;
 import com.teamehera.kiikick.auth.domain.AuthSession;
+import com.teamehera.kiikick.auth.domain.EmailCredential;
+import com.teamehera.kiikick.auth.domain.EmailVerificationFlow;
 import com.teamehera.kiikick.auth.repository.AuthIdentityRepository;
 import com.teamehera.kiikick.auth.repository.AuthSessionRepository;
+import com.teamehera.kiikick.auth.repository.EmailCredentialRepository;
+import com.teamehera.kiikick.auth.repository.EmailSendRateLimitRepository;
+import com.teamehera.kiikick.auth.repository.EmailVerificationFlowRepository;
 import com.teamehera.kiikick.friend.domain.FriendPair;
 import com.teamehera.kiikick.friend.domain.UserBlock;
 import com.teamehera.kiikick.friend.repository.FriendPairRepository;
@@ -56,6 +61,7 @@ import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -88,6 +94,9 @@ class MySqlRepositoryIntegrationTest {
     @Autowired QuarterPlayerStatsRepository stats;
     @Autowired QuarterPositionRepository positions;
     @Autowired AuthIdentityRepository identities;
+    @Autowired EmailCredentialRepository emailCredentials;
+    @Autowired EmailVerificationFlowRepository emailFlows;
+    @Autowired EmailSendRateLimitRepository emailSendRateLimits;
     @Autowired UserConsentRepository consents;
     @Autowired AuthSessionRepository sessions;
     @Autowired DeviceRepository devices;
@@ -108,7 +117,7 @@ class MySqlRepositoryIntegrationTest {
                 """,
                 Integer.class
         );
-        assertEquals(23, tableCount);
+        assertEquals(27, tableCount);
     }
 
     @Test
@@ -212,6 +221,16 @@ class MySqlRepositoryIntegrationTest {
         UUID userId = UUID.randomUUID();
         users.save(userId, "인증사용자");
         identities.save(new AuthIdentity(UUID.randomUUID(), userId, "APPLE", "sub", now));
+        emailCredentials.save(new EmailCredential(
+                userId, "User@example.com", "user@example.com", "$2a$12$hash",
+                now, now, now, now
+        ));
+        UUID flowId = UUID.randomUUID();
+        emailFlows.save(new EmailVerificationFlow(
+                flowId, "user@example.com", "SIGN_UP", "a".repeat(64), 0,
+                now.plusMinutes(3), now, null, null,
+                null, null, null, now, now
+        ));
         consents.save(new UserConsent(UUID.randomUUID(), userId, "FRIEND_COMPARISON", "v1", true, now));
         UUID deviceId = UUID.randomUUID();
         devices.save(new Device(deviceId, userId, "IOS", "cipher", true, now, null));
@@ -226,6 +245,15 @@ class MySqlRepositoryIntegrationTest {
 
         assertAll(
                 () -> assertEquals(userId, identities.findByProviderAndSubject("APPLE", "sub").orElseThrow().userId()),
+                () -> assertEquals(userId, emailCredentials
+                        .findByNormalizedEmail("user@example.com").orElseThrow().userId()),
+                () -> assertEquals(1, emailFlows.verifyAndIssueActionToken(
+                        flowId, "a".repeat(64), "b".repeat(64),
+                        now.plusMinutes(10), now.plusMinutes(1)
+                )),
+                () -> assertTrue(emailSendRateLimits.tryAcquire(
+                        "user@example.com", "c".repeat(64), now
+                ).allowed()),
                 () -> assertTrue(consents.findLatest(userId, "FRIEND_COMPARISON").orElseThrow().granted()),
                 () -> assertEquals(1, sessions.rotateRefreshToken(sessionId, 0, "new", now.plusDays(2))),
                 () -> assertEquals(0, sessions.rotateRefreshToken(sessionId, 0, "stale", now.plusDays(3))),
@@ -234,6 +262,37 @@ class MySqlRepositoryIntegrationTest {
                 )),
                 () -> assertEquals(1, devices.revoke(deviceId, userId, now.plusMinutes(1)))
         );
+    }
+
+    @Test
+    void p2_동시_이메일_발송은_5회까지만_허용한다() throws Exception {
+        LocalDateTime now = LocalDateTime.now().withNano(123_456_000);
+        String email = "mysql-concurrent-" + UUID.randomUUID() + "@example.com";
+        ExecutorService pool = Executors.newFixedThreadPool(8);
+        CountDownLatch ready = new CountDownLatch(8);
+        CountDownLatch start = new CountDownLatch(1);
+        List<Future<Boolean>> results = new java.util.ArrayList<>();
+        try {
+            for (int index = 0; index < 8; index++) {
+                String ipHash = "mysql-ip-" + index;
+                results.add(pool.submit(() -> {
+                    ready.countDown();
+                    start.await(5, TimeUnit.SECONDS);
+                    return emailSendRateLimits.tryAcquire(email, ipHash, now).allowed();
+                }));
+            }
+            assertTrue(ready.await(5, TimeUnit.SECONDS));
+            start.countDown();
+            int allowed = 0;
+            for (Future<Boolean> result : results) {
+                if (result.get(10, TimeUnit.SECONDS)) {
+                    allowed++;
+                }
+            }
+            assertEquals(5, allowed);
+        } finally {
+            pool.shutdownNow();
+        }
     }
 
     @Test

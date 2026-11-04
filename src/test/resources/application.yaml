@@ -12,3 +12,9 @@ spring:
 kiikick:
   workout:
     summary-worker-enabled: false
+  auth:
+    access-token:
+      secret-base64: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+      issuer: kiikick-api-test
+      audience: kiikick-test
+      lifetime: 4h
