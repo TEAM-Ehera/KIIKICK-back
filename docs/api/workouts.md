@@ -6,6 +6,8 @@
 
 요구사항 F10/F08. Watch → iPhone은 기존 WCSession.transferFile로 측정 1회당 JSON 파일 하나를 전달한다. 아래 서버 경로는 신규 설계이며 기존 iOS 파일 전송이나 현재 PR의 HTTP 경로가 이미 바뀌었다는 뜻이 아니다. [iOS DTO](https://github.com/DeveloperAcademy-POSTECH/2026-C6-A03-KIIKICK-iOS/blob/main/docs/dto/workout-payload.md)의 본문 필드를 보존하고 quarterId는 URL로 전달한다.
 
+기존 사용자별 HTTP 경로와 WORK-01의 전환 순서, 대기 파일 처리 및 기존 경로 종료 협의는 [iOS·서버 연동 협의표](ios-integration.md#인증과-공통-응답-적용-순서-12)에 따른다. 전환 검증에는 쿼터 ID 연결, 인증, 응답 디코딩 및 지연 파일 재전송을 포함한다.
+
 ## 원본 요청 필드
 
 | 필드 | 타입 | 필수 / null | 의미 |
