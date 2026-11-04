@@ -40,13 +40,33 @@ hr_max_reference_bpm과 이번 쿼터에서 관측된 max_heart_rate_bpm은 다�
 
 1. 업로드 식별자로 중복을 확인하고 원본 파일 내용을 해시한다.
 2. workout_payloads 및 GPS·심박 원본을 저장한다. 요약을 교체할 경우 기존 요약을 같은 트랜잭션에서 무효화한다.
-3. 설정된 정책으로 요약을 계산해 quarter_id 기준으로 저장한다. 계산 직전의 원본 해시와 현재 해시가 같은지 확인하고 게시한다.
+3. 설정된 정책으로 요약을 계산해 quarter_id 기준으로 저장한다. 계산 직전의 원본 해시와 현재 해시가 같고 calculation_job_id가 현재 PROCESSING 작업과 일치할 때만 게시한다.
 4. 일반 쿼터 조회는 요약 행과 개인 기록을 조회한다. 원본 전체를 다시 읽지 않는다. 경로·그래프 요청은 원본 조회를 별도로 수행한다.
 5. 원본/계산 정책 변경 시 해당 쿼터만 재계산한다. calculation_version과 calculation_parameters를 함께 저장해 재현 가능하게 한다.
 
 calculation_status는 PROCESSING/PARTIAL/READY/FAILED 등을 제안한다. metric_status는 지표별 READY/MISSING_INPUT/INSUFFICIENT_DATA/FAILED와 이유를 저장하는 JSON 계약 초안이다. 미계산·누락은 null로 두고 실제 0과 구별한다. valid_hr_duration_seconds 및 valid_gps_duration_seconds로 계산에 사용한 유효 시간도 보관한다. calculated_at은 결과 계산 시각, updated_at은 행 갱신 시각이다.
 
-workout_payload_id와 quarter_id의 복합 FK로 요약이 다른 쿼터의 운동 원본을 가리키는 것을 방지한다. source_payload_hash는 업로드/계산 코드가 실제 원본의 정규화 규칙에 맞게 산출해야 한다. 계산 완료와 동시에 원본이 변경되는 경쟁 상황도 서비스 트랜잭션에서 처리해야 한다.
+workout_payload_id와 quarter_id의 복합 FK로 요약이 다른 쿼터의 운동 원본을 가리키는 것을 방지한다. source_payload_hash는 업로드/계산 코드가 실제 원본의 정규화 규칙에 맞게 산출해야 한다. calculation_job_id는 계산을 시작할 때마다 새 UUID를 저장하며, 완료·실패 갱신에서 같은 작업인지 확인한다. 계산 완료와 동시에 원본이 변경되는 경쟁 상황도 서비스 트랜잭션에서 처리해야 한다.
+
+기존 데이터가 있는 MySQL에 적용할 때는 바로 NOT NULL 컬럼을 추가하지 않는다. 아래와 같이 nullable 추가, 기존 행 채우기, 검증, NOT NULL 전환 순서로 적용한다.
+
+```sql
+ALTER TABLE quarter_summaries
+    ADD COLUMN calculation_job_id BINARY(16) NULL AFTER workout_payload_id;
+
+UPDATE quarter_summaries
+SET calculation_job_id = UUID_TO_BIN(UUID())
+WHERE calculation_job_id IS NULL;
+
+SELECT COUNT(*) AS missing_job_id_count
+FROM quarter_summaries
+WHERE calculation_job_id IS NULL;
+
+ALTER TABLE quarter_summaries
+    MODIFY COLUMN calculation_job_id BINARY(16) NOT NULL;
+```
+
+기존 PROCESSING 행은 실행 중인 작업이 새 ID를 알 수 없으므로 배포 전에 재시도 대상으로 전환하거나 새 계산을 시작해야 한다. 이 저장소에는 운영 마이그레이션 도구가 없으므로 위 SQL은 자동 실행하지 않으며, 실제 적용 시에는 쓰기 중지 또는 호환 배포 순서를 별도로 확정한다.
 
 ## 근거
 

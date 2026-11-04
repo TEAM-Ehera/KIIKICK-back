@@ -152,6 +152,7 @@
 | --- | --- | --- | --- |
 | quarter_id | BINARY(16) | NOT NULL | PK |
 | workout_payload_id | BINARY(16) | NOT NULL |  |
+| calculation_job_id | BINARY(16) | NOT NULL |  |
 | calculation_status | VARCHAR(32) | NOT NULL |  |
 | calculation_version | VARCHAR(64) | NOT NULL |  |
 | calculation_parameters | JSON | NOT NULL |  |
@@ -407,14 +408,14 @@ GPS 원본 전체. 각 배열의 0부터 시작하는 sample_seq를 유지.
 - friend_pairs는 user_low_id < user_high_id, requester_id가 쌍 중 하나, 자기 친구/자기 차단 금지를 검증한다. low/high는 등급이 아니라 중복 방지 정렬이다. status는 PENDING/ACCEPTED 저장 제안이며 조회자 기준 관계는 별도 파생한다.
 - notifications.target_id는 타입별로 대상이 달라 일반 FK를 두지 않는다. sync_operations.requested_match_id는 존재하지 않거나 접근 불가한 요청의 거절 결과도 보존하므로 FK가 없다.
 - 모든 경기 하위 변경은 경기 행 잠금과 version/ETag로 직렬화한다. 같은 멱등 키 성공 재생은 version 비교 전에 수행한다. 센서 업로드 중복은 UNIQUE(quarter_id)와 원본 해시로도 검사한다.
-- 원본 저장과 요약 PROCESSING 등록을 같은 트랜잭션으로 수행한다. 요약 계산 게시 시 입력 해시·계산 버전·설정 스냅샷을 비교하여 오래된 계산의 덮어쓰기를 막는다. 별도 outbox는 없다. PROCESSING/FAILED 복구·재시도는 구현 단계에서 필요하다.
+- 원본 저장과 요약 PROCESSING 등록을 같은 트랜잭션으로 수행한다. 계산을 시작할 때마다 calculation_job_id를 새로 발급하고, 요약 게시·실패 처리 시 입력 해시·작업 ID·PROCESSING 상태를 비교하여 오래된 계산의 덮어쓰기를 막는다. 계산 버전·설정 스냅샷은 시작 시 저장하고 완료 시 덮어쓰지 않는다. 별도 outbox는 없다. PROCESSING/FAILED 복구·재시도는 구현 단계에서 필요하다.
 - 경기 종료는 운동 수신/계산 완료와 독립이다. 완료된 본인 쿼터의 지연 측정 업로드는 허용한다. 직접 기록의 종료 후 정정은 P06 미확정이다.
 
 ## 6. 운동 원본과 저장 요약
 
 start_date/end_date와 원본 timestamp는 UTC DATETIME(6)이다. iOS 입력은 Apple epoch 숫자이므로 변환한다. 일반 API 입출력은 Asia/Seoul(+09:00), DB 내부는 UTC로 구별한다. sample_seq는 배열 순서이며 동일 시각 샘플을 임의 삭제하지 않는다. speed/course의 -1 같은 원본 표식은 보존하고 계산에서 제외한다. 전체 원본 보존은 임의의 영구 보존 기간을 정했다는 의미가 아니다.
 
-quarter_summaries의 최고/평균 속력은 m/s, 거리는 m, 칼로리는 kcal, 심박은 bpm이다. trimp_edwards는 Edwards 한 방식의 결과이며 hr_max_reference_bpm은 계산 당시 기준 최대심박수다. Zone별 체류 시간은 저장하지 않는다. calculation_parameters는 가속·감속·고강도·방향전환 기준 등 계산 설정 스냅샷, source_payload_hash는 원본 확인용 해시다.
+quarter_summaries의 최고/평균 속력은 m/s, 거리는 m, 칼로리는 kcal, 심박은 bpm이다. trimp_edwards는 Edwards 한 방식의 결과이며 hr_max_reference_bpm은 계산 당시 기준 최대심박수다. Zone별 체류 시간은 저장하지 않는다. calculation_parameters는 가속·감속·고강도·방향전환 기준 등 계산 설정 스냅샷, source_payload_hash는 원본 확인용 해시, calculation_job_id는 계산 시도 식별자다.
 
 calculation_status는 PROCESSING/PARTIAL/READY/FAILED, metric_status는 각 지표 READY/MISSING_INPUT/INSUFFICIENT_DATA/FAILED를 기록하는 기술 초안이다. 유효 측정 시간과 실제 운동 시간으로 평균/누락을 처리한다. 정책 미확정·입력 부족은 null로 두며 0으로 채우지 않는다. 계산 시간은 calculated_at, 상태 변경 시간은 updated_at이다.
 
