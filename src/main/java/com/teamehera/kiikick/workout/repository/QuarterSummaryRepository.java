@@ -8,6 +8,7 @@ import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -148,6 +149,25 @@ public class QuarterSummaryRepository {
         ).stream().findFirst();
     }
 
+    public List<PendingCalculation> findProcessing(int limit) {
+        return jdbcTemplate.query(
+                """
+                SELECT s.*, q.match_id, m.owner_id
+                FROM quarter_summaries s
+                JOIN quarters q ON q.id = s.quarter_id
+                JOIN matches m ON m.id = q.match_id
+                WHERE s.calculation_status = 'PROCESSING'
+                ORDER BY s.updated_at, s.quarter_id
+                LIMIT ?
+                """,
+                (rs, rowNum) -> new PendingCalculation(rowMapper.mapRow(rs, rowNum),
+                        bytesToUuid(rs.getBytes("match_id")), bytesToUuid(rs.getBytes("owner_id"))),
+                limit
+        );
+    }
+
+    public record PendingCalculation(QuarterSummary summary, UUID matchId, UUID ownerId) {}
+
     public int updateCalculated(
             QuarterSummary summary,
             String expectedSourceHash
@@ -190,15 +210,20 @@ public class QuarterSummaryRepository {
             UUID expectedCalculationJobId,
             LocalDateTime updatedAt
     ) {
+        return markFailed(quarterId, expectedSourceHash, expectedCalculationJobId, null, updatedAt);
+    }
+
+    public int markFailed(UUID quarterId, String expectedSourceHash, UUID expectedCalculationJobId,
+                          String metricStatus, LocalDateTime updatedAt) {
         return jdbcTemplate.update(
                 """
                 UPDATE quarter_summaries
-                SET calculation_status = 'FAILED', updated_at = ?
+                SET calculation_status = 'FAILED', metric_status = COALESCE(?, metric_status), updated_at = ?
                 WHERE quarter_id = ? AND source_payload_hash = ?
                   AND calculation_job_id = ?
                   AND calculation_status = 'PROCESSING'
                 """,
-                updatedAt, uuidToBytes(quarterId), expectedSourceHash,
+                metricStatus, updatedAt, uuidToBytes(quarterId), expectedSourceHash,
                 uuidToBytes(expectedCalculationJobId)
         );
     }

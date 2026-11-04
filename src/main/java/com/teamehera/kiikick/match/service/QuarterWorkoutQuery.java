@@ -1,6 +1,7 @@
 package com.teamehera.kiikick.match.service;
 
 import com.teamehera.kiikick.match.api.MatchApiResponse;
+import com.teamehera.kiikick.match.domain.Match;
 import com.teamehera.kiikick.match.repository.QuarterRepository;
 import com.teamehera.kiikick.match.service.MatchDetailQuery.DetailMeta;
 import com.teamehera.kiikick.match.service.MatchDetailQuery.VersionedResponse;
@@ -17,6 +18,8 @@ import com.teamehera.kiikick.workout.repository.WorkoutPayloadRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 
 import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
@@ -37,16 +40,18 @@ public class QuarterWorkoutQuery {
     private final QuarterSummaryRepository summaries;
     private final TrackPointRepository tracks;
     private final HeartRateSampleRepository heartRates;
+    private final ObjectMapper json;
 
     public QuarterWorkoutQuery(QuarterRepository quarters, MatchOwnership ownership, WorkoutPayloadRepository workouts,
                                QuarterSummaryRepository summaries, TrackPointRepository tracks,
-                               HeartRateSampleRepository heartRates) {
+                               HeartRateSampleRepository heartRates, ObjectMapper json) {
         this.quarters = quarters;
         this.ownership = ownership;
         this.workouts = workouts;
         this.summaries = summaries;
         this.tracks = tracks;
         this.heartRates = heartRates;
+        this.json = json;
     }
 
     public VersionedResponse<Workout> workout(UUID actor, UUID quarterId) {
@@ -54,6 +59,13 @@ public class QuarterWorkoutQuery {
         var meta = MatchApiResponse.Meta.create();
         return new VersionedResponse<>(Workout.from(owned.workout()),
                 new DetailMeta(meta.requestId(), meta.serverTime(), owned.matchVersion()));
+    }
+
+    public VersionedResponse<Summary> summary(UUID actor, UUID quarterId) {
+        var match = requireParent(actor, quarterId);
+        var data = summaries.findByQuarterId(quarterId).map(value -> Summary.from(value, json)).orElse(null);
+        var meta = MatchApiResponse.Meta.create();
+        return new VersionedResponse<>(data, new DetailMeta(meta.requestId(), meta.serverTime(), match.version()));
     }
 
     public Page<TrackSample> trackPoints(UUID actor, UUID quarterId, String cursor, Integer limit) {
@@ -67,10 +79,14 @@ public class QuarterWorkoutQuery {
     }
 
     private OwnedWorkout requireWorkout(UUID actor, UUID quarterId) {
-        var quarter = quarters.findByIdAndOwnerId(quarterId, actor).orElseThrow(MatchOwnership.ResourceNotFound::new);
-        var match = ownership.requireMatch(actor, quarter.matchId());
+        var match = requireParent(actor, quarterId);
         var workout = workouts.findByQuarterId(quarterId).orElseThrow(MatchOwnership.ResourceNotFound::new);
         return new OwnedWorkout(workout, match.version());
+    }
+
+    private Match requireParent(UUID actor, UUID quarterId) {
+        var quarter = quarters.findByIdAndOwnerId(quarterId, actor).orElseThrow(MatchOwnership.ResourceNotFound::new);
+        return ownership.requireMatch(actor, quarter.matchId());
     }
 
     private <R, T> Page<T> page(UUID actor, UUID quarterId, String cursor, Integer limit, String kind,
@@ -140,6 +156,24 @@ public class QuarterWorkoutQuery {
         public static Workout from(WorkoutPayload workout) {
             return new Workout(workout.id(), workout.quarterId(), fromUtc(workout.startDate()),
                     fromUtc(workout.endDate()), workout.totalCalories(), workout.totalDistance());
+        }
+    }
+
+    public record Summary(UUID quarterId, UUID workoutPayloadId, String calculationStatus, String calculationVersion,
+                          JsonNode metricStatus, Double durationSeconds, Double maxSpeedMps, Double totalDistanceM,
+                          Double totalCaloriesKcal, Double averageSpeedMps, Double highIntensityDistanceM,
+                          Integer accelerationCount, Integer decelerationCount, Integer directionChangeCount,
+                          Double averageHeartRateBpm, Double maxHeartRateBpm, Double trimpEdwards,
+                          Double hrMaxReferenceBpm, Double validHrDurationSeconds, Double validGpsDurationSeconds,
+                          OffsetDateTime calculatedAt, OffsetDateTime updatedAt) {
+        static Summary from(QuarterSummary summary, ObjectMapper json) {
+            return new Summary(summary.quarterId(), summary.workoutPayloadId(), summary.calculationStatus(),
+                    summary.calculationVersion(), json.readTree(summary.metricStatus()), summary.durationSeconds(),
+                    summary.maxSpeedMps(), summary.totalDistanceM(), summary.totalCaloriesKcal(), summary.averageSpeedMps(),
+                    summary.highIntensityDistanceM(), summary.accelerationCount(), summary.decelerationCount(),
+                    summary.directionChangeCount(), summary.averageHeartRateBpm(), summary.maxHeartRateBpm(),
+                    summary.trimpEdwards(), summary.hrMaxReferenceBpm(), summary.validHrDurationSeconds(),
+                    summary.validGpsDurationSeconds(), fromUtc(summary.calculatedAt()), fromUtc(summary.updatedAt()));
         }
     }
 
