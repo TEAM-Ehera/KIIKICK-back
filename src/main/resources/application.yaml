@@ -8,6 +8,22 @@ spring:
     password: ${DB_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
 
+  mail:
+    host: ${AUTH_MAIL_HOST}
+    port: ${AUTH_MAIL_PORT:587}
+    username: ${AUTH_MAIL_USERNAME}
+    password: ${AUTH_MAIL_PASSWORD}
+    properties:
+      mail:
+        smtp:
+          auth: ${AUTH_MAIL_SMTP_AUTH:true}
+          starttls:
+            enable: ${AUTH_MAIL_STARTTLS_ENABLE:true}
+            required: ${AUTH_MAIL_STARTTLS_REQUIRED:true}
+          connectiontimeout: ${AUTH_MAIL_CONNECTION_TIMEOUT_MS:5000}
+          timeout: ${AUTH_MAIL_READ_TIMEOUT_MS:5000}
+          writetimeout: ${AUTH_MAIL_WRITE_TIMEOUT_MS:5000}
+
 # Nginx 같은 리버스 프록시가 전달하는 원래 요청의 HTTPS 정보를 반영한다.
 # 이를 통해 Swagger가 운영 환경의 서버 URL을 http가 아닌 https로 생성한다.
 server:
@@ -26,3 +42,8 @@ kiikick:
       issuer: ${AUTH_ACCESS_TOKEN_ISSUER:kiikick-api}
       audience: ${AUTH_ACCESS_TOKEN_AUDIENCE:kiikick-ios}
       lifetime: 4h
+    verification:
+      email-code-secret: ${AUTH_EMAIL_CODE_HMAC_SECRET}
+      ip-secret: ${AUTH_IP_HMAC_SECRET}
+      sender-address: ${AUTH_MAIL_FROM}
+      sender-name: ${AUTH_MAIL_SENDER_NAME:KIIKICK}
