@@ -15,6 +15,8 @@ import com.teamehera.kiikick.auth.service.EmailVerificationService;
 import com.teamehera.kiikick.auth.service.EmailVerificationSuccessResult;
 import com.teamehera.kiikick.auth.service.VerificationSecretGenerator;
 import com.teamehera.kiikick.auth.security.AuthHashEncoder;
+import com.teamehera.kiikick.auth.service.SignupResult;
+import com.teamehera.kiikick.auth.service.SignupService;
 import com.teamehera.kiikick.friend.domain.FriendPair;
 import com.teamehera.kiikick.friend.domain.UserBlock;
 import com.teamehera.kiikick.friend.repository.FriendPairRepository;
@@ -105,6 +107,7 @@ class MySqlRepositoryIntegrationTest {
     @Autowired EmailSendRateLimitRepository emailSendRateLimits;
     @Autowired EmailVerificationService emailVerificationService;
     @Autowired AuthHashEncoder authHashEncoder;
+    @Autowired SignupService signupService;
     @Autowired UserConsentRepository consents;
     @Autowired AuthSessionRepository sessions;
     @Autowired DeviceRepository devices;
@@ -302,6 +305,33 @@ class MySqlRepositoryIntegrationTest {
                         authHashEncoder.hashActionToken(verified.registrationToken()),
                         "SIGN_UP", verified.expiresAt().minusSeconds(1)
                 ).isPresent())
+        );
+    }
+
+    @Test
+    @Transactional
+    void p2_회원가입이_MySQL에서_사용자_Credential_세션을_원자적으로_생성한다() {
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
+        String email = "mysql-signup-" + UUID.randomUUID() + "@example.com";
+        String registrationToken = "mysql-signup-token-" + UUID.randomUUID();
+        emailFlows.save(new EmailVerificationFlow(
+                UUID.randomUUID(), email, "SIGN_UP", null, 0,
+                now.plusMinutes(3), now, now, null,
+                authHashEncoder.hashActionToken(registrationToken),
+                now.plusMinutes(10), null, now, now
+        ));
+
+        SignupResult result = signupService.signup(
+                registrationToken, "Mysql-valid-72!"
+        );
+
+        assertAll(
+                () -> assertEquals(result.userId(), emailCredentials
+                        .findByNormalizedEmail(email).orElseThrow().userId()),
+                () -> assertEquals(result.userId(), sessions
+                        .findActiveById(result.sessionId(), now).orElseThrow().userId()),
+                () -> assertTrue(result.accessToken().length() > 100),
+                () -> assertTrue(result.refreshToken().length() >= 43)
         );
     }
 

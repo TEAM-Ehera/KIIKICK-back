@@ -3,6 +3,7 @@ package com.teamehera.kiikick.auth.controller;
 import com.teamehera.kiikick.auth.dto.AuthApiErrorResponse;
 import com.teamehera.kiikick.auth.dto.AuthApiMeta;
 import com.teamehera.kiikick.auth.service.VerificationApiException;
+import com.teamehera.kiikick.auth.service.SignupApiException;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpHeaders;
@@ -46,6 +47,16 @@ public class EmailVerificationExceptionHandler {
                 exception.code(), exception.getMessage(),
                 exception.retryable(), exception.persistence()
         ), headers, exception.status());
+    }
+
+    @ExceptionHandler(SignupApiException.class)
+    public ResponseEntity<AuthApiErrorResponse> handleSignup(
+            SignupApiException exception
+    ) {
+        return ResponseEntity.status(exception.status()).body(body(
+                exception.code(), exception.getMessage(),
+                exception.retryable(), "NOT_SAVED"
+        ));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

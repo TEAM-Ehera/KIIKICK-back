@@ -44,6 +44,8 @@ public class RegistrationTokenService {
         if (flowRepository.consumeActionToken(flow.id(), tokenHash, now) != 1) {
             throw VerificationApiException.invalidRegistrationToken();
         }
-        return new RegistrationTokenContext(flow.id(), flow.normalizedEmail());
+        return new RegistrationTokenContext(
+                flow.id(), flow.normalizedEmail(), flow.verifiedAt()
+        );
     }
 }
