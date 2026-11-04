@@ -181,7 +181,7 @@ query: status(선택), cursor, limit.
 
 ### 처리 규칙
 
-1. DRAFT/version=1로 생성하며 ownerId는 본인이다.
+1. DRAFT/version=1로 생성하며 ownerId는 본인이다. Location에는 생성한 경기 상세 경로를 반환한다.
 2. venueId와 직접 venueSnapshot을 동시에 지정하면 422. venueId 지정 시 본인 경기장만 선택하고 사본을 저장한다. 둘 다 생략 가능.
 
 ### 오류와 앱 대응

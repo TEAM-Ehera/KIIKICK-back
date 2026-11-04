@@ -1,6 +1,7 @@
 package com.teamehera.kiikick.match.service;
 
 import com.teamehera.kiikick.match.api.MatchApiResponse;
+import com.teamehera.kiikick.match.domain.Match;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 
@@ -20,17 +21,15 @@ public class MatchDetailQuery {
 
     public ResponseEntity<Detail> find(UUID actorUserId, UUID matchId) {
         var match = ownership.requireMatch(actorUserId, matchId);
-        var snapshot = match.venueNameSnapshot() == null && match.venueAddressSnapshot() == null
-                ? null : new VenueSnapshot(match.venueNameSnapshot(), match.venueAddressSnapshot());
-        var data = new MatchResponse(match.id(), match.ownerId(), match.title(), match.venueId(),
-                snapshot, fromUtc(match.scheduledAt()), match.status(), fromUtc(match.startedAt()),
-                fromUtc(match.endedAt()), match.version(), fromUtc(match.createdAt()), fromUtc(match.updatedAt()));
-        var meta = MatchApiResponse.Meta.create();
-        return ResponseEntity.ok().eTag("\"" + match.version() + "\"")
-                .body(new Detail(data, new DetailMeta(meta.requestId(), meta.serverTime(), match.version())));
+        return ResponseEntity.ok().eTag(MatchMutation.etag(match.version())).body(Detail.from(match));
     }
 
     public record Detail(MatchResponse data, DetailMeta meta) {
+        public static Detail from(Match match) {
+            var meta = MatchApiResponse.Meta.create();
+            return new Detail(MatchResponse.from(match),
+                    new DetailMeta(meta.requestId(), meta.serverTime(), match.version()));
+        }
     }
 
     public record DetailMeta(UUID requestId, OffsetDateTime serverTime, long matchVersion) {
@@ -43,5 +42,12 @@ public class MatchDetailQuery {
                                 OffsetDateTime scheduledAt, String status, OffsetDateTime startedAt,
                                 OffsetDateTime endedAt, long version, OffsetDateTime createdAt,
                                 OffsetDateTime updatedAt) {
+        static MatchResponse from(Match match) {
+            var snapshot = match.venueNameSnapshot() == null && match.venueAddressSnapshot() == null
+                    ? null : new VenueSnapshot(match.venueNameSnapshot(), match.venueAddressSnapshot());
+            return new MatchResponse(match.id(), match.ownerId(), match.title(), match.venueId(),
+                    snapshot, fromUtc(match.scheduledAt()), match.status(), fromUtc(match.startedAt()),
+                    fromUtc(match.endedAt()), match.version(), fromUtc(match.createdAt()), fromUtc(match.updatedAt()));
+        }
     }
 }
