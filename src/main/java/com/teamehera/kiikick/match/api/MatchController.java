@@ -204,7 +204,11 @@ public class MatchController {
                 match -> ownership.requireQuarter(actor, matchId, quarterId), match -> {
                     var input = MatchSettings.readBody(json, body);
                     MatchSettings.checkObject(input, "body", Set.of("positionCode"));
-                    var response = quarterPosition.replace(match, quarterId, input.path("positionCode").stringValue());
+                    var code = input.path("positionCode");
+                    if (!code.isTextual()) {
+                        throw new MatchSettings.InvalidSettings(List.of("positionCode"));
+                    }
+                    var response = quarterPosition.replace(match, quarterId, code.stringValue());
                     return serialize(response, response.meta().matchVersion(), 200, null);
                 }));
     }

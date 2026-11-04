@@ -529,6 +529,11 @@ class MatchControllerTest {
         mvc.perform(putPosition(path, UUID.randomUUID(), 5, "TEST_FIRST"))
                 .andExpect(status().isConflict()).andExpect(jsonPath("$.error.code").value("QUARTER_NOT_ENDED"));
         mvc.perform(transition(quarter, "end", actor, UUID.randomUUID(), 5)).andExpect(status().isOk());
+        for (String invalid : java.util.List.of("{}", "{\"positionCode\":null}", "{\"positionCode\":1}")) {
+            mvc.perform(write(put(path), actor, UUID.randomUUID(), invalid).header("If-Match", tag(6)))
+                    .andExpect(status().isUnprocessableContent())
+                    .andExpect(jsonPath("$.error.details.fields[0]").value("positionCode"));
+        }
         mvc.perform(putPosition(path, UUID.randomUUID(), 6, "UNKNOWN"))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.error.details.fields[0]").value("positionCode"));
