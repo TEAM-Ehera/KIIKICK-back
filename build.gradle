@@ -46,3 +46,52 @@ tasks.named('test') {
     systemProperty 'spring.datasource.password', ''
     systemProperty 'spring.datasource.driver-class-name', 'org.h2.Driver'
 }
+
+sourceSets {
+    mysqlIntegrationTest {
+        java.srcDir 'src/mysqlIntegrationTest/java'
+        resources.srcDir 'src/mysqlIntegrationTest/resources'
+        compileClasspath = sourceSets.main.output + configurations.testCompileClasspath
+        runtimeClasspath = output + compileClasspath + configurations.testRuntimeClasspath
+    }
+}
+
+tasks.register('mysqlIntegrationTest', Test) {
+    description = 'Runs Repository integration tests against kiikick_repository_test only.'
+    group = 'verification'
+    testClassesDirs = sourceSets.mysqlIntegrationTest.output.classesDirs
+    classpath = sourceSets.mysqlIntegrationTest.runtimeClasspath
+    useJUnitPlatform()
+    shouldRunAfter tasks.named('test')
+
+    doFirst {
+        String database = System.getenv('MYSQL_TEST_DB_NAME')
+        String host = System.getenv('MYSQL_TEST_DB_HOST')
+        String port = System.getenv('MYSQL_TEST_DB_PORT')
+        String username = System.getenv('MYSQL_TEST_DB_USERNAME')
+        String password = System.getenv('MYSQL_TEST_DB_PASSWORD')
+
+        if (database != 'kiikick_repository_test') {
+            throw new GradleException(
+                    'MYSQL_TEST_DB_NAME must be exactly kiikick_repository_test'
+            )
+        }
+        if ([host, port, username, password].any { it == null || it.isBlank() }) {
+            throw new GradleException(
+                    'MYSQL_TEST_DB_HOST, MYSQL_TEST_DB_PORT, MYSQL_TEST_DB_USERNAME, '
+                            + 'and MYSQL_TEST_DB_PASSWORD are required'
+            )
+        }
+
+        String jdbcUrl = "jdbc:mysql://${host}:${port}/${database}" +
+                "?sslMode=REQUIRED&connectionTimeZone=UTC" +
+                "&forceConnectionTimeZoneToSession=true&characterEncoding=UTF-8"
+
+        systemProperty 'spring.datasource.url', jdbcUrl
+        systemProperty 'spring.datasource.username', username
+        systemProperty 'spring.datasource.password', password
+        systemProperty 'spring.datasource.driver-class-name', 'com.mysql.cj.jdbc.Driver'
+        systemProperty 'spring.sql.init.mode', 'never'
+        systemProperty 'kiikick.mysql.integration.enabled', 'true'
+    }
+}

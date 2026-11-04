@@ -215,7 +215,7 @@ v0.4. 표의 모든 키는 응답에 포함한다. nullable 값은 null이며 �
 | calculatedAt | timestamp | nullable | 마지막 결과 계산 시각 |
 | updatedAt | timestamp | 필수 | 행 갱신 시각 |
 
-calculation_parameters와 source_payload_hash는 내부 재현·무효화 정보이며 일반 응답에 노출하지 않는다. metricStatus.reason은 nullable 코드다. PROCESSING인 새 행의 결과는 null이며 이전 결과를 최신처럼 보여주지 않는다. 입력 부족은 0이 아니다. 기준 최대심박수는 이번 쿼터 관측 최고심박수와 구별한다.
+calculation_job_id, calculation_parameters와 source_payload_hash는 내부 작업 식별·재현·무효화 정보이며 일반 응답에 노출하지 않는다. metricStatus.reason은 nullable 코드다. PROCESSING인 새 행의 결과는 null이며 이전 결과를 최신처럼 보여주지 않는다. 입력 부족은 0이 아니다. 기준 최대심박수는 이번 쿼터 관측 최고심박수와 구별한다.
 
 <a id="workout"></a>
 ## Workout

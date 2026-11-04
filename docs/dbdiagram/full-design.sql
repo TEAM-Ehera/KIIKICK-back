@@ -108,6 +108,7 @@ CREATE TABLE `quarter_positions` (
 CREATE TABLE `quarter_summaries` (
     `quarter_id` BINARY(16) NOT NULL,
     `workout_payload_id` BINARY(16) NOT NULL,
+    `calculation_job_id` BINARY(16) NOT NULL,
     `calculation_status` VARCHAR(32) NOT NULL,
     `calculation_version` VARCHAR(64) NOT NULL,
     `calculation_parameters` JSON NOT NULL,

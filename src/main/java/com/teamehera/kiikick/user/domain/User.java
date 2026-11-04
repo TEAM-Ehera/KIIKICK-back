@@ -12,8 +12,20 @@ import java.util.UUID;
 public record User(
         UUID id,
         String nickname,
+        String avatarUrl,
+        LocalDateTime onboardingCompletedAt,
+        LocalDateTime deletionRequestedAt,
         LocalDateTime createdAt,
         LocalDateTime updatedAt,
         LocalDateTime deletedAt
 ) {
+    public User(
+            UUID id,
+            String nickname,
+            LocalDateTime createdAt,
+            LocalDateTime updatedAt,
+            LocalDateTime deletedAt
+    ) {
+        this(id, nickname, null, null, null, createdAt, updatedAt, deletedAt);
+    }
 }

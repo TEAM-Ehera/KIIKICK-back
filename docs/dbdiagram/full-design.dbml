@@ -107,6 +107,7 @@ Table "quarter_summaries" {
   Note: '쿼터별 조회용 운동 지표. 원본 변경 시 재계산. 계산 기준·버전·지표별 상태를 보관하며 미계산은 null. docs/dbdiagram/quarter-summary.md 참조.'
   "quarter_id" BINARY(16) [pk, not null]
   "workout_payload_id" BINARY(16) [not null]
+  "calculation_job_id" BINARY(16) [not null]
   "calculation_status" VARCHAR(32) [not null]
   "calculation_version" VARCHAR(64) [not null]
   "calculation_parameters" JSON [not null]
