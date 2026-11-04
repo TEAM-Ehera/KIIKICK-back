@@ -8,6 +8,7 @@ import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -23,7 +24,6 @@ public class QuarterSummaryRepository {
             new QuarterSummary(
                     bytesToUuid(rs.getBytes("quarter_id")),
                     bytesToUuid(rs.getBytes("workout_payload_id")),
-                    bytesToUuid(rs.getBytes("calculation_job_id")),
                     rs.getString("calculation_status"),
                     rs.getString("calculation_version"),
                     rs.getString("calculation_parameters"),
@@ -53,64 +53,95 @@ public class QuarterSummaryRepository {
     }
 
     @Transactional
-    public UUID saveProcessing(
+    public LocalDateTime saveProcessing(
             UUID quarterId, UUID workoutPayloadId, String calculationVersion,
             String calculationParameters, String metricStatus,
             String sourcePayloadHash, LocalDateTime updatedAt
     ) {
-        // 계산을 시작할 때마다 새 작업 ID를 발급해 이전 작업과 구분한다.
-        UUID calculationJobId = UUID.randomUUID();
-        int updated = restartProcessing(
-                quarterId, workoutPayloadId, calculationJobId,
-                calculationVersion, calculationParameters, metricStatus,
-                sourcePayloadHash, updatedAt
-        );
+        LocalDateTime requestedAttemptAt = toMicroseconds(updatedAt);
 
-        if (updated > 0) {
-            return calculationJobId;
+        if (findUpdatedAt(quarterId).isPresent()) {
+            return restartExistingProcessing(
+                    quarterId, workoutPayloadId, calculationVersion,
+                    calculationParameters, metricStatus, sourcePayloadHash,
+                    requestedAttemptAt
+            );
         }
 
         try {
             jdbcTemplate.update(
                 """
                 INSERT INTO quarter_summaries (
-                    quarter_id, workout_payload_id, calculation_job_id, calculation_status,
+                    quarter_id, workout_payload_id, calculation_status,
                     calculation_version, calculation_parameters, metric_status,
                     source_payload_hash, updated_at
-                ) VALUES (?, ?, ?, 'PROCESSING', ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, 'PROCESSING', ?, ?, ?, ?, ?)
                 """,
                 uuidToBytes(quarterId), uuidToBytes(workoutPayloadId),
-                uuidToBytes(calculationJobId),
                 calculationVersion, calculationParameters, metricStatus,
-                sourcePayloadHash, updatedAt
+                sourcePayloadHash, requestedAttemptAt
             );
+            return requestedAttemptAt;
         } catch (DuplicateKeyException exception) {
-            // 최초 행을 동시에 만든 경우, 마지막으로 시작한 작업 ID를 현재 작업으로 만든다.
-            restartProcessing(
-                    quarterId, workoutPayloadId, calculationJobId,
-                    calculationVersion, calculationParameters, metricStatus,
-                    sourcePayloadHash, updatedAt
-            );
+            // 동시 최초 INSERT에서 다른 요청이 만든 행을 잠근 뒤 새 시도 시각을 발급한다.
         }
-        return calculationJobId;
+
+        return restartExistingProcessing(
+                quarterId, workoutPayloadId, calculationVersion,
+                calculationParameters, metricStatus, sourcePayloadHash,
+                requestedAttemptAt
+        );
+    }
+
+    private LocalDateTime restartExistingProcessing(
+            UUID quarterId,
+            UUID workoutPayloadId,
+            String calculationVersion,
+            String calculationParameters,
+            String metricStatus,
+            String sourcePayloadHash,
+            LocalDateTime requestedAttemptAt
+    ) {
+        LocalDateTime currentUpdatedAt = jdbcTemplate.queryForObject(
+                "SELECT updated_at FROM quarter_summaries WHERE quarter_id = ? FOR UPDATE",
+                LocalDateTime.class,
+                uuidToBytes(quarterId)
+        );
+        LocalDateTime attemptUpdatedAt = nextTimestamp(requestedAttemptAt, currentUpdatedAt);
+        int updated = restartProcessing(
+                quarterId, workoutPayloadId, calculationVersion,
+                calculationParameters, metricStatus, sourcePayloadHash,
+                currentUpdatedAt, attemptUpdatedAt
+        );
+        if (updated != 1) {
+            throw new IllegalStateException("계산 시도 식별값 갱신에 실패했습니다.");
+        }
+        return attemptUpdatedAt;
+    }
+
+    private Optional<LocalDateTime> findUpdatedAt(UUID quarterId) {
+        return jdbcTemplate.query(
+                "SELECT updated_at FROM quarter_summaries WHERE quarter_id = ?",
+                (rs, rowNum) -> rs.getTimestamp("updated_at").toLocalDateTime(),
+                uuidToBytes(quarterId)
+        ).stream().findFirst();
     }
 
     private int restartProcessing(
             UUID quarterId,
             UUID workoutPayloadId,
-            UUID calculationJobId,
             String calculationVersion,
             String calculationParameters,
             String metricStatus,
             String sourcePayloadHash,
-            LocalDateTime updatedAt
+            LocalDateTime expectedUpdatedAt,
+            LocalDateTime attemptUpdatedAt
     ) {
         // 새 계산이 시작되면 이전 결과를 비워 PROCESSING 결과로 노출되지 않게 한다.
         return jdbcTemplate.update(
                 """
                 UPDATE quarter_summaries SET
                     workout_payload_id = ?,
-                    calculation_job_id = ?,
                     calculation_status = 'PROCESSING',
                     calculation_version = ?,
                     calculation_parameters = ?,
@@ -133,11 +164,12 @@ public class QuarterSummaryRepository {
                     valid_gps_duration_seconds = NULL,
                     calculated_at = NULL,
                     updated_at = ?
-                WHERE quarter_id = ?
+                WHERE quarter_id = ? AND updated_at = ?
                 """,
-                uuidToBytes(workoutPayloadId), uuidToBytes(calculationJobId),
+                uuidToBytes(workoutPayloadId),
                 calculationVersion, calculationParameters, metricStatus,
-                sourcePayloadHash, updatedAt, uuidToBytes(quarterId)
+                sourcePayloadHash, attemptUpdatedAt, uuidToBytes(quarterId),
+                expectedUpdatedAt
         );
     }
 
@@ -150,8 +182,11 @@ public class QuarterSummaryRepository {
 
     public int updateCalculated(
             QuarterSummary summary,
-            String expectedSourceHash
+            String expectedSourceHash,
+            LocalDateTime expectedAttemptUpdatedAt
     ) {
+        LocalDateTime attemptUpdatedAt = toMicroseconds(expectedAttemptUpdatedAt);
+        LocalDateTime completedUpdatedAt = nextTimestamp(summary.updatedAt(), attemptUpdatedAt);
         return jdbcTemplate.update(
                 """
                 UPDATE quarter_summaries SET
@@ -166,7 +201,7 @@ public class QuarterSummaryRepository {
                     calculated_at = ?, updated_at = ?
                 WHERE quarter_id = ? AND workout_payload_id = ?
                   AND source_payload_hash = ?
-                  AND calculation_job_id = ?
+                  AND updated_at = ?
                   AND calculation_status = 'PROCESSING'
                 """,
                 summary.calculationStatus(), summary.metricStatus(),
@@ -178,28 +213,43 @@ public class QuarterSummaryRepository {
                 summary.maxHeartRateBpm(), summary.trimpEdwards(),
                 summary.hrMaxReferenceBpm(), summary.validHrDurationSeconds(),
                 summary.validGpsDurationSeconds(), summary.calculatedAt(),
-                summary.updatedAt(), uuidToBytes(summary.quarterId()),
+                completedUpdatedAt, uuidToBytes(summary.quarterId()),
                 uuidToBytes(summary.workoutPayloadId()), expectedSourceHash,
-                uuidToBytes(summary.calculationJobId())
+                attemptUpdatedAt
         );
     }
 
     public int markFailed(
             UUID quarterId,
             String expectedSourceHash,
-            UUID expectedCalculationJobId,
+            LocalDateTime expectedAttemptUpdatedAt,
             LocalDateTime updatedAt
     ) {
+        LocalDateTime attemptUpdatedAt = toMicroseconds(expectedAttemptUpdatedAt);
+        LocalDateTime failedUpdatedAt = nextTimestamp(updatedAt, attemptUpdatedAt);
         return jdbcTemplate.update(
                 """
                 UPDATE quarter_summaries
                 SET calculation_status = 'FAILED', updated_at = ?
                 WHERE quarter_id = ? AND source_payload_hash = ?
-                  AND calculation_job_id = ?
+                  AND updated_at = ?
                   AND calculation_status = 'PROCESSING'
                 """,
-                updatedAt, uuidToBytes(quarterId), expectedSourceHash,
-                uuidToBytes(expectedCalculationJobId)
+                failedUpdatedAt, uuidToBytes(quarterId), expectedSourceHash,
+                attemptUpdatedAt
         );
+    }
+
+    private static LocalDateTime nextTimestamp(
+            LocalDateTime requestedUpdatedAt,
+            LocalDateTime currentUpdatedAt
+    ) {
+        LocalDateTime requested = toMicroseconds(requestedUpdatedAt);
+        LocalDateTime current = toMicroseconds(currentUpdatedAt);
+        return requested.isAfter(current) ? requested : current.plusNanos(1_000);
+    }
+
+    private static LocalDateTime toMicroseconds(LocalDateTime value) {
+        return value.truncatedTo(ChronoUnit.MICROS);
     }
 }

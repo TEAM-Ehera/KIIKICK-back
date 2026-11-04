@@ -1,15 +1,11 @@
 package com.teamehera.kiikick.workout.domain;
 
-import com.fasterxml.jackson.annotation.JsonIgnore;
-
 import java.time.LocalDateTime;
 import java.util.UUID;
 
 public record QuarterSummary(
         UUID quarterId,
         UUID workoutPayloadId,
-        @JsonIgnore
-        UUID calculationJobId,
         String calculationStatus,
         String calculationVersion,
         String calculationParameters,
