@@ -43,3 +43,7 @@
 사용자가 확정한 요구사항과 별도 기술 제안을 구분한다. Notion 상세 본문은 확인하지 못했고 미확인 내용을 확정 요구사항으로 추가하지 않았다. 운동 원본 필드는 [iOS DTO](https://github.com/DeveloperAcademy-POSTECH/2026-C6-A03-KIIKICK-iOS/blob/main/docs/dto/workout-payload.md)를 따른다. Watch → iPhone 전송과 신규 서버 API 계약을 구별한다.
 
 기능 명세 → 정책 목록 → API → ERD 순으로 검토한다. 계산 지표는 계산 계약을 함께 읽는다. 이 문서들은 목표 설계이며 서버 구현·인증 적용·마이그레이션·배포 완료를 뜻하지 않는다. docs/dbdiagram/current-pr.*는 비교 당시 구현의 역사적 스키마로 유지한다. full-design.*가 현재 설계 기준이다. SQL은 ERD 생성용이며 운영 DB에 실행하지 않았다.
+
+## 운영 관측과 CI
+
+- [CloudWatch·Discord·Jenkins 설정 및 장애 대응](../ops/observability/README.md)
