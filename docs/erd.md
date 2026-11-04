@@ -2,7 +2,7 @@
 
 **v0.4 · 2026-11-02 · 개인 기록 설계**
 
-기준 물리 정의는 [full-design.sql](dbdiagram/full-design.sql)과 [full-design.dbml](dbdiagram/full-design.dbml)이다. 컬럼 사전은 해당 SQL의 20개 테이블·28개 FK를 반영한다. 전체 ERD 이미지는 사용자가 제공한 dbdiagram 화면을 사용한다. 운영 DB나 현재 PR에 적용된 스키마라는 의미는 아니다.
+기준 물리 정의는 [full-design.sql](dbdiagram/full-design.sql)과 [full-design.dbml](dbdiagram/full-design.dbml)이다. 컬럼 사전은 해당 SQL의 24개 테이블·30개 FK를 반영한다. 전체 ERD 이미지는 사용자가 제공한 dbdiagram 화면을 사용한다. 운영 DB나 현재 PR에 적용된 스키마라는 의미는 아니다.
 
 ## 1. 모델 원칙
 
@@ -48,6 +48,65 @@
 | created_at | DATETIME(6) | NOT NULL |  |
 
 인덱스: `PRIMARY KEY (`id`)`; `UNIQUE KEY `uk_identity_provider_subject` (`provider`, `subject`)`.
+
+### email_credentials
+
+이메일·비밀번호 로그인 Credential. 정규화 이메일을 서비스 식별자로 사용한다.
+
+| 컬럼 | SQL 타입 | null | 키 |
+| --- | --- | --- | --- |
+| user_id | BINARY(16) | NOT NULL | PK |
+| email | VARCHAR(320) | NOT NULL |  |
+| normalized_email | VARCHAR(320) | NOT NULL | UNIQUE |
+| password_hash | VARCHAR(100) | NOT NULL |  |
+| email_verified_at | DATETIME(6) | NOT NULL |  |
+| password_changed_at | DATETIME(6) | NOT NULL |  |
+| created_at | DATETIME(6) | NOT NULL |  |
+| updated_at | DATETIME(6) | NOT NULL |  |
+
+### email_verification_flows
+
+가입·재설정 이메일 인증과 검증 후 일회용 Action Token 상태. 코드 원문 대신 용도별 HMAC-SHA-256, Action Token 원문 대신 SHA-256 해시를 저장한다.
+
+| 컬럼 | SQL 타입 | null | 키 |
+| --- | --- | --- | --- |
+| id | BINARY(16) | NOT NULL | PK |
+| normalized_email | VARCHAR(320) | NOT NULL |  |
+| purpose | VARCHAR(32) | NOT NULL |  |
+| code_hash | CHAR(64) | NULL |  |
+| failed_attempts | INT | NOT NULL |  |
+| code_expires_at | DATETIME(6) | NOT NULL |  |
+| last_sent_at | DATETIME(6) | NOT NULL |  |
+| verified_at | DATETIME(6) | NULL |  |
+| invalidated_at | DATETIME(6) | NULL |  |
+| action_token_hash | CHAR(64) | NULL | UNIQUE |
+| action_token_expires_at | DATETIME(6) | NULL |  |
+| action_token_consumed_at | DATETIME(6) | NULL |  |
+| created_at | DATETIME(6) | NOT NULL |  |
+| updated_at | DATETIME(6) | NOT NULL |  |
+
+### auth_rate_limit_keys
+
+이메일·IP별 발송 제한을 직렬화하기 위한 잠금 키. IP는 원문 대신 별도 HMAC을 사용한다.
+
+| 컬럼 | SQL 타입 | null | 키 |
+| --- | --- | --- | --- |
+| rate_action | VARCHAR(64) | NOT NULL | PK |
+| limit_type | VARCHAR(16) | NOT NULL | PK |
+| key_value | VARCHAR(320) | NOT NULL | PK |
+| created_at | DATETIME(6) | NOT NULL |  |
+
+### auth_rate_limit_events
+
+최근 24시간·1분의 슬라이딩 발송 횟수를 계산하는 성공 이벤트.
+
+| 컬럼 | SQL 타입 | null | 키 |
+| --- | --- | --- | --- |
+| id | BINARY(16) | NOT NULL | PK |
+| rate_action | VARCHAR(64) | NOT NULL |  |
+| limit_type | VARCHAR(16) | NOT NULL |  |
+| key_value | VARCHAR(320) | NOT NULL |  |
+| occurred_at | DATETIME(6) | NOT NULL |  |
 
 ### user_consents
 
@@ -369,6 +428,8 @@ GPS 원본 전체. 각 배열의 0부터 시작하는 sample_seq를 유지.
 | FK | 자식 | 부모 | ON DELETE |
 | --- | --- | --- | --- |
 | fk_01_auth_identities | auth_identities.(user_id) | users.(id) | RESTRICT |
+| fk_email_credentials_user | email_credentials.(user_id) | users.(id) | RESTRICT |
+| fk_auth_rate_limit_events_key | auth_rate_limit_events.(rate_action, limit_type, key_value) | auth_rate_limit_keys.(rate_action, limit_type, key_value) | RESTRICT |
 | fk_02_user_consents | user_consents.(user_id) | users.(id) | RESTRICT |
 | fk_03_venues | venues.(owner_id) | users.(id) | RESTRICT |
 | fk_04_matches | matches.(owner_id) | users.(id) | RESTRICT |
