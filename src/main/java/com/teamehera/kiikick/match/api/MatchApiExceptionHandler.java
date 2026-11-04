@@ -3,6 +3,8 @@ package com.teamehera.kiikick.match.api;
 import com.teamehera.kiikick.match.service.MatchListQuery.InvalidListRequest;
 import com.teamehera.kiikick.match.service.MatchMutation;
 import com.teamehera.kiikick.match.service.MatchSettingsService.InvalidState;
+import com.teamehera.kiikick.match.service.QuarterLifecycleService.ActiveQuarterExists;
+import com.teamehera.kiikick.match.service.QuarterLifecycleService.QuarterNotEnded;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpHeaders;
 import com.teamehera.kiikick.match.service.MatchOwnership.ResourceNotFound;
@@ -64,6 +66,18 @@ public class MatchApiExceptionHandler {
     @ExceptionHandler(InvalidState.class)
     public ResponseEntity<MatchApiResponse.Failure> invalidState(HttpServletRequest request) {
         return failure(HttpStatus.CONFLICT, "INVALID_STATE", "경기 상태를 확인해주세요.", Map.of(), request);
+    }
+
+    @ExceptionHandler(ActiveQuarterExists.class)
+    public ResponseEntity<MatchApiResponse.Failure> activeQuarterExists(HttpServletRequest request) {
+        return failure(HttpStatus.CONFLICT, "ACTIVE_QUARTER_EXISTS", "진행 중인 쿼터를 먼저 완료해주세요.",
+                Map.of(), request);
+    }
+
+    @ExceptionHandler(QuarterNotEnded.class)
+    public ResponseEntity<MatchApiResponse.Failure> quarterNotEnded(HttpServletRequest request) {
+        return failure(HttpStatus.CONFLICT, "QUARTER_NOT_ENDED", "쿼터 측정을 먼저 마감해주세요.",
+                Map.of(), request);
     }
 
     @ExceptionHandler(MatchController.Unauthenticated.class)

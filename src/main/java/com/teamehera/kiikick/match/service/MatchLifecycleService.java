@@ -25,7 +25,7 @@ public class MatchLifecycleService {
     public Match transition(Match match, String action) {
         String status = match.status();
         String nextStatus = switch (action) {
-            case "ready" -> "DRAFT".equals(status) && quarters.hasReadyQuarter(match.id()) ? "READY" : null;
+            case "ready" -> "DRAFT".equals(status) && quarters.hasQuarterInStatus(match.id(), "READY") ? "READY" : null;
             case "start" -> "READY".equals(status) ? "IN_PROGRESS" : null;
             case "cancel" -> "DRAFT".equals(status) || "READY".equals(status) ? "CANCELLED" : null;
             case "end" -> "IN_PROGRESS".equals(status) && quarters.hasOnlyCompletedQuarters(match.id())
