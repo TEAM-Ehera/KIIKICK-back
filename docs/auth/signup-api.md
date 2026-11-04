@@ -1,5 +1,8 @@
 # 이메일 회원가입 완료 API
 
+공유 API 계약은 [`docs/api/auth.md`의 AUTH-01C](../api/auth.md#auth-01c)를 기준으로 한다.
+이 문서는 #72 구현의 전체 성공 응답과 저장 규칙을 보충한다.
+
 `POST /api/v1/auth/signup`은 이메일 인증 성공 시 받은 일회용 `registrationToken`과
 비밀번호로 회원가입을 완료하는 공개 API다.
 
