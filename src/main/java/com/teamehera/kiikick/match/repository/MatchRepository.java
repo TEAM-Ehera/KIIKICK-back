@@ -137,4 +137,14 @@ public class MatchRepository {
                 sql, rowMapper, uuidToBytes(id), uuidToBytes(ownerId)
         ).stream().findFirst();
     }
+
+    public void detachVenue(UUID venueId) {
+        jdbcTemplate.update(
+                """
+                UPDATE matches SET venue_id = NULL, version = version + 1, updated_at = CURRENT_TIMESTAMP(6)
+                WHERE venue_id = ?
+                """,
+                uuidToBytes(venueId)
+        );
+    }
 }
