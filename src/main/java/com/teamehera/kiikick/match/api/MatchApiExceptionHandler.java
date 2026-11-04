@@ -6,6 +6,7 @@ import com.teamehera.kiikick.match.service.MatchSettingsService.InvalidState;
 import com.teamehera.kiikick.match.service.QuarterLifecycleService.ActiveQuarterExists;
 import com.teamehera.kiikick.match.service.QuarterLifecycleService.QuarterNotEnded;
 import com.teamehera.kiikick.global.exception.InvalidWorkoutPayloadException;
+import com.teamehera.kiikick.workout.service.QuarterSummaryCommands;
 import com.teamehera.kiikick.workout.service.QuarterWorkoutUpload;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpHeaders;
@@ -109,6 +110,16 @@ public class MatchApiExceptionHandler {
     public ResponseEntity<MatchApiResponse.Failure> workoutTooLarge(HttpServletRequest request) {
         return failure(HttpStatus.valueOf(413), "PAYLOAD_TOO_LARGE", "운동 원본 크기 제한을 초과했습니다.",
                 Map.of(), request);
+    }
+
+    @ExceptionHandler(QuarterSummaryCommands.WorkoutRequired.class)
+    public ResponseEntity<MatchApiResponse.Failure> workoutRequired(HttpServletRequest request) {
+        return failure(HttpStatus.CONFLICT, "WORKOUT_REQUIRED", "운동 원본을 먼저 업로드해주세요.", Map.of(), request);
+    }
+
+    @ExceptionHandler(QuarterSummaryCommands.CalculationInProgress.class)
+    public ResponseEntity<MatchApiResponse.Failure> calculationInProgress(HttpServletRequest request) {
+        return failure(HttpStatus.CONFLICT, "CALCULATION_IN_PROGRESS", "운동 요약 계산을 진행 중입니다.", Map.of(), request);
     }
 
     @ExceptionHandler(MatchController.Unauthenticated.class)

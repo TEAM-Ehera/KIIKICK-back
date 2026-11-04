@@ -316,7 +316,7 @@ path: quarterId. 본문: hrMaxReferenceBpm(필수, 유한한 양수).
 
 ### 오류와 앱 대응
 
-원본 미수신은 409 WORKOUT_REQUIRED, 기준값 오류는 422. [공통 오류](common.md#errors)도 적용한다.
+원본 미수신은 409 WORKOUT_REQUIRED, 진행 중인 다른 요청은 409 CALCULATION_IN_PROGRESS, 기준값 오류는 422. [공통 오류](common.md#errors)도 적용한다.
 
 <a id="work-07"></a>
 ## WORK-07 · 운동 요약 재계산 요청

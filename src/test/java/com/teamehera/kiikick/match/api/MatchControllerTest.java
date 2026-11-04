@@ -811,6 +811,66 @@ class MatchControllerTest {
         assertEquals(10, parameters.at("/heartRatePolicy/maxGapSeconds").intValue());
     }
 
+    @Test
+    void summarySettingsAndRecalculationPreserveReferenceAndReplayAfterCompletion() throws Exception {
+        String upload = completedQuarterUploadPath();
+        UUID quarterId = UUID.fromString(upload.split("/")[4]);
+        String summary = upload.replace("/workout-payloads", "/summary");
+        String settings = summary + "/settings";
+        mvc.perform(transition(summary, "recalculate", actor, UUID.randomUUID(), 8))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.error.code").value("WORKOUT_REQUIRED"));
+        mvc.perform(workoutUpload(upload, actor, UUID.randomUUID(), 8, WORKOUT)).andExpect(status().isCreated());
+        mvc.perform(transition(summary, "recalculate", actor, UUID.randomUUID(), 9))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.error.code").value("CALCULATION_IN_PROGRESS"));
+        var oldJob = pendingSummary(quarterId);
+        summaryCalculation.process(oldJob);
+
+        String valid = json.writeValueAsString(java.util.Map.of("hrMaxReferenceBpm", 190));
+        String invalid = json.writeValueAsString(java.util.Map.of("hrMaxReferenceBpm", 0));
+        mvc.perform(write(put(settings), actor, UUID.randomUUID(), invalid).header("If-Match", tag(10)))
+                .andExpect(status().isUnprocessableContent());
+        mvc.perform(write(put(settings), other, UUID.randomUUID(), valid).header("If-Match", tag(10)))
+                .andExpect(status().isNotFound());
+        mvc.perform(write(put(settings), actor, UUID.randomUUID(), valid).header("If-Match", tag(9)))
+                .andExpect(status().isPreconditionFailed());
+
+        UUID settingsKey = UUID.randomUUID();
+        var accepted = mvc.perform(write(put(settings), actor, settingsKey, valid).header("If-Match", tag(10)))
+                .andExpect(status().isAccepted()).andExpect(header().string("ETag", tag(11)))
+                .andExpect(header().string("Location", summary)).andExpect(header().string("Retry-After", "5"))
+                .andExpect(jsonPath("$.data.calculationStatus").value("PROCESSING"))
+                .andExpect(jsonPath("$.data.totalDistanceM").value(nullValue()))
+                .andReturn().getResponse();
+        var newJob = pendingSummary(quarterId);
+        summaryCalculation.process(oldJob);
+        assertEquals(newJob.summary().calculationJobId(), pendingSummary(quarterId).summary().calculationJobId());
+        mvc.perform(write(put(settings), actor, UUID.randomUUID(), valid).header("If-Match", tag(11)))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.error.code").value("CALCULATION_IN_PROGRESS"));
+        summaryCalculation.process(newJob);
+        mvc.perform(write(put(settings), actor, settingsKey, valid).header("If-Match", tag(10)))
+                .andExpect(status().isAccepted()).andExpect(header().string("ETag", tag(11)))
+                .andExpect(content().string(accepted.getContentAsString()));
+        mvc.perform(get(summary).principal(actor::toString))
+                .andExpect(header().string("ETag", tag(12)))
+                .andExpect(jsonPath("$.data.hrMaxReferenceBpm").value(190.0));
+
+        UUID recalculateKey = UUID.randomUUID();
+        var requested = mvc.perform(transition(summary, "recalculate", actor, recalculateKey, 12))
+                .andExpect(status().isAccepted()).andExpect(header().string("ETag", tag(13)))
+                .andReturn().getResponse();
+        var recalculated = pendingSummary(quarterId);
+        var parameters = json.readTree(recalculated.summary().calculationParameters());
+        assertEquals(190.0, parameters.path("hrMaxReferenceBpm").doubleValue());
+        assertEquals("USER_PROVIDED", parameters.path("hrMaxReferenceSource").stringValue());
+        assertEquals(oldJob.summary().sourcePayloadHash(), recalculated.summary().sourcePayloadHash());
+        summaryCalculation.process(recalculated);
+        mvc.perform(transition(summary, "recalculate", actor, recalculateKey, 12))
+                .andExpect(status().isAccepted()).andExpect(content().string(requested.getContentAsString()));
+        mvc.perform(get(summary).principal(actor::toString))
+                .andExpect(header().string("ETag", tag(14)))
+                .andExpect(jsonPath("$.data.hrMaxReferenceBpm").value(190.0));
+    }
+
     private QuarterSummaryRepository.PendingCalculation pendingSummary(UUID quarterId) {
         return summaries.findProcessing(100).stream().filter(job -> job.summary().quarterId().equals(quarterId))
                 .findFirst().orElseThrow();

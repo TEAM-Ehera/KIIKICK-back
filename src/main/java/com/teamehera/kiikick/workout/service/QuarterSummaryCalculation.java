@@ -22,6 +22,7 @@ import java.util.Set;
 
 @Service
 public class QuarterSummaryCalculation {
+    static final String VERSION = "v3";
     private static final Set<String> BASIC_METRICS = Set.of("totalDistanceM", "totalCaloriesKcal");
     private static final List<String> METRICS = List.of(
             "durationSeconds", "maxSpeedMps", "totalDistanceM", "totalCaloriesKcal", "averageSpeedMps",
@@ -76,19 +77,32 @@ public class QuarterSummaryCalculation {
     }
 
     private QuarterSummary calculate(QuarterSummary pending, WorkoutPayload workout) {
-        var stored = json.readTree(pending.calculationParameters());
-        var parameters = stored instanceof ObjectNode object
-                ? object.deepCopy() : json.createObjectNode();
+        var parameters = currentParameters(pending.calculationParameters());
         var input = parameters.path("hrMaxReferenceBpm");
         double reference = input.isNumber() ? input.doubleValue() : Double.NaN;
         Double referenceBpm = Double.isFinite(reference) && reference > 0 ? reference : null;
         var heart = HeartRateSummary.calculate(heartRates.findAllForCalculation(workout.id()), referenceBpm);
+        var movement = MovementSummary.calculate(workout, tracks.findAllForCalculation(workout.id()), heart);
+        var now = LocalDateTime.now(ZoneOffset.UTC);
+        var statuses = metricStatuses(heart, movement);
+        boolean ready = statuses.values().stream().allMatch(status -> "READY".equals(status.status()));
+        return new QuarterSummary(pending.quarterId(), workout.id(), pending.calculationJobId(),
+                ready ? "READY" : "PARTIAL", VERSION, json.writeValueAsString(parameters), json.writeValueAsString(statuses),
+                pending.sourcePayloadHash(), movement.elapsedSeconds(), movement.maxSpeed(),
+                workout.totalDistance(), workout.totalCalories(), movement.averageSpeed(), movement.highIntensityDistance(),
+                movement.accelerations(), movement.decelerations(), movement.turns(), heart.averageBpm(),
+                heart.maxBpm(), heart.trimp(), heart.referenceBpm(), heart.validSeconds(), movement.validSeconds(), now, now);
+    }
+
+    ObjectNode currentParameters(String storedParameters) {
+        var stored = json.readTree(storedParameters);
+        var parameters = stored instanceof ObjectNode object
+                ? object.deepCopy() : json.createObjectNode();
         parameters.set("heartRatePolicy", json.valueToTree(Map.of(
                     "minBpm", HeartRateSummary.MIN_BPM, "maxBpm", HeartRateSummary.MAX_BPM,
                     "maxGapSeconds", HeartRateSummary.MAX_GAP_SECONDS, "interpolation", "LINEAR",
                     "duplicateTimestamp", "LAST_VALID", "aboveHrMax", "EXCLUDE_FROM_TRIMP",
                     "zoneBoundaries", "LOWER_INCLUSIVE_UPPER_EXCLUSIVE_LAST_INCLUSIVE")));
-        var movement = MovementSummary.calculate(workout, tracks.findAllForCalculation(workout.id()), heart);
         parameters.set("movementPolicy", json.valueToTree(Map.of(
                 "maxAccuracyM", MovementSummary.MAX_ACCURACY_M, "maxSpeedMps", MovementSummary.MAX_SPEED_MPS,
                 "maxGapSeconds", MovementSummary.MAX_GAP_SECONDS, "minMovingSpeedMps", MovementSummary.MIN_MOVING_SPEED_MPS,
@@ -96,15 +110,7 @@ public class QuarterSummaryCalculation {
                 "turnDegrees", MovementSummary.TURN_DEGREES, "minEventSeconds", MovementSummary.MIN_EVENT_SECONDS,
                 "highIntensityHrRatio", HeartRateSummary.HIGH_INTENSITY_HR_RATIO,
                 "averageSpeedTime", "ELAPSED_INCLUDING_PAUSES", "duplicateTimestamp", "LAST_VALID")));
-        var now = LocalDateTime.now(ZoneOffset.UTC);
-        var statuses = metricStatuses(heart, movement);
-        boolean ready = statuses.values().stream().allMatch(status -> "READY".equals(status.status()));
-        return new QuarterSummary(pending.quarterId(), workout.id(), pending.calculationJobId(),
-                ready ? "READY" : "PARTIAL", "v3", json.writeValueAsString(parameters), json.writeValueAsString(statuses),
-                pending.sourcePayloadHash(), movement.elapsedSeconds(), movement.maxSpeed(),
-                workout.totalDistance(), workout.totalCalories(), movement.averageSpeed(), movement.highIntensityDistance(),
-                movement.accelerations(), movement.decelerations(), movement.turns(), heart.averageBpm(),
-                heart.maxBpm(), heart.trimp(), heart.referenceBpm(), heart.validSeconds(), movement.validSeconds(), now, now);
+        return parameters;
     }
 
     private static Map<String, MetricStatus> metricStatuses(HeartRateSummary.Result heart, MovementSummary.Result movement) {
