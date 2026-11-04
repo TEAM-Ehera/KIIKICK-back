@@ -6,22 +6,29 @@ import com.teamehera.kiikick.auth.service.SignupService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.junit.jupiter.api.extension.ExtendWith;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
 import static org.mockito.Mockito.when;
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest(properties = "spring.sql.init.mode=never")
 @AutoConfigureMockMvc
+@ExtendWith(OutputCaptureExtension.class)
 class SignupControllerTest {
 
     @Autowired MockMvc mockMvc;
@@ -90,5 +97,36 @@ class SignupControllerTest {
                         .content("{}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code").value("VALIDATION_FAILED"));
+    }
+
+    @Test
+    void 실패응답과_일반로그에_토큰원문을_노출하지_않는다(CapturedOutput output)
+            throws Exception {
+        String registrationToken = "raw-registration-token-secret";
+        String accessToken = "raw-access-token-secret";
+        String refreshToken = "raw-refresh-token-secret";
+        when(signupService.signup(registrationToken, "Valid-local-72!"))
+                .thenThrow(SignupApiException.tokenIssuanceFailed(
+                        new IllegalStateException(
+                                accessToken + " " + refreshToken + " " + registrationToken
+                        )
+                ));
+
+        mockMvc.perform(post("/api/v1/auth/signup")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "registrationToken": "raw-registration-token-secret",
+                                  "password": "Valid-local-72!"
+                                }
+                                """))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.error.code").value("TOKEN_ISSUANCE_FAILED"))
+                .andExpect(content().string(not(containsString(registrationToken))))
+                .andExpect(content().string(not(containsString(accessToken))))
+                .andExpect(content().string(not(containsString(refreshToken))));
+
+        org.assertj.core.api.Assertions.assertThat(output.getAll())
+                .doesNotContain(registrationToken, accessToken, refreshToken);
     }
 }

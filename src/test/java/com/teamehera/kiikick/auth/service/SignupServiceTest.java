@@ -114,6 +114,7 @@ class SignupServiceTest {
                 result.sessionId(), LocalDateTime.ofInstant(NOW, ZoneOffset.UTC)
         )).get().satisfies(session -> {
             assertThat(session.refreshTokenHash()).isEqualTo("a".repeat(64));
+            assertThat(session.refreshTokenHash()).isNotEqualTo("refresh-token");
             assertThat(session.deviceId()).isNull();
         });
         assertThat(result.accessToken()).isEqualTo("access-token");
@@ -158,6 +159,9 @@ class SignupServiceTest {
                 createRegistrationToken(email, 10), "Valid-first-72!"
         );
         String secondToken = createRegistrationToken(email, 10);
+        int usersBefore = countRows("users");
+        int credentialsBefore = countRows("email_credentials");
+        int sessionsBefore = countRows("auth_sessions");
 
         assertThatThrownBy(() -> signupService.signup(
                 secondToken, "Valid-second-72!"
@@ -170,6 +174,9 @@ class SignupServiceTest {
                 "SIGN_UP",
                 LocalDateTime.ofInstant(NOW, ZoneOffset.UTC)
         )).isPresent();
+        assertThat(countRows("users")).isEqualTo(usersBefore);
+        assertThat(countRows("email_credentials")).isEqualTo(credentialsBefore);
+        assertThat(countRows("auth_sessions")).isEqualTo(sessionsBefore);
     }
 
     @Test
@@ -179,6 +186,8 @@ class SignupServiceTest {
         int usersBefore = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM users", Integer.class
         );
+        int credentialsBefore = countRows("email_credentials");
+        int sessionsBefore = countRows("auth_sessions");
         when(accessTokenService.issue(any(UUID.class), any(UUID.class)))
                 .thenThrow(new JwtEncodingException("encoding failed"));
 
@@ -192,6 +201,8 @@ class SignupServiceTest {
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM users", Integer.class
         )).isEqualTo(usersBefore);
+        assertThat(countRows("email_credentials")).isEqualTo(credentialsBefore);
+        assertThat(countRows("auth_sessions")).isEqualTo(sessionsBefore);
         assertThat(flowRepository.findActiveByActionToken(
                 hashEncoder.hashActionToken(registrationToken),
                 "SIGN_UP",
@@ -206,6 +217,8 @@ class SignupServiceTest {
         int usersBefore = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM users", Integer.class
         );
+        int credentialsBefore = countRows("email_credentials");
+        int sessionsBefore = countRows("auth_sessions");
         when(refreshTokenIssuer.issue()).thenReturn(new IssuedRefreshToken(
                 "refresh-token", "a".repeat(65), NOW.plusSeconds(90L * 24 * 60 * 60)
         ));
@@ -218,6 +231,8 @@ class SignupServiceTest {
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM users", Integer.class
         )).isEqualTo(usersBefore);
+        assertThat(countRows("email_credentials")).isEqualTo(credentialsBefore);
+        assertThat(countRows("auth_sessions")).isEqualTo(sessionsBefore);
         assertThat(flowRepository.findActiveByActionToken(
                 hashEncoder.hashActionToken(registrationToken),
                 "SIGN_UP",
@@ -231,6 +246,9 @@ class SignupServiceTest {
         String email = uniqueEmail("concurrent");
         String firstToken = createRegistrationToken(email, 10);
         String secondToken = createRegistrationToken(email, 10);
+        int usersBefore = countRows("users");
+        int credentialsBefore = countRows("email_credentials");
+        int sessionsBefore = countRows("auth_sessions");
         ExecutorService pool = Executors.newFixedThreadPool(2);
         CountDownLatch ready = new CountDownLatch(2);
         CountDownLatch start = new CountDownLatch(1);
@@ -262,6 +280,19 @@ class SignupServiceTest {
                     Integer.class,
                     email
             )).isEqualTo(1);
+            assertThat(countRows("users")).isEqualTo(usersBefore + 1);
+            assertThat(countRows("email_credentials")).isEqualTo(credentialsBefore + 1);
+            assertThat(countRows("auth_sessions")).isEqualTo(sessionsBefore + 1);
+            assertThat(jdbcTemplate.queryForObject(
+                    """
+                    SELECT COUNT(*) FROM email_verification_flows
+                    WHERE action_token_hash IN (?, ?)
+                      AND action_token_consumed_at IS NULL
+                    """,
+                    Integer.class,
+                    hashEncoder.hashActionToken(firstToken),
+                    hashEncoder.hashActionToken(secondToken)
+            )).isEqualTo(1);
         } finally {
             pool.shutdownNow();
         }
@@ -288,6 +319,10 @@ class SignupServiceTest {
 
     private String uniqueEmail(String prefix) {
         return prefix + "-" + UUID.randomUUID() + "@example.com";
+    }
+
+    private int countRows(String table) {
+        return jdbcTemplate.queryForObject("SELECT COUNT(*) FROM " + table, Integer.class);
     }
 
     @TestConfiguration
