@@ -2,6 +2,7 @@ package com.teamehera.kiikick.match.api;
 
 import com.teamehera.kiikick.match.service.MatchListQuery.InvalidListRequest;
 import com.teamehera.kiikick.match.service.MatchMutation;
+import com.teamehera.kiikick.match.service.MatchResultQuery.ResultNotReady;
 import com.teamehera.kiikick.match.service.MatchSettingsService.InvalidState;
 import com.teamehera.kiikick.match.service.QuarterLifecycleService.ActiveQuarterExists;
 import com.teamehera.kiikick.match.service.QuarterLifecycleService.QuarterNotEnded;
@@ -120,6 +121,11 @@ public class MatchApiExceptionHandler {
     @ExceptionHandler(QuarterSummaryCommands.CalculationInProgress.class)
     public ResponseEntity<MatchApiResponse.Failure> calculationInProgress(HttpServletRequest request) {
         return failure(HttpStatus.CONFLICT, "CALCULATION_IN_PROGRESS", "운동 요약 계산을 진행 중입니다.", Map.of(), request);
+    }
+
+    @ExceptionHandler(ResultNotReady.class)
+    public ResponseEntity<MatchApiResponse.Failure> resultNotReady(HttpServletRequest request) {
+        return failure(HttpStatus.CONFLICT, "RESULT_NOT_READY", "완료된 기록의 결과만 조회할 수 있습니다.", Map.of(), request);
     }
 
     @ExceptionHandler(MatchController.Unauthenticated.class)

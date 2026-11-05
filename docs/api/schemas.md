@@ -270,10 +270,10 @@ calculation_job_id, calculation_parameters와 source_payload_hash는 내부 작�
 | --- | --- | --- | --- |
 | match | Match | 필수 | 본인 완료 경기 |
 | quarterCount | integer | 필수 | 완료 쿼터 개수 |
-| goals | integer | nullable | 모든 쿼터 stats가 있으면 합계, 누락 있으면 null |
+| goals | integer | nullable | 모든 완료 쿼터 stats가 있으면 합계, 누락 있으면 null. 모든 값이 0이면 0 |
 | assists | integer | nullable | 동일 규칙 |
 | missingStatsQuarterIds | UUID[] | 필수 | 직접 입력 기록 누락 쿼터 |
-| summaryAvailability | object | 필수 | {ready,partial,processing,failed,missing} 쿼터 수. 경기 상태와 독립 |
+| summaryAvailability | object | 필수 | {ready,partial,processing,failed,missing} 완료 쿼터 수. 각 값은 0 이상이며 요약 행이 없으면 missing |
 
 <a id="analyticsmeta"></a>
 ## AnalyticsMeta
