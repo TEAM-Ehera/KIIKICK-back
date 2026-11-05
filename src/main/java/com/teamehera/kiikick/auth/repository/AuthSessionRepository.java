@@ -47,8 +47,9 @@ public class AuthSessionRepository {
     public Optional<AuthSession> findActiveById(UUID id, LocalDateTime now) {
         return jdbcTemplate.query(
                 """
-                SELECT * FROM auth_sessions
-                WHERE id = ? AND revoked_at IS NULL AND expires_at > ?
+                SELECT s.* FROM auth_sessions s
+                JOIN users u ON u.id = s.user_id AND u.deleted_at IS NULL
+                WHERE s.id = ? AND s.revoked_at IS NULL AND s.expires_at > ?
                 """,
                 rowMapper, uuidToBytes(id), now
         ).stream().findFirst();
@@ -59,8 +60,9 @@ public class AuthSessionRepository {
     ) {
         return jdbcTemplate.query(
                 """
-                SELECT * FROM auth_sessions
-                WHERE refresh_token_hash = ? AND revoked_at IS NULL AND expires_at > ?
+                SELECT s.* FROM auth_sessions s
+                JOIN users u ON u.id = s.user_id AND u.deleted_at IS NULL
+                WHERE s.refresh_token_hash = ? AND s.revoked_at IS NULL AND s.expires_at > ?
                 """,
                 rowMapper, tokenHash, now
         ).stream().findFirst();

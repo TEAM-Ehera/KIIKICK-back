@@ -1,6 +1,8 @@
 package com.teamehera.kiikick.auth.security;
 
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpServletRequest;
+import com.teamehera.kiikick.match.api.MatchApiResponse;
 import org.springframework.http.MediaType;
 import tools.jackson.databind.ObjectMapper;
 
@@ -24,6 +26,7 @@ public class AuthSecurityErrorWriter {
     }
 
     public void write(
+            HttpServletRequest request,
             HttpServletResponse response,
             int status,
             String code,
@@ -33,28 +36,18 @@ public class AuthSecurityErrorWriter {
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         response.setCharacterEncoding("UTF-8");
 
-        ErrorBody body = new ErrorBody(
-                new ErrorDetail(code, message, false, null, Map.of()),
-                new ErrorMeta(
-                        "req-" + UUID.randomUUID(),
-                        OffsetDateTime.now(clock.withZone(SEOUL))
-                )
-        );
+        UUID requestId = UUID.randomUUID();
+        response.setHeader("X-Request-Id", requestId.toString());
+        if (status == 401) {
+            response.setHeader("WWW-Authenticate", "Bearer");
+        }
+        String persistence = switch (request.getMethod()) {
+            case "GET", "HEAD" -> null;
+            default -> "NOT_SAVED";
+        };
+        var body = new MatchApiResponse.Failure(
+                new MatchApiResponse.Error(code, message, status >= 500, persistence, Map.of()),
+                new MatchApiResponse.Meta(requestId, OffsetDateTime.now(clock.withZone(SEOUL))));
         objectMapper.writeValue(response.getOutputStream(), body);
-    }
-
-    record ErrorBody(ErrorDetail error, ErrorMeta meta) {
-    }
-
-    record ErrorDetail(
-            String code,
-            String message,
-            boolean retryable,
-            String persistence,
-            Map<String, Object> details
-    ) {
-    }
-
-    record ErrorMeta(String requestId, OffsetDateTime serverTime) {
     }
 }

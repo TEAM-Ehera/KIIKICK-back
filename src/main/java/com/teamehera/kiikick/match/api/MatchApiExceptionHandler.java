@@ -202,6 +202,25 @@ public class MatchApiExceptionHandler {
                 "푸시 토큰을 지금 저장할 수 없습니다.", Map.of(), request);
     }
 
+    @ExceptionHandler(RuntimeException.class)
+    public ResponseEntity<MatchApiResponse.Failure> unexpected(RuntimeException exception, HttpServletRequest request) {
+        boolean temporary = exception instanceof org.springframework.dao.TransientDataAccessException
+                || exception instanceof org.springframework.dao.DataAccessResourceFailureException;
+        var meta = MatchApiResponse.Meta.create();
+        // 예외 메시지에는 SQL·원본 입력이 포함될 수 있으므로 식별자와 예외 타입만 기록한다.
+        org.slf4j.LoggerFactory.getLogger(MatchApiExceptionHandler.class)
+                .error("API failure requestId={} type={}", meta.requestId(), exception.getClass().getSimpleName());
+        String persistence = switch (request.getMethod()) {
+            case "GET", "HEAD" -> null;
+            default -> "UNKNOWN";
+        };
+        var error = new MatchApiResponse.Error(temporary ? "TEMPORARILY_UNAVAILABLE" : "INTERNAL_ERROR",
+                "요청을 처리하지 못했습니다. 같은 요청으로 다시 확인해주세요.", true, persistence, Map.of());
+        return ResponseEntity.status(temporary ? 503 : 500)
+                .header(MatchApiResponse.REQUEST_ID_HEADER, meta.requestId().toString())
+                .body(new MatchApiResponse.Failure(error, meta));
+    }
+
     private ResponseEntity<MatchApiResponse.Failure> failure(
             HttpStatus status, String code, String message, Map<String, ?> details, HttpServletRequest request
     ) {

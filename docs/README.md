@@ -47,3 +47,5 @@
 ## 운영 관측과 CI
 
 - [CloudWatch·Discord·Jenkins 설정 및 장애 대응](../ops/observability/README.md)
+
+- [2026-11-05 전체 PR·통합 코드 리뷰](review/pr-code-review-2026-11-05.md): 발견 사항, 수정, PR별 결과, 복잡도 및 병합 제한.

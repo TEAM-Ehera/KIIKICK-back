@@ -81,9 +81,9 @@ public class MatchListQuery {
 
     private record Cursor(LocalDateTime createdAt, UUID id) {}
 
-    public record Page(List<MatchResponse> data, PageMeta meta) {}
+    public record Page(List<MatchResponse> data, PageMeta meta) implements MatchApiResponse.Envelope {}
 
-    public record PageMeta(UUID requestId, OffsetDateTime serverTime, Pagination pagination) {}
+    public record PageMeta(UUID requestId, OffsetDateTime serverTime, Pagination pagination) implements MatchApiResponse.Metadata {}
 
     public record Pagination(String nextCursor, boolean hasNext) {}
 

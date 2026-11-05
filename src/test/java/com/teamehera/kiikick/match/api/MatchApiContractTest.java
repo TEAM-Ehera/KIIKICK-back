@@ -97,6 +97,17 @@ class MatchApiContractTest {
                 .andExpect(jsonPath("$.error.code").value("RESOURCE_NOT_FOUND"));
     }
 
+    @Test
+    void unexpectedFailuresKeepEnvelopeAndNeverClaimMutationWasNotSaved() throws Exception {
+        mvc.perform(post("/contract/failure"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(header().exists("X-Request-Id"))
+                .andExpect(jsonPath("$.error.code").value("TEMPORARILY_UNAVAILABLE"))
+                .andExpect(jsonPath("$.error.persistence").value("UNKNOWN"))
+                .andExpect(jsonPath("$.error.retryable").value(true))
+                .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("private-payload"))));
+    }
+
     private static MockHttpServletRequestBuilder change(MockHttpServletRequestBuilder request) {
         return request.header("Authorization", "Bearer contract-test")
                 .header("Idempotency-Key", UUID.randomUUID().toString())
@@ -114,6 +125,11 @@ class MatchApiContractTest {
             this.actor = actor;
             this.quarterId = quarterId;
             this.ownership = ownership;
+        }
+
+        @PostMapping("/contract/failure")
+        void fail() {
+            throw new org.springframework.dao.DataAccessResourceFailureException("private-payload");
         }
 
         @PostMapping(QUARTERS)

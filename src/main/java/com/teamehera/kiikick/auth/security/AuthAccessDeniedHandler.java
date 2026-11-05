@@ -23,7 +23,7 @@ public class AuthAccessDeniedHandler implements AccessDeniedHandler {
             AccessDeniedException exception
     ) throws IOException, ServletException {
         errorWriter.write(
-                response,
+                request, response,
                 HttpServletResponse.SC_FORBIDDEN,
                 "FORBIDDEN",
                 "접근 권한이 없습니다."

@@ -126,7 +126,8 @@ public class QuarterWorkoutController {
                     summaryCommands.queue(match, quarterId, "PUT".equals(method) ? reference(body) : null);
                     var result = query.summary(actor, quarterId);
                     var headers = Map.of(HttpHeaders.LOCATION, location, HttpHeaders.RETRY_AFTER, SUMMARY_RETRY_SECONDS,
-                            HttpHeaders.ETAG, MatchMutation.etag(result.meta().matchVersion()));
+                            HttpHeaders.ETAG, MatchMutation.etag(result.meta().matchVersion()),
+                            MatchApiResponse.REQUEST_ID_HEADER, result.meta().requestId().toString());
                     return new MatchMutation.Response(202, json.writeValueAsString(headers), json.writeValueAsString(result));
                 }));
     }
@@ -230,8 +231,9 @@ public class QuarterWorkoutController {
         var body = new VersionedResponse<>(data, new DetailMeta(meta.requestId(), meta.serverTime(), result.matchVersion()));
         String tag = MatchMutation.etag(result.matchVersion());
         var headers = result.created()
-                ? Map.of(HttpHeaders.ETAG, tag, HttpHeaders.LOCATION, path + "/workout")
-                : Map.of(HttpHeaders.ETAG, tag);
+                ? Map.of(HttpHeaders.ETAG, tag, HttpHeaders.LOCATION, path + "/workout",
+                        MatchApiResponse.REQUEST_ID_HEADER, meta.requestId().toString())
+                : Map.of(HttpHeaders.ETAG, tag, MatchApiResponse.REQUEST_ID_HEADER, meta.requestId().toString());
         return new MatchMutation.Response(result.created() ? 201 : 200,
                 json.writeValueAsString(headers), json.writeValueAsString(body));
     }

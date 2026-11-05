@@ -150,8 +150,11 @@ public class VenueController {
     }
 
     private MatchMutation.Response response(int status, Map<String, String> headers, VenueService.View venue) {
-        return new MatchMutation.Response(status, json.writeValueAsString(headers),
-                venue == null ? null : json.writeValueAsString(success(venue)));
+        var meta = MatchApiResponse.Meta.create();
+        var responseHeaders = new java.util.LinkedHashMap<>(headers);
+        responseHeaders.put(MatchApiResponse.REQUEST_ID_HEADER, meta.requestId().toString());
+        return new MatchMutation.Response(status, json.writeValueAsString(responseHeaders),
+                venue == null ? null : json.writeValueAsString(new MatchApiResponse.Success<>(venue, meta)));
     }
 
     private static MatchApiResponse.Success<VenueService.View> success(VenueService.View venue) {

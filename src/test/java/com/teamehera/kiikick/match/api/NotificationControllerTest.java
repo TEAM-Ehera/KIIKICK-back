@@ -31,7 +31,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @SpringBootTest
 @AutoConfigureMockMvc
-class NotificationControllerTest {
+class NotificationControllerTest extends AuthenticatedApiTest {
     private static final String NOTIFICATIONS = "/api/v1/notifications";
     private final UUID actor = UUID.randomUUID();
     private final UUID other = UUID.randomUUID();
@@ -66,21 +66,21 @@ class NotificationControllerTest {
         UUID hidden = notify(actor, foreignMatch, now.plusSeconds(2));
         UUID otherNotification = notify(other, foreignMatch, now.plusSeconds(3));
 
-        var page = mvc.perform(get(NOTIFICATIONS).principal(actor::toString).param("limit", "1"))
+        var page = mvc.perform(get(NOTIFICATIONS).header("Authorization", bearer(actor)).param("limit", "1"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data[0].id").value(newer.toString()))
                 .andExpect(jsonPath("$.data[0].target.id").value(match.toString()))
                 .andExpect(header().exists("X-Request-Id")).andReturn().getResponse();
         String cursor = json.readTree(page.getContentAsString()).at("/meta/pagination/nextCursor").stringValue();
-        mvc.perform(get(NOTIFICATIONS).principal(actor::toString).param("cursor", cursor))
+        mvc.perform(get(NOTIFICATIONS).header("Authorization", bearer(actor)).param("cursor", cursor))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.length()").value(1))
                 .andExpect(jsonPath("$.data[0].id").value(older.toString()));
-        mvc.perform(get(NOTIFICATIONS).principal(actor::toString).param("cursor", cursor).param("unreadOnly", "true"))
+        mvc.perform(get(NOTIFICATIONS).header("Authorization", bearer(actor)).param("cursor", cursor).param("unreadOnly", "true"))
                 .andExpect(status().isBadRequest());
         assertCount(2);
         for (UUID denied : new UUID[]{hidden, otherNotification}) {
             mvc.perform(write(put(NOTIFICATIONS + "/" + denied + "/read"), actor)).andExpect(status().isNotFound());
         }
-        mvc.perform(get("/api/v1/matches/" + foreignMatch).principal(actor::toString)).andExpect(status().isNotFound());
+        mvc.perform(get("/api/v1/matches/" + foreignMatch).header("Authorization", bearer(actor))).andExpect(status().isNotFound());
 
         String read = NOTIFICATIONS + "/" + newer + "/read";
         var first = mvc.perform(write(put(read), actor)).andExpect(status().isOk())
@@ -89,7 +89,7 @@ class NotificationControllerTest {
         mvc.perform(write(put(read), actor)).andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.readAt").value(firstReadAt));
         assertCount(1);
-        mvc.perform(get(NOTIFICATIONS).principal(actor::toString).param("unreadOnly", "true"))
+        mvc.perform(get(NOTIFICATIONS).header("Authorization", bearer(actor)).param("unreadOnly", "true"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.length()").value(1))
                 .andExpect(jsonPath("$.data[0].id").value(older.toString()))
                 .andExpect(jsonPath("$.data[0].readAt").value(nullValue()));
@@ -107,12 +107,12 @@ class NotificationControllerTest {
         assertCount(1);
         UUID key = UUID.randomUUID();
         String read = NOTIFICATIONS + "/" + id + "/read";
-        mvc.perform(put(read).principal(actor::toString).header("Idempotency-Key", key)).andExpect(status().isOk());
+        mvc.perform(put(read).header("Authorization", bearer(actor)).header("Idempotency-Key", key)).andExpect(status().isOk());
 
         blocks.save(new UserBlock(other, actor, time));
-        mvc.perform(get(NOTIFICATIONS).principal(actor::toString))
+        mvc.perform(get(NOTIFICATIONS).header("Authorization", bearer(actor)))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.length()").value(0));
-        mvc.perform(put(read).principal(actor::toString).header("Idempotency-Key", key))
+        mvc.perform(put(read).header("Authorization", bearer(actor)).header("Idempotency-Key", key))
                 .andExpect(status().isNotFound());
     }
 
@@ -145,7 +145,7 @@ class NotificationControllerTest {
 
         UUID revokeKey = UUID.randomUUID();
         for (int i = 0; i < 2; i++) {
-            mvc.perform(delete(path).principal(actor::toString).header("Idempotency-Key", revokeKey))
+            mvc.perform(delete(path).header("Authorization", bearer(actor)).header("Idempotency-Key", revokeKey))
                     .andExpect(status().isNoContent()).andExpect(header().exists("X-Request-Id"));
         }
         var revoked = devices.findByIdAndUserId(id, actor).orElseThrow();
@@ -157,7 +157,7 @@ class NotificationControllerTest {
     }
 
     private void assertCount(int count) throws Exception {
-        mvc.perform(get(NOTIFICATIONS + "/unread-count").principal(actor::toString))
+        mvc.perform(get(NOTIFICATIONS + "/unread-count").header("Authorization", bearer(actor)))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.count").value(count));
     }
 
@@ -175,11 +175,11 @@ class NotificationControllerTest {
     }
 
     private MockHttpServletRequestBuilder register(String path, UUID user, UUID key, Map<String, ?> body) {
-        return put(path).principal(user::toString).header("Idempotency-Key", key)
+        return put(path).header("Authorization", bearer(user)).header("Idempotency-Key", key)
                 .contentType("application/json").content(json.writeValueAsString(body));
     }
 
-    private static MockHttpServletRequestBuilder write(MockHttpServletRequestBuilder request, UUID user) {
-        return request.principal(user::toString).header("Idempotency-Key", UUID.randomUUID());
+    private MockHttpServletRequestBuilder write(MockHttpServletRequestBuilder request, UUID user) {
+        return request.header("Authorization", bearer(user)).header("Idempotency-Key", UUID.randomUUID());
     }
 }

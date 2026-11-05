@@ -37,7 +37,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @SpringBootTest
 @AutoConfigureMockMvc
-class AnalyticsControllerTest {
+class AnalyticsControllerTest extends AuthenticatedApiTest {
     private static final String API = "/api/v1/analytics";
     private static final LocalDateTime SEOUL_MIDNIGHT_UTC = LocalDateTime.of(2026, 11, 4, 15, 0);
     private final UUID actor = UUID.randomUUID();
@@ -77,7 +77,7 @@ class AnalyticsControllerTest {
         summary(actor, first, "v2", 100, 10, 100, 10, 180);
         summary(actor, second, "v3", 300, 20, 150, 20, 190);
 
-        mvc.perform(get(API + "/summary").principal(actor::toString))
+        mvc.perform(get(API + "/summary").header("Authorization", bearer(actor)))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.matchCount").value(1))
                 .andExpect(jsonPath("$.data.goals").value(nullValue()))
                 .andExpect(jsonPath("$.data.meta.missingStatsQuarterCount").value(1))
@@ -86,16 +86,16 @@ class AnalyticsControllerTest {
                 .andExpect(jsonPath("$.data.metrics.averageHeartRateBpm.value").value(closeTo(4000.0 / 30, 1e-9)))
                 .andExpect(jsonPath("$.data.metrics.accelerationCount.status").value("POLICY_REQUIRED"))
                 .andExpect(jsonPath("$.data.metrics.trimpEdwards.status").value("POLICY_REQUIRED"));
-        mvc.perform(get(API + "/summary").principal(actor::toString)
+        mvc.perform(get(API + "/summary").header("Authorization", bearer(actor))
                         .param("to", "2026-11-05T00:00:00+09:00"))
                 .andExpect(jsonPath("$.data.goals").value(0))
                 .andExpect(jsonPath("$.data.quarterCount").value(1))
                 .andExpect(jsonPath("$.data.metrics.totalDistanceM.value").value(100.0));
-        mvc.perform(get(API + "/summary").principal(actor::toString)
+        mvc.perform(get(API + "/summary").header("Authorization", bearer(actor))
                         .param("from", "2026-11-05T00:00:00+09:00"))
                 .andExpect(jsonPath("$.data.quarterCount").value(1))
                 .andExpect(jsonPath("$.data.metrics.totalDistanceM.value").value(300.0));
-        mvc.perform(get(API + "/positions").principal(actor::toString))
+        mvc.perform(get(API + "/positions").header("Authorization", bearer(actor)))
                 .andExpect(jsonPath("$.data[0].positionCode").value("TEST"))
                 .andExpect(jsonPath("$.data[0].ratio").value(0.5))
                 .andExpect(jsonPath("$.data[1].positionCode").value(nullValue()));
@@ -108,7 +108,7 @@ class AnalyticsControllerTest {
         summary(actor, quarter, "v3", 200, 10, 100, 10, 180);
         String from = "2026-11-04T00:00:00+09:00";
         String to = "2026-11-06T00:00:00+09:00";
-        var first = mvc.perform(get(API + "/trends").principal(actor::toString)
+        var first = mvc.perform(get(API + "/trends").header("Authorization", bearer(actor))
                         .param("metric", "totalDistanceM").param("bucket", "DAY").param("limit", "1")
                         .param("from", from).param("to", to))
                 .andExpect(status().isOk())
@@ -117,17 +117,17 @@ class AnalyticsControllerTest {
                 .andExpect(jsonPath("$.data[0].result.value").value(nullValue()))
                 .andReturn().getResponse();
         String cursor = json.readTree(first.getContentAsString()).at("/meta/pagination/nextCursor").stringValue();
-        mvc.perform(get(API + "/trends").principal(actor::toString)
+        mvc.perform(get(API + "/trends").header("Authorization", bearer(actor))
                         .param("metric", "totalDistanceM").param("bucket", "DAY").param("cursor", cursor)
                         .param("from", from).param("to", to))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.length()").value(1))
                 .andExpect(jsonPath("$.data[0].bucketStart").value("2026-11-05T00:00:00+09:00"))
                 .andExpect(jsonPath("$.data[0].result.value").value(200.0));
-        mvc.perform(get(API + "/trends").principal(actor::toString)
+        mvc.perform(get(API + "/trends").header("Authorization", bearer(actor))
                         .param("metric", "totalCaloriesKcal").param("bucket", "DAY").param("cursor", cursor)
                         .param("from", from).param("to", to))
                 .andExpect(status().isBadRequest());
-        mvc.perform(get(API + "/trends").principal(actor::toString)
+        mvc.perform(get(API + "/trends").header("Authorization", bearer(actor))
                         .param("metric", "totalDistanceM").param("bucket", "MONTH").param("timeZone", "UTC"))
                 .andExpect(status().isUnprocessableContent());
     }
@@ -140,39 +140,39 @@ class AnalyticsControllerTest {
         summary(actor, quarter(prior, 1, SEOUL_MIDNIGHT_UTC.minusDays(1)), "v2", 100, 10, 100, 10, 180);
         summary(actor, quarter(current, 1, SEOUL_MIDNIGHT_UTC), "v3", 150, 10, 100, 10, 180);
         summary(friend, quarter(foreign, 1, SEOUL_MIDNIGHT_UTC), "v3", 80, 10, 100, 10, 200);
-        mvc.perform(get(API + "/match-comparison").principal(actor::toString)
+        mvc.perform(get(API + "/match-comparison").header("Authorization", bearer(actor))
                         .param("matchId", current.toString()).param("metric", "totalDistanceM"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.delta").value(50.0));
-        mvc.perform(get(API + "/match-comparison").principal(actor::toString)
+        mvc.perform(get(API + "/match-comparison").header("Authorization", bearer(actor))
                         .param("matchId", current.toString()).param("metric", "accelerationCount"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.delta").value(nullValue()));
-        mvc.perform(get(API + "/match-comparison").principal(actor::toString)
+        mvc.perform(get(API + "/match-comparison").header("Authorization", bearer(actor))
                         .param("matchId", current.toString()).param("previousMatchId", foreign.toString())
                         .param("metric", "totalDistanceM"))
                 .andExpect(status().isNotFound());
 
         String path = API + "/friend-comparison";
-        mvc.perform(get(path).principal(actor::toString).param("friendUserId", friend.toString())
+        mvc.perform(get(path).header("Authorization", bearer(actor)).param("friendUserId", friend.toString())
                         .param("metric", "totalDistanceM")).andExpect(status().isNotFound());
         var ordered = FriendPairRepository.normalize(actor, friend);
         pairs.save(new FriendPair(UUID.randomUUID(), ordered[0], ordered[1], actor, "ACCEPTED",
                 SEOUL_MIDNIGHT_UTC, SEOUL_MIDNIGHT_UTC));
         consent(actor, true, SEOUL_MIDNIGHT_UTC);
-        mvc.perform(get(path).principal(actor::toString).param("friendUserId", friend.toString())
+        mvc.perform(get(path).header("Authorization", bearer(actor)).param("friendUserId", friend.toString())
                         .param("metric", "totalDistanceM"))
                 .andExpect(status().isForbidden()).andExpect(jsonPath("$.error.code").value("CONSENT_REQUIRED"));
         consent(friend, true, SEOUL_MIDNIGHT_UTC);
-        mvc.perform(get(path).principal(actor::toString).param("friendUserId", friend.toString())
+        mvc.perform(get(path).header("Authorization", bearer(actor)).param("friendUserId", friend.toString())
                         .param("metric", "trimpEdwards").param("from", "2026-11-05T00:00:00+09:00"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.delta").value(nullValue()))
                 .andExpect(jsonPath("$.data.friend.metrics.trimpEdwards.value").value(5.0))
                 .andExpect(jsonPath("$.data.friend.matchId").doesNotExist())
                 .andExpect(jsonPath("$.data.friend.hrMaxReferenceBpm").doesNotExist());
         consent(friend, false, SEOUL_MIDNIGHT_UTC.plusSeconds(1));
-        mvc.perform(get(API + "/summary").principal(actor::toString).param("subjectUserId", friend.toString()))
+        mvc.perform(get(API + "/summary").header("Authorization", bearer(actor)).param("subjectUserId", friend.toString()))
                 .andExpect(status().isForbidden());
         blocks.save(new UserBlock(friend, actor, SEOUL_MIDNIGHT_UTC));
-        mvc.perform(get(API + "/positions").principal(actor::toString).param("subjectUserId", friend.toString()))
+        mvc.perform(get(API + "/positions").header("Authorization", bearer(actor)).param("subjectUserId", friend.toString()))
                 .andExpect(status().isNotFound());
     }
 

@@ -134,10 +134,10 @@ public class QuarterSettingsService {
         }
     }
 
-    public record Page(List<Response> data, PageMeta meta) {}
+    public record Page(List<Response> data, PageMeta meta) implements MatchApiResponse.Envelope {}
 
     public record PageMeta(UUID requestId, OffsetDateTime serverTime, long matchVersion,
-                           MatchListQuery.Pagination pagination) {}
+                           MatchListQuery.Pagination pagination) implements MatchApiResponse.Metadata {}
 
     public static final class CursorSnapshotChanged extends RuntimeException {}
 }

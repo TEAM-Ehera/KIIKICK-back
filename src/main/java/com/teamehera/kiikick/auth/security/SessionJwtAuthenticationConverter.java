@@ -40,9 +40,16 @@ public class SessionJwtAuthenticationConverter
         LocalDateTime now = LocalDateTime.ofInstant(clock.instant(), ZoneOffset.UTC);
 
         // 서명이 유효해도 DB 세션이 폐기·만료되면 Access Token을 즉시 거부한다.
-        AuthSession session = authSessionRepository.findActiveById(sessionId, now)
-                .filter(activeSession -> activeSession.userId().equals(userId))
-                .orElseThrow(() -> new OAuth2AuthenticationException(INVALID_TOKEN));
+        AuthSession session;
+        try {
+            session = authSessionRepository.findActiveById(sessionId, now)
+                    .filter(activeSession -> activeSession.userId().equals(userId))
+                    .orElseThrow(() -> new OAuth2AuthenticationException(INVALID_TOKEN));
+        } catch (org.springframework.dao.DataAccessException exception) {
+            // 저장소 장애는 만료·폐기된 토큰과 다르므로 로그인 실패로 오인시키지 않는다.
+            throw new OAuth2AuthenticationException(
+                    new OAuth2Error("temporarily_unavailable", "Session lookup unavailable", null), exception);
+        }
 
         AuthenticatedUser principal = new AuthenticatedUser(
                 session.userId(), session.id()

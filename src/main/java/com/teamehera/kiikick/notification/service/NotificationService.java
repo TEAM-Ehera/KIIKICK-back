@@ -149,8 +149,8 @@ public class NotificationService {
     }
     public record Count(long count) {}
     public record DeviceView(UUID id, String platform, boolean pushEnabled, OffsetDateTime lastSeenAt) {}
-    public record Page(List<NotificationView> data, PageMeta meta) {}
-    public record PageMeta(UUID requestId, OffsetDateTime serverTime, Pagination pagination) {}
+    public record Page(List<NotificationView> data, PageMeta meta) implements MatchApiResponse.Envelope {}
+    public record PageMeta(UUID requestId, OffsetDateTime serverTime, Pagination pagination) implements MatchApiResponse.Metadata {}
     public static final class DeviceOwnershipConflict extends RuntimeException {}
     public static final class InvalidDeviceState extends RuntimeException {}
     public static final class MissingPushToken extends RuntimeException {}

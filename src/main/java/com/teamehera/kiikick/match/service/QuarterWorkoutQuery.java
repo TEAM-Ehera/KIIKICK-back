@@ -147,9 +147,9 @@ public class QuarterWorkoutQuery {
 
     private record OwnedWorkout(WorkoutPayload workout, long matchVersion) {}
 
-    public record Page<T>(List<T> data, PageMeta meta) {}
+    public record Page<T>(List<T> data, PageMeta meta) implements MatchApiResponse.Envelope {}
 
-    public record PageMeta(UUID requestId, OffsetDateTime serverTime, long matchVersion, Pagination pagination) {}
+    public record PageMeta(UUID requestId, OffsetDateTime serverTime, long matchVersion, Pagination pagination) implements MatchApiResponse.Metadata {}
 
     public record Workout(UUID id, UUID quarterId, OffsetDateTime startDate, OffsetDateTime endDate,
                           double totalCalories, double totalDistance) {

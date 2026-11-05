@@ -24,7 +24,7 @@ public class MatchDetailQuery {
         return ResponseEntity.ok().eTag(MatchMutation.etag(match.version())).body(Detail.from(match));
     }
 
-    public record Detail(MatchResponse data, DetailMeta meta) {
+    public record Detail(MatchResponse data, DetailMeta meta) implements MatchApiResponse.Envelope {
         public static Detail from(Match match) {
             var meta = MatchApiResponse.Meta.create();
             return new Detail(MatchResponse.from(match),
@@ -32,9 +32,9 @@ public class MatchDetailQuery {
         }
     }
 
-    public record VersionedResponse<T>(T data, DetailMeta meta) {}
+    public record VersionedResponse<T>(T data, DetailMeta meta) implements MatchApiResponse.Envelope {}
 
-    public record DetailMeta(UUID requestId, OffsetDateTime serverTime, long matchVersion) {
+    public record DetailMeta(UUID requestId, OffsetDateTime serverTime, long matchVersion) implements MatchApiResponse.Metadata {
     }
 
     public record VenueSnapshot(String name, String address) {

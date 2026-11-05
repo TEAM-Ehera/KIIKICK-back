@@ -74,7 +74,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @SpringBootTest(properties = {
         "spring.sql.init.mode=never",
-        "spring.jpa.hibernate.ddl-auto=none"
+        "spring.jpa.hibernate.ddl-auto=none",
+        "kiikick.workout.summary-worker-enabled=false"
 })
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class MySqlRepositoryIntegrationTest {
@@ -220,14 +221,16 @@ class MySqlRepositoryIntegrationTest {
         LocalDateTime now = LocalDateTime.of(2026, 11, 3, 3, 0);
         UUID userId = UUID.randomUUID();
         users.save(userId, "인증사용자");
+        // 발송 한도는 REQUIRES_NEW로 커밋되므로 테스트 실행마다 독립된 식별자를 쓴다.
+        String email = userId + "@example.com";
         identities.save(new AuthIdentity(UUID.randomUUID(), userId, "APPLE", "sub", now));
         emailCredentials.save(new EmailCredential(
-                userId, "User@example.com", "user@example.com", "$2a$12$hash",
+                userId, email, email, "$2a$12$hash",
                 now, now, now, now
         ));
         UUID flowId = UUID.randomUUID();
         emailFlows.save(new EmailVerificationFlow(
-                flowId, "user@example.com", "SIGN_UP", "a".repeat(64), 0,
+                flowId, email, "SIGN_UP", "a".repeat(64), 0,
                 now.plusMinutes(3), now, null, null,
                 null, null, null, now, now
         ));
@@ -246,13 +249,13 @@ class MySqlRepositoryIntegrationTest {
         assertAll(
                 () -> assertEquals(userId, identities.findByProviderAndSubject("APPLE", "sub").orElseThrow().userId()),
                 () -> assertEquals(userId, emailCredentials
-                        .findByNormalizedEmail("user@example.com").orElseThrow().userId()),
+                        .findByNormalizedEmail(email).orElseThrow().userId()),
                 () -> assertEquals(1, emailFlows.verifyAndIssueActionToken(
                         flowId, "a".repeat(64), "b".repeat(64),
                         now.plusMinutes(10), now.plusMinutes(1)
                 )),
                 () -> assertTrue(emailSendRateLimits.tryAcquire(
-                        "user@example.com", "c".repeat(64), now
+                        email, UUID.randomUUID().toString(), now
                 ).allowed()),
                 () -> assertTrue(consents.findLatest(userId, "FRIEND_COMPARISON").orElseThrow().granted()),
                 () -> assertEquals(1, sessions.rotateRefreshToken(sessionId, 0, "new", now.plusDays(2))),

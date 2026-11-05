@@ -247,8 +247,8 @@ public class AnalyticsQuery {
     public record Comparison(AnalyticsSummary current, AnalyticsSummary previous, String metric, Double delta) {}
     public record FriendComparison(AnalyticsSummary me, AnalyticsSummary friend, String metric, Double delta) {}
     public record TrendPoint(OffsetDateTime bucketStart, OffsetDateTime bucketEnd, String metric, MetricAggregate result) {}
-    public record TrendPage(List<TrendPoint> data, TrendMeta meta) {}
-    public record TrendMeta(UUID requestId, OffsetDateTime serverTime, Pagination pagination) {}
+    public record TrendPage(List<TrendPoint> data, TrendMeta meta) implements MatchApiResponse.Envelope {}
+    public record TrendMeta(UUID requestId, OffsetDateTime serverTime, Pagination pagination) implements MatchApiResponse.Metadata {}
 
     public static final class InvalidAnalytics extends RuntimeException {
         public InvalidAnalytics(String field) {

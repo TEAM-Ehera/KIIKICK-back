@@ -135,6 +135,8 @@ CREATE TABLE quarter_summaries (
     FOREIGN KEY (quarter_id, workout_payload_id)
         REFERENCES workout_payloads(quarter_id, id)
 );
+CREATE INDEX idx_summary_pending ON quarter_summaries(calculation_status, updated_at, quarter_id);
+
 
 CREATE TABLE auth_identities (
     id BINARY(16) PRIMARY KEY,

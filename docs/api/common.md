@@ -46,7 +46,7 @@ Spring Security를 사용하는 경우 컨트롤러에서 `@AuthenticationPrinci
 | GET | 필수 | 없음 | 없음 |
 | 프로필·친구·알림·기기·경기장 변경 / 경기 생성 | 필수 | 필수 | 없음 |
 | 기존 경기·쿼터·개인 기록·포지션·운동 업로드·요약 설정/재계산 | 필수 | 필수 | 부모 경기 최신 ETag 필수 |
-| 작업 배치 | 필수 | 필수 | 외부 헤더 대신 각 작업 expectedVersion |
+| 작업 배치 | #44에서 보류·미제공 | — | — |
 
 경기 version은 개인 경기와 하위 기록의 동시 수정 방지 버전이다. 쿼터가 기록의 중심이어도 기존 SQL의 matches.version을 재사용한다. 각 하위 GET은 ETag와 응답 meta.matchVersion을 제공한다. Quarter 객체에도 matchVersion이 있다. 목록과 null 단건도 meta.matchVersion을 제공한다. 경기 변경은 행 잠금과 If-Match 비교 후 version을 1 증가시키고 새 ETag를 반환한다. 누락은 428, 불일치는 412다. 백그라운드 요약의 완료·실패 상태 게시도 경기 version을 증가시킨다. 이는 경기 종료를 지연시키지 않는다.
 
@@ -87,4 +87,10 @@ Idempotency-Key는 UUID이며 범위는 (userId, method, canonical path, key)다
 }
 ```
 
-persistence는 NOT_SAVED/SAVED/UNKNOWN이며 조회 오류에는 null이다. 네트워크 응답 유실 시 저장 여부는 알 수 없으므로 새 키로 무조건 제출하지 않는다. 위치·심박·토큰 원문은 로그에 넣지 않는다. 새 지표의 임계값은 미확정이며 계산 코드가 임의의 제품 기준을 만들면 안 된다.
+persistence는 NOT_SAVED/SAVED/UNKNOWN이며 조회 오류에는 null이다. 네트워크 응답 유실 시 저장 여부는 알 수 없으므로 새 키로 무조건 제출하지 않는다. 위치·심박·토큰 원문은 로그에 넣지 않는다. P08에서 승인된 지표 임계값은 계산 계약을 따른다. 새 정책을 계산 코드에서 임의로 확정하지 않는다.
+
+## 인증 통합 및 기존 경로 제한 (2026-11-05)
+
+검증된 AuthenticatedUser는 Servlet Principal.getName()에 내부 사용자 UUID를 제공한다. 삭제된 사용자의 세션은 인증에 사용하지 않는다. 401에도 WWW-Authenticate: Bearer와 X-Request-Id를 반환하며, 변경 요청의 인증 실패는 persistence=NOT_SAVED다.
+
+기존 /api/v1/user/{userId} 및 그 아래 workout-payloads는 인증 사용자 자신의 ID에만 허용한다. 일반 사용자 전체 목록과 인증 절차를 거치지 않는 기존 사용자 생성 경로(/api/v1/users, /api/v1/user)는 403으로 차단한다. 공개 검색은 FRIEND-01, 가입은 인증 API의 검증 절차를 사용한다. 기존 업로드 경로의 완전 종료 일정은 별도 연동 항목이다.

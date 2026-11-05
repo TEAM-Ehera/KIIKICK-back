@@ -138,7 +138,7 @@ public class MatchResultQuery {
 
     public record SummaryAvailability(int ready, int partial, int processing, int failed, int missing) {}
 
-    public record QuarterResults(List<QuarterResult> data, PageMeta meta) {}
+    public record QuarterResults(List<QuarterResult> data, PageMeta meta) implements MatchApiResponse.Envelope {}
 
     public record QuarterResult(Response quarter, Stats stats, Position position, Workout workout, Summary summary) {}
 

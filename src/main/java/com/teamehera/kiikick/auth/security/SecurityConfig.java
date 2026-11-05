@@ -21,6 +21,7 @@ import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.authorization.AuthorizationDecision;
 
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
@@ -57,6 +58,11 @@ public class SecurityConfig {
                                 "/swagger-ui/**",
                                 "/v3/api-docs/**"
                         ).permitAll()
+                        // 구형 사용자 경로도 인증 사용자의 기록만 허용한다. 가입·검색은 전용 API로 제공한다.
+                        .requestMatchers("/api/v1/user", "/api/v1/users").denyAll()
+                        .requestMatchers("/api/v1/user/{userId}", "/api/v1/user/{userId}/workout-payloads")
+                        .access((authentication, context) -> new AuthorizationDecision(
+                                authentication.get().getName().equals(context.getVariables().get("userId"))))
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(resourceServer -> resourceServer
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(authenticationConverter))
@@ -92,7 +98,7 @@ public class SecurityConfig {
         OAuth2TokenValidator<Jwt> issuer = JwtValidators
                 .createDefaultWithIssuer(properties.issuer());
         OAuth2TokenValidator<Jwt> audience = jwt ->
-                jwt.getAudience().contains(properties.audience())
+                jwt.getAudience() != null && jwt.getAudience().contains(properties.audience())
                         ? OAuth2TokenValidatorResult.success()
                         : OAuth2TokenValidatorResult.failure(new OAuth2Error(
                                 "invalid_token", "대상이 올바르지 않은 토큰입니다.", null
@@ -105,7 +111,10 @@ public class SecurityConfig {
                                 "invalid_token", "Access Token이 아닙니다.", null
                         ));
         decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
-                issuer, audience, type
+                issuer, audience, type, jwt -> jwt.getExpiresAt() != null
+                        ? OAuth2TokenValidatorResult.success()
+                        : OAuth2TokenValidatorResult.failure(new OAuth2Error(
+                                "invalid_token", "만료 시각이 없는 토큰입니다.", null))
         ));
         return decoder;
     }

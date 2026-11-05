@@ -16,15 +16,23 @@ public final class MatchApiResponse {
 
     private MatchApiResponse() {}
 
-    public record Meta(UUID requestId, OffsetDateTime serverTime) {
+    public interface Metadata {
+        UUID requestId();
+    }
+
+    public interface Envelope {
+        Metadata meta();
+    }
+
+    public record Meta(UUID requestId, OffsetDateTime serverTime) implements Metadata {
         public static Meta create() {
             return new Meta(UUID.randomUUID(), Instant.now().atZone(SEOUL).toOffsetDateTime());
         }
     }
 
-    public record Success<T>(T data, Meta meta) {}
+    public record Success<T>(T data, Meta meta) implements Envelope {}
 
-    public record Failure(Error error, Meta meta) {}
+    public record Failure(Error error, Meta meta) implements Envelope {}
 
     public record Error(String code, String message, boolean retryable,
                         String persistence, Map<String, ?> details) {}

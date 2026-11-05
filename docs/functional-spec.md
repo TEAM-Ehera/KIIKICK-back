@@ -103,7 +103,7 @@ flowchart TD
 | F07 | 개인 경기·쿼터 결과 | [results](api/results.md) | quarters, quarter_player_stats, quarter_positions, quarter_summaries |
 | F08 | 개인 분석·비교 | [analytics](api/analytics.md) | quarter_player_stats, quarter_positions, quarter_summaries |
 | F09 | 마이페이지 | [auth](api/auth.md) | users, user_consents |
-| F10 | 워치 측정·서버 업로드·선택적 명령 큐 | [workouts](api/workouts.md), [watch](api/watch.md) | workout_payloads, track_points, heart_rate_samples, sync_operations |
+| F10 | 워치 측정·서버 업로드(명령 큐는 #44 보류) | [workouts](api/workouts.md), [watch](api/watch.md) | workout_payloads, track_points, heart_rate_samples, sync_operations |
 
 ## 8. 기존 자료와 확인 범위
 

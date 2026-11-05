@@ -192,6 +192,10 @@ Table "quarter_summaries" {
   "valid_gps_duration_seconds" DOUBLE
   "calculated_at" DATETIME(6)
   "updated_at" DATETIME(6) [not null]
+
+  Indexes {
+    (calculation_status, updated_at, quarter_id) [name: "idx_summary_pending"]
+  }
 }
 
 Table "friend_pairs" {

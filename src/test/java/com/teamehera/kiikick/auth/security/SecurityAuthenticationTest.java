@@ -190,6 +190,41 @@ class SecurityAuthenticationTest {
         assertThat(passwordEncoder.matches(rawPassword, encoded)).isTrue();
     }
 
+    @Test
+    void signedTokenWithoutExpiryIsRejectedBeforeSessionLookup() throws Exception {
+        String token = customToken(Instant.now(), null, Map.of(
+                AccessTokenService.USER_ID_CLAIM, UUID.randomUUID().toString(),
+                AccessTokenService.SESSION_ID_CLAIM, UUID.randomUUID().toString()));
+        mockMvc.perform(get("/api/v1/security-test").header("Authorization", "Bearer " + token))
+                .andExpect(status().isUnauthorized());
+        verify(authSessionRepository, never()).findActiveById(any(), any());
+    }
+
+    @Test
+    void signedTokenWithoutAudienceReturns401InsteadOfServerError() throws Exception {
+        var claims = JwtClaimsSet.builder().issuer("kiikick-api-test")
+                .issuedAt(Instant.now()).expiresAt(Instant.now().plusSeconds(60))
+                .claim(AccessTokenService.TOKEN_TYPE_CLAIM, AccessTokenService.ACCESS_TOKEN_TYPE)
+                .claim(AccessTokenService.USER_ID_CLAIM, UUID.randomUUID().toString())
+                .claim(AccessTokenService.SESSION_ID_CLAIM, UUID.randomUUID().toString()).build();
+        String token = jwtEncoder.encode(JwtEncoderParameters.from(
+                JwsHeader.with(MacAlgorithm.HS256).type("JWT").build(), claims)).getTokenValue();
+        mockMvc.perform(get("/api/v1/security-test").header("Authorization", "Bearer " + token))
+                .andExpect(status().isUnauthorized());
+        verify(authSessionRepository, never()).findActiveById(any(), any());
+    }
+
+    @Test
+    void sessionDatabaseFailureIsRetryable503NotInvalidCredentials() throws Exception {
+        when(authSessionRepository.findActiveById(any(), any()))
+                .thenThrow(new org.springframework.dao.DataAccessResourceFailureException("private-db-detail"));
+        String token = accessTokenService.issue(UUID.randomUUID(), UUID.randomUUID()).token();
+        mockMvc.perform(get("/api/v1/security-test").header("Authorization", "Bearer " + token))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.error.code").value("TEMPORARILY_UNAVAILABLE"))
+                .andExpect(jsonPath("$.error.retryable").value(true));
+    }
+
     private String customToken(
             Instant issuedAt,
             Instant expiresAt,
@@ -199,9 +234,11 @@ class SecurityAuthenticationTest {
                 .issuer("kiikick-api-test")
                 .audience(List.of("kiikick-test"))
                 .issuedAt(issuedAt)
-                .expiresAt(expiresAt)
                 .claim(AccessTokenService.TOKEN_TYPE_CLAIM,
                         AccessTokenService.ACCESS_TOKEN_TYPE);
+        if (expiresAt != null) {
+            claims.expiresAt(expiresAt);
+        }
         extraClaims.forEach(claims::claim);
 
         return jwtEncoder.encode(JwtEncoderParameters.from(

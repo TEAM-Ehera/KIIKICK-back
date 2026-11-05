@@ -62,6 +62,7 @@ public class EmailSendRateLimitRepository {
         lockKey(EMAIL, normalizedEmail);
         lockKey(IP, ipHash);
 
+        // retryAt에 도달한 요청은 허용되도록 창의 하한을 제외한다: (now - window, now].
         LocalDateTime emailCutoff = now.minus(EMAIL_WINDOW);
         LocalDateTime ipCutoff = now.minus(IP_WINDOW);
         int emailCount = countRecent(EMAIL, normalizedEmail, emailCutoff);
@@ -111,7 +112,7 @@ public class EmailSendRateLimitRepository {
                 """
                 SELECT COUNT(*) FROM auth_rate_limit_events
                 WHERE rate_action = ? AND limit_type = ? AND key_value = ?
-                  AND occurred_at >= ?
+                  AND occurred_at > ?
                 """,
                 Integer.class, ACTION, limitType, keyValue, cutoff
         );
@@ -141,7 +142,7 @@ public class EmailSendRateLimitRepository {
                 """
                 SELECT MIN(occurred_at) FROM auth_rate_limit_events
                 WHERE rate_action = ? AND limit_type = ? AND key_value = ?
-                  AND occurred_at >= ?
+                  AND occurred_at > ?
                 """,
                 LocalDateTime.class, ACTION, limitType, keyValue, cutoff
         );

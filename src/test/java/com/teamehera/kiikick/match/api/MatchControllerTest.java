@@ -42,7 +42,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @SpringBootTest
 @AutoConfigureMockMvc
-class MatchControllerTest {
+class MatchControllerTest extends AuthenticatedApiTest {
     private static final String MATCHES = "/api/v1/matches";
     private final UUID actor = UUID.randomUUID();
     private final UUID other = UUID.randomUUID();
@@ -100,11 +100,11 @@ class MatchControllerTest {
                 .andExpect(jsonPath("$.error.code").value("IDEMPOTENCY_KEY_REUSED"));
         assertEquals(1, matches.findPageByOwnerId(actor, null, 10).size());
 
-        mvc.perform(get(location).principal(actor::toString))
+        mvc.perform(get(location).header("Authorization", bearer(actor)))
                 .andExpect(status().isOk())
                 .andExpect(header().string("ETag", "\"1\""))
                 .andExpect(jsonPath("$.data.venueId").value(venueId.toString()));
-        mvc.perform(get(location).principal(other::toString))
+        mvc.perform(get(location).header("Authorization", bearer(other)))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.error.code").value("RESOURCE_NOT_FOUND"));
     }
@@ -132,7 +132,7 @@ class MatchControllerTest {
         String older = create(actor, "{}");
         String newer = create(actor, "{}");
         create(other, "{}");
-        var page = mvc.perform(get(MATCHES).principal(actor::toString)
+        var page = mvc.perform(get(MATCHES).header("Authorization", bearer(actor))
                         .param("status", "DRAFT").param("limit", "1"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.length()").value(1))
@@ -140,18 +140,18 @@ class MatchControllerTest {
                 .andExpect(jsonPath("$.meta.pagination.hasNext").value(true))
                 .andReturn().getResponse();
         String cursor = json.readTree(page.getContentAsString()).at("/meta/pagination/nextCursor").asText();
-        mvc.perform(get(MATCHES).principal(actor::toString)
+        mvc.perform(get(MATCHES).header("Authorization", bearer(actor))
                         .param("status", "DRAFT").param("cursor", cursor).param("limit", "1"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[0].id").value(id(older).toString()))
                 .andExpect(jsonPath("$.meta.pagination.hasNext").value(false))
                 .andExpect(jsonPath("$.meta.pagination.nextCursor").value(nullValue()));
-        mvc.perform(get(MATCHES).principal(other::toString).param("status", "DRAFT").param("cursor", cursor))
+        mvc.perform(get(MATCHES).header("Authorization", bearer(other)).param("status", "DRAFT").param("cursor", cursor))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code").value("INVALID_CURSOR"));
-        mvc.perform(get(MATCHES).principal(actor::toString).param("limit", "101"))
+        mvc.perform(get(MATCHES).header("Authorization", bearer(actor)).param("limit", "101"))
                 .andExpect(status().isBadRequest());
-        mvc.perform(get(MATCHES).principal(actor::toString).param("status", "READY"))
+        mvc.perform(get(MATCHES).header("Authorization", bearer(actor)).param("status", "READY"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data").isEmpty());
     }
@@ -204,7 +204,7 @@ class MatchControllerTest {
                 .andExpect(status().isUnauthorized())
                 .andExpect(header().string("WWW-Authenticate", "Bearer"))
                 .andExpect(jsonPath("$.error.code").value("UNAUTHENTICATED"));
-        mvc.perform(post(MATCHES).principal(actor::toString).contentType("application/json").content("{}"))
+        mvc.perform(post(MATCHES).header("Authorization", bearer(actor)).contentType("application/json").content("{}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
         mvc.perform(write(post(MATCHES), actor, UUID.randomUUID(), "{"))
@@ -230,7 +230,7 @@ class MatchControllerTest {
         String path = match + "/quarters";
         String first = addQuarter(path, 1);
         addQuarter(path, 2);
-        var page = mvc.perform(get(path).principal(actor::toString).param("limit", "1"))
+        var page = mvc.perform(get(path).header("Authorization", bearer(actor)).param("limit", "1"))
                 .andExpect(status().isOk())
                 .andExpect(header().string("ETag", tag(3)))
                 .andExpect(jsonPath("$.data[0].number").value(1))
@@ -239,17 +239,17 @@ class MatchControllerTest {
                 .andExpect(jsonPath("$.meta.pagination.hasNext").value(true))
                 .andReturn().getResponse();
         String cursor = json.readTree(page.getContentAsString()).at("/meta/pagination/nextCursor").asText();
-        mvc.perform(get(path).principal(actor::toString).param("cursor", cursor))
+        mvc.perform(get(path).header("Authorization", bearer(actor)).param("cursor", cursor))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[0].number").value(2))
                 .andExpect(jsonPath("$.meta.pagination.hasNext").value(false));
-        mvc.perform(get(path).principal(other::toString)).andExpect(status().isNotFound());
+        mvc.perform(get(path).header("Authorization", bearer(other))).andExpect(status().isNotFound());
         mvc.perform(write(patch(first), actor, UUID.randomUUID(), "{\"durationSeconds\":75}")
                         .header("If-Match", tag(3)))
                 .andExpect(status().isOk())
                 .andExpect(header().string("ETag", tag(4)))
                 .andExpect(jsonPath("$.data.durationSeconds").value(75));
-        mvc.perform(get(path).principal(actor::toString).param("cursor", cursor))
+        mvc.perform(get(path).header("Authorization", bearer(actor)).param("cursor", cursor))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.error.code").value("CURSOR_SNAPSHOT_CHANGED"));
     }
@@ -313,7 +313,7 @@ class MatchControllerTest {
                     java.util.Set.of(first.get(10, TimeUnit.SECONDS), second.get(10, TimeUnit.SECONDS)));
         }
         addQuarter(path, 2);
-        mvc.perform(get(path).principal(actor::toString)).andExpect(status().isOk())
+        mvc.perform(get(path).header("Authorization", bearer(actor))).andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.length()").value(2))
                 .andExpect(jsonPath("$.data[0].number").value(1))
                 .andExpect(jsonPath("$.data[1].number").value(2));
@@ -462,15 +462,15 @@ class MatchControllerTest {
         String match = create(actor, "{}");
         String quarter = addQuarter(match + "/quarters", 1);
         String path = quarter + "/stats";
-        mvc.perform(get(path).principal(actor::toString))
+        mvc.perform(get(path).header("Authorization", bearer(actor)))
                 .andExpect(status().isOk()).andExpect(header().string("ETag", tag(2)))
                 .andExpect(jsonPath("$.data").value(nullValue()))
                 .andExpect(jsonPath("$.meta.matchVersion").value(2));
-        mvc.perform(get(path).principal(other::toString)).andExpect(status().isNotFound());
+        mvc.perform(get(path).header("Authorization", bearer(other))).andExpect(status().isNotFound());
 
         String anotherMatch = create(actor, "{}");
         String wrongParent = anotherMatch + quarter.substring(match.length()) + "/stats";
-        mvc.perform(get(wrongParent).principal(actor::toString)).andExpect(status().isNotFound());
+        mvc.perform(get(wrongParent).header("Authorization", bearer(actor))).andExpect(status().isNotFound());
         mvc.perform(putStats(wrongParent, UUID.randomUUID(), 1, "{}")).andExpect(status().isNotFound());
 
         mvc.perform(transition(match, "ready", actor, UUID.randomUUID(), 2)).andExpect(status().isOk());
@@ -489,7 +489,7 @@ class MatchControllerTest {
         mvc.perform(putStats(path, UUID.randomUUID(), 5, "{\"goals\":0,\"assists\":0}"))
                 .andExpect(status().isOk()).andExpect(header().string("ETag", tag(6)))
                 .andExpect(jsonPath("$.data.goals").value(0)).andExpect(jsonPath("$.data.assists").value(0));
-        mvc.perform(get(path).principal(actor::toString))
+        mvc.perform(get(path).header("Authorization", bearer(actor)))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.goals").value(0));
 
         UUID key = UUID.randomUUID();
@@ -508,7 +508,7 @@ class MatchControllerTest {
         mvc.perform(transition(match, "end", actor, UUID.randomUUID(), 10)).andExpect(status().isOk());
         mvc.perform(putStats(path, UUID.randomUUID(), 11, "{\"goals\":0,\"assists\":0}"))
                 .andExpect(status().isConflict());
-        mvc.perform(get(path).principal(actor::toString))
+        mvc.perform(get(path).header("Authorization", bearer(actor)))
                 .andExpect(status().isOk()).andExpect(header().string("ETag", tag(11)))
                 .andExpect(jsonPath("$.data.goals").value(2)).andExpect(jsonPath("$.data.assists").value(1));
     }
@@ -522,15 +522,15 @@ class MatchControllerTest {
         String match = create(actor, "{}");
         String quarter = addQuarter(match + "/quarters", 1);
         String path = quarter + "/position";
-        mvc.perform(get(path).principal(actor::toString))
+        mvc.perform(get(path).header("Authorization", bearer(actor)))
                 .andExpect(status().isOk()).andExpect(header().string("ETag", tag(2)))
                 .andExpect(jsonPath("$.data").value(nullValue()))
                 .andExpect(jsonPath("$.meta.matchVersion").value(2));
-        mvc.perform(get(path).principal(other::toString)).andExpect(status().isNotFound());
+        mvc.perform(get(path).header("Authorization", bearer(other))).andExpect(status().isNotFound());
 
         String anotherMatch = create(actor, "{}");
         String wrongParent = anotherMatch + quarter.substring(match.length()) + "/position";
-        mvc.perform(get(wrongParent).principal(actor::toString)).andExpect(status().isNotFound());
+        mvc.perform(get(wrongParent).header("Authorization", bearer(actor))).andExpect(status().isNotFound());
     }
 
     @Test
@@ -560,7 +560,7 @@ class MatchControllerTest {
                 .andExpect(status().isOk()).andExpect(header().string("ETag", tag(9)));
         mvc.perform(transition(match, "end", actor, UUID.randomUUID(), 9)).andExpect(status().isOk());
         mvc.perform(putPosition(path, UUID.randomUUID(), 10, "TEST_FIRST")).andExpect(status().isConflict());
-        mvc.perform(get(path).principal(actor::toString))
+        mvc.perform(get(path).header("Authorization", bearer(actor)))
                 .andExpect(status().isOk()).andExpect(header().string("ETag", tag(10)))
                 .andExpect(jsonPath("$.data.positionCode").value("TEST_SECOND"));
     }
@@ -654,7 +654,7 @@ class MatchControllerTest {
         String trackPath = quarter + "/track-points";
         String heartPath = quarter + "/heart-rate-samples";
         for (String path : List.of(quarter + "/workout", trackPath, heartPath)) {
-            mvc.perform(get(path).principal(actor::toString)).andExpect(status().isNotFound());
+            mvc.perform(get(path).header("Authorization", bearer(actor))).andExpect(status().isNotFound());
         }
         String empty = """
                 {"startDate":815274000,"endDate":815274600,"totalCalories":100,"totalDistance":1500,
@@ -662,16 +662,16 @@ class MatchControllerTest {
                 """;
         String location = mvc.perform(workoutUpload(upload, actor, UUID.randomUUID(), 8, empty))
                 .andExpect(status().isCreated()).andReturn().getResponse().getHeader("Location");
-        mvc.perform(get(location).principal(actor::toString))
+        mvc.perform(get(location).header("Authorization", bearer(actor)))
                 .andExpect(status().isOk()).andExpect(header().string("ETag", tag(9)))
                 .andExpect(jsonPath("$.data.startDate").value(org.hamcrest.Matchers.endsWith("+09:00")))
                 .andExpect(jsonPath("$.data.points").doesNotExist())
                 .andExpect(jsonPath("$.data.heartRateSamples").doesNotExist());
         for (String path : List.of(trackPath, heartPath)) {
-            mvc.perform(get(path).principal(actor::toString))
+            mvc.perform(get(path).header("Authorization", bearer(actor)))
                     .andExpect(status().isOk()).andExpect(jsonPath("$.data").isEmpty())
                     .andExpect(jsonPath("$.meta.pagination.nextCursor").value(nullValue()));
-            mvc.perform(get(path).principal(other::toString)).andExpect(status().isNotFound());
+            mvc.perform(get(path).header("Authorization", bearer(other))).andExpect(status().isNotFound());
         }
 
         var workout = workouts.findByQuarterId(quarterId).orElseThrow();
@@ -684,28 +684,28 @@ class MatchControllerTest {
                 new HeartRateSample(workout.id(), 0, timestamp, 140)));
 
         String cursor = firstSampleCursor(trackPath);
-        mvc.perform(get(trackPath).principal(actor::toString).param("cursor", cursor).param("limit", "2"))
+        mvc.perform(get(trackPath).header("Authorization", bearer(actor)).param("cursor", cursor).param("limit", "2"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.length()").value(2))
                 .andExpect(jsonPath("$.data[0].sampleSeq").value(1))
                 .andExpect(jsonPath("$.data[1].sampleSeq").value(2))
                 .andExpect(jsonPath("$.meta.pagination.hasNext").value(false));
-        mvc.perform(get(heartPath).principal(actor::toString).param("cursor", firstSampleCursor(heartPath)))
+        mvc.perform(get(heartPath).header("Authorization", bearer(actor)).param("cursor", firstSampleCursor(heartPath)))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data[0].bpm").value(141));
-        mvc.perform(get(heartPath).principal(actor::toString).param("cursor", cursor))
+        mvc.perform(get(heartPath).header("Authorization", bearer(actor)).param("cursor", cursor))
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.error.code").value("INVALID_CURSOR"));
-        mvc.perform(get(trackPath).principal(actor::toString).param("cursor", "*"))
+        mvc.perform(get(trackPath).header("Authorization", bearer(actor)).param("cursor", "*"))
                 .andExpect(status().isBadRequest());
-        mvc.perform(get(trackPath).principal(actor::toString).param("limit", "101"))
+        mvc.perform(get(trackPath).header("Authorization", bearer(actor)).param("limit", "101"))
                 .andExpect(status().isBadRequest());
 
         summaries.saveProcessing(quarterId, workout.id(), "v1", "{}", "{}", "f".repeat(64), timestamp);
-        mvc.perform(get(trackPath).principal(actor::toString).param("cursor", cursor))
+        mvc.perform(get(trackPath).header("Authorization", bearer(actor)).param("cursor", cursor))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.error.code").value("CURSOR_SNAPSHOT_CHANGED"));
     }
 
     private String firstSampleCursor(String path) throws Exception {
-        var first = mvc.perform(get(path).principal(actor::toString).param("limit", "1"))
+        var first = mvc.perform(get(path).header("Authorization", bearer(actor)).param("limit", "1"))
                 .andExpect(status().isOk()).andExpect(header().string("ETag", tag(9)))
                 .andExpect(jsonPath("$.data[0].sampleSeq").value(0))
                 .andExpect(jsonPath("$.data[0].timestamp").value(org.hamcrest.Matchers.endsWith("+09:00")))
@@ -719,13 +719,13 @@ class MatchControllerTest {
         String upload = completedQuarterUploadPath();
         UUID quarterId = UUID.fromString(upload.split("/")[4]);
         String summary = upload.replace("/workout-payloads", "/summary");
-        mvc.perform(get(summary).principal(actor::toString))
+        mvc.perform(get(summary).header("Authorization", bearer(actor)))
                 .andExpect(status().isOk()).andExpect(header().string("ETag", tag(8)))
                 .andExpect(jsonPath("$.data").value(nullValue()));
-        mvc.perform(get(summary).principal(other::toString)).andExpect(status().isNotFound());
+        mvc.perform(get(summary).header("Authorization", bearer(other))).andExpect(status().isNotFound());
 
         mvc.perform(workoutUpload(upload, actor, UUID.randomUUID(), 8, WORKOUT)).andExpect(status().isCreated());
-        mvc.perform(get(summary).principal(actor::toString))
+        mvc.perform(get(summary).header("Authorization", bearer(actor)))
                 .andExpect(status().isOk()).andExpect(header().string("Retry-After", "5"))
                 .andExpect(jsonPath("$.data.calculationStatus").value("PROCESSING"))
                 .andExpect(jsonPath("$.data.totalDistanceM").value(nullValue()));
@@ -735,14 +735,14 @@ class MatchControllerTest {
                 "{}", "{}", previous.sourcePayloadHash(), previous.updatedAt());
 
         summaryCalculation.process(stale);
-        mvc.perform(get(summary).principal(actor::toString))
+        mvc.perform(get(summary).header("Authorization", bearer(actor)))
                 .andExpect(status().isOk()).andExpect(header().string("ETag", tag(9)))
                 .andExpect(jsonPath("$.data.calculationStatus").value("PROCESSING"));
 
         var current = pendingSummary(quarterId);
         summaryCalculation.process(current);
         summaryCalculation.process(current);
-        mvc.perform(get(summary).principal(actor::toString))
+        mvc.perform(get(summary).header("Authorization", bearer(actor)))
                 .andExpect(status().isOk()).andExpect(header().string("ETag", tag(10)))
                 .andExpect(header().doesNotExist("Retry-After"))
                 .andExpect(jsonPath("$.data.calculationStatus").value("PARTIAL"))
@@ -767,13 +767,13 @@ class MatchControllerTest {
         var job = pendingSummary(quarterId);
         summaryCalculation.process(job);
 
-        mvc.perform(get(upload.replace("/workout-payloads", "/summary")).principal(actor::toString))
+        mvc.perform(get(upload.replace("/workout-payloads", "/summary")).header("Authorization", bearer(actor)))
                 .andExpect(status().isOk()).andExpect(header().string("ETag", tag(9)))
                 .andExpect(jsonPath("$.data.calculationStatus").value("FAILED"))
                 .andExpect(jsonPath("$.data.metricStatus.totalDistanceM.status").value("FAILED"))
                 .andExpect(jsonPath("$.data.totalDistanceM").value(nullValue()));
         assertTrue(workouts.findById(workoutId).isPresent());
-        mvc.perform(get(MATCHES + "/" + job.matchId() + "/result").principal(actor::toString))
+        mvc.perform(get(MATCHES + "/" + job.matchId() + "/result").header("Authorization", bearer(actor)))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.summaryAvailability.failed").value(1));
     }
 
@@ -787,7 +787,7 @@ class MatchControllerTest {
                 LocalDateTime.of(2001, 1, 1, 0, 0).plusSeconds(815274007), 142)));
         String path = upload.replace("/workout-payloads", "/summary");
         summaryCalculation.process(pendingSummary(quarterId));
-        mvc.perform(get(path).principal(actor::toString))
+        mvc.perform(get(path).header("Authorization", bearer(actor)))
                 .andExpect(jsonPath("$.data.trimpEdwards").value(nullValue()))
                 .andExpect(jsonPath("$.data.metricStatus.trimpEdwards.status").value("MISSING_INPUT"))
                 .andExpect(jsonPath("$.data.averageHeartRateBpm").value(142.0));
@@ -800,7 +800,7 @@ class MatchControllerTest {
                 json.writeValueAsString(java.util.Map.of("hrMaxReferenceBpm", 200)),
                 "{}", pending.sourcePayloadHash(), pending.updatedAt());
         summaryCalculation.process(pendingSummary(quarterId));
-        mvc.perform(get(path).principal(actor::toString))
+        mvc.perform(get(path).header("Authorization", bearer(actor)))
                 .andExpect(status().isOk()).andExpect(header().string("ETag", tag(11)))
                 .andExpect(jsonPath("$.data.calculationVersion").value("v3"))
                 .andExpect(jsonPath("$.data.calculationStatus").value("READY"))
@@ -853,7 +853,7 @@ class MatchControllerTest {
         mvc.perform(write(put(settings), actor, settingsKey, valid).header("If-Match", tag(10)))
                 .andExpect(status().isAccepted()).andExpect(header().string("ETag", tag(11)))
                 .andExpect(content().string(accepted.getContentAsString()));
-        mvc.perform(get(summary).principal(actor::toString))
+        mvc.perform(get(summary).header("Authorization", bearer(actor)))
                 .andExpect(header().string("ETag", tag(12)))
                 .andExpect(jsonPath("$.data.hrMaxReferenceBpm").value(190.0));
 
@@ -869,7 +869,7 @@ class MatchControllerTest {
         summaryCalculation.process(recalculated);
         mvc.perform(transition(summary, "recalculate", actor, recalculateKey, 12))
                 .andExpect(status().isAccepted()).andExpect(content().string(requested.getContentAsString()));
-        mvc.perform(get(summary).principal(actor::toString))
+        mvc.perform(get(summary).header("Authorization", bearer(actor)))
                 .andExpect(header().string("ETag", tag(14)))
                 .andExpect(jsonPath("$.data.hrMaxReferenceBpm").value(190.0));
     }
@@ -885,9 +885,9 @@ class MatchControllerTest {
         String firstResult = "/api/v1/quarters/" + firstQuarterId + "/result";
         String secondResult = "/api/v1/quarters/" + secondQuarterId + "/result";
         for (String path : List.of(matchResult, matchResult + "/quarters", firstResult)) {
-            mvc.perform(get(path).principal(actor::toString))
+            mvc.perform(get(path).header("Authorization", bearer(actor)))
                     .andExpect(status().isConflict()).andExpect(jsonPath("$.error.code").value("RESULT_NOT_READY"));
-            mvc.perform(get(path).principal(other::toString)).andExpect(status().isNotFound());
+            mvc.perform(get(path).header("Authorization", bearer(other))).andExpect(status().isNotFound());
         }
 
         mvc.perform(transition(match, "ready", actor, UUID.randomUUID(), 3)).andExpect(status().isOk());
@@ -898,51 +898,51 @@ class MatchControllerTest {
         mvc.perform(transition(first, "end", actor, UUID.randomUUID(), 7)).andExpect(status().isOk());
         mvc.perform(putPosition(first + "/position", UUID.randomUUID(), 8, "TEST_FIRST")).andExpect(status().isOk());
         mvc.perform(transition(first, "complete", actor, UUID.randomUUID(), 9)).andExpect(status().isOk());
-        mvc.perform(get(firstResult).principal(actor::toString))
+        mvc.perform(get(firstResult).header("Authorization", bearer(actor)))
                 .andExpect(status().isOk()).andExpect(header().string("ETag", tag(10)))
                 .andExpect(jsonPath("$.data.stats.goals").value(0))
                 .andExpect(jsonPath("$.data.position.positionCode").value("TEST_FIRST"))
                 .andExpect(jsonPath("$.data.workout").value(nullValue()))
                 .andExpect(jsonPath("$.data.summary").value(nullValue()));
-        mvc.perform(get(matchResult).principal(actor::toString)).andExpect(status().isConflict());
+        mvc.perform(get(matchResult).header("Authorization", bearer(actor))).andExpect(status().isConflict());
 
         mvc.perform(transition(second, "start", actor, UUID.randomUUID(), 10)).andExpect(status().isOk());
         mvc.perform(transition(second, "end", actor, UUID.randomUUID(), 11)).andExpect(status().isOk());
         mvc.perform(transition(second, "complete", actor, UUID.randomUUID(), 12)).andExpect(status().isOk());
         mvc.perform(transition(match, "end", actor, UUID.randomUUID(), 13)).andExpect(status().isOk());
 
-        mvc.perform(get(matchResult).principal(actor::toString))
+        mvc.perform(get(matchResult).header("Authorization", bearer(actor)))
                 .andExpect(status().isOk()).andExpect(header().string("ETag", tag(14)))
                 .andExpect(jsonPath("$.data.quarterCount").value(2))
                 .andExpect(jsonPath("$.data.goals").value(nullValue()))
                 .andExpect(jsonPath("$.data.assists").value(nullValue()))
                 .andExpect(jsonPath("$.data.missingStatsQuarterIds[0]").value(secondQuarterId))
                 .andExpect(jsonPath("$.data.summaryAvailability.missing").value(2));
-        mvc.perform(get(secondResult).principal(actor::toString))
+        mvc.perform(get(secondResult).header("Authorization", bearer(actor)))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.stats").value(nullValue()));
-        var page = mvc.perform(get(matchResult + "/quarters").principal(actor::toString).param("limit", "1"))
+        var page = mvc.perform(get(matchResult + "/quarters").header("Authorization", bearer(actor)).param("limit", "1"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data[0].quarter.number").value(1))
                 .andExpect(jsonPath("$.data[0].stats.goals").value(0))
                 .andReturn().getResponse();
         String cursor = json.readTree(page.getContentAsString()).at("/meta/pagination/nextCursor").stringValue();
-        mvc.perform(get(matchResult + "/quarters").principal(actor::toString).param("cursor", cursor))
+        mvc.perform(get(matchResult + "/quarters").header("Authorization", bearer(actor)).param("cursor", cursor))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data[0].quarter.number").value(2))
                 .andExpect(jsonPath("$.meta.pagination.hasNext").value(false));
 
         String upload = "/api/v1/quarters/" + firstQuarterId + "/workout-payloads";
         mvc.perform(workoutUpload(upload, actor, UUID.randomUUID(), 14, WORKOUT)).andExpect(status().isCreated());
-        mvc.perform(get(matchResult + "/quarters").principal(actor::toString).param("cursor", cursor))
+        mvc.perform(get(matchResult + "/quarters").header("Authorization", bearer(actor)).param("cursor", cursor))
                 .andExpect(status().isConflict()).andExpect(jsonPath("$.error.code").value("CURSOR_SNAPSHOT_CHANGED"));
-        mvc.perform(get(matchResult).principal(actor::toString))
+        mvc.perform(get(matchResult).header("Authorization", bearer(actor)))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.summaryAvailability.processing").value(1))
                 .andExpect(jsonPath("$.data.summaryAvailability.missing").value(1));
         summaryCalculation.process(pendingSummary(UUID.fromString(firstQuarterId)));
-        mvc.perform(get(firstResult).principal(actor::toString))
+        mvc.perform(get(firstResult).header("Authorization", bearer(actor)))
                 .andExpect(status().isOk()).andExpect(header().string("ETag", tag(16)))
                 .andExpect(jsonPath("$.data.stats.goals").value(0))
                 .andExpect(jsonPath("$.data.workout.points").doesNotExist())
                 .andExpect(jsonPath("$.data.summary.calculationStatus").value("PARTIAL"));
-        mvc.perform(get(matchResult).principal(actor::toString))
+        mvc.perform(get(matchResult).header("Authorization", bearer(actor)))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.summaryAvailability.partial").value(1));
     }
 
@@ -975,7 +975,7 @@ class MatchControllerTest {
         return path;
     }
 
-    private static MockHttpServletRequestBuilder workoutUpload(String path, UUID owner, UUID key,
+    private MockHttpServletRequestBuilder workoutUpload(String path, UUID owner, UUID key,
                                                               long version, String body) {
         return write(post(path), owner, key, body).header("If-Match", tag(version));
     }
@@ -987,9 +987,9 @@ class MatchControllerTest {
                 .andReturn().getResponse().getStatus();
     }
 
-    private static MockHttpServletRequestBuilder transition(String match, String action, UUID owner, UUID key,
+    private MockHttpServletRequestBuilder transition(String match, String action, UUID owner, UUID key,
                                                            long version) {
-        return post(match + "/" + action).principal(owner::toString)
+        return post(match + "/" + action).header("Authorization", bearer(owner))
                 .header("Idempotency-Key", key.toString()).header("If-Match", tag(version));
     }
 
@@ -1003,7 +1003,7 @@ class MatchControllerTest {
     }
 
     private MockHttpServletRequestBuilder remove(String path, UUID key, long version) {
-        return delete(path).principal(actor::toString).header("Idempotency-Key", key.toString())
+        return delete(path).header("Authorization", bearer(actor)).header("Idempotency-Key", key.toString())
                 .header("If-Match", tag(version));
     }
 
@@ -1027,9 +1027,9 @@ class MatchControllerTest {
         return UUID.fromString(location.substring(MATCHES.length() + 1));
     }
 
-    private static MockHttpServletRequestBuilder write(
+    private MockHttpServletRequestBuilder write(
             MockHttpServletRequestBuilder request, UUID owner, UUID key, String body) {
-        return request.principal(owner::toString).header("Idempotency-Key", key.toString())
+        return request.header("Authorization", bearer(owner)).header("Idempotency-Key", key.toString())
                 .contentType("application/json").content(body);
     }
 }

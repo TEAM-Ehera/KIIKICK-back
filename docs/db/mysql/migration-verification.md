@@ -82,3 +82,11 @@ FROM heartRateSamples ORDER BY workoutPayloadId, sampleSeq;
 | DDL 부분 적용 후 복구 | 첫 ALTER 적용 뒤 테이블 충돌로 실패. 백업 복원 및 V001 재적용 후 비교 결과 일치 |
 
 계산 작업 식별 방식에 대한 후속 PR이 병합되면 확정 스키마에 V001을 맞추고 위 검증을 다시 실행한다. 현재 결과는 `calculation_job_id`가 있는 스키마에 해당한다.
+
+## 통합 검증 갱신 (2026-11-05)
+
+현재 통합본은 기존 스키마 → V001 → V002 이메일 인증 → V003 요약 폴링 인덱스 순서로 적용한다. full-design.sql로 새 스키마를 생성했다면 해당 인덱스가 이미 포함되므로 V003을 중복 적용하지 않는다. 과거 V001 파일은 수정하지 않았다.
+
+V003은 테이블·컬럼·데이터를 제거하지 않는다. 되돌릴 때는 `DROP INDEX idx_summary_pending ON quarter_summaries`로 인덱스만 제거할 수 있으나 워커 전체 스캔 비용이 돌아온다. 배포 대상 DB의 크기·DDL 잠금 시간은 별도 검증해야 한다. 운영 DB에는 적용하지 않았다.
+
+[PR별 리뷰와 실제 MySQL 검증 결과](../../review/pr-code-review-2026-11-05.md)를 참고한다. MySQL 테스트는 전용 `kiikick_repository_test` DB만 허용하며 인증 설정에는 테스트용 서명 키도 필요하다.

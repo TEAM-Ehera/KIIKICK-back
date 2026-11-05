@@ -261,7 +261,8 @@ public class MatchController {
                 match -> ownership.requireQuarter(actor, matchId, quarterId), match -> {
                     long version = quarters.delete(match, quarterId);
                     return new MatchMutation.Response(204,
-                            json.writeValueAsString(Map.of(HttpHeaders.ETAG, MatchMutation.etag(version))), null);
+                            json.writeValueAsString(Map.of(HttpHeaders.ETAG, MatchMutation.etag(version),
+                                    MatchApiResponse.REQUEST_ID_HEADER, UUID.randomUUID().toString())), null);
                 }));
     }
 
@@ -291,9 +292,10 @@ public class MatchController {
                 status == 201 ? PATH + "/" + match.id() : null);
     }
 
-    private MatchMutation.Response serialize(Object body, long version, int status, String location) {
+    private MatchMutation.Response serialize(MatchApiResponse.Envelope body, long version, int status, String location) {
         var headers = new LinkedHashMap<String, String>();
         headers.put(HttpHeaders.ETAG, MatchMutation.etag(version));
+        headers.put(MatchApiResponse.REQUEST_ID_HEADER, body.meta().requestId().toString());
         if (location != null) {
             headers.put(HttpHeaders.LOCATION, location);
         }

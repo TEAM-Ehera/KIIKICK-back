@@ -164,6 +164,24 @@ class EmailAuthRepositoryTest {
         }
     }
 
+    @Test
+    void retryAtIsTheFirstAllowedInstantForBothLimits() {
+        var now = LocalDateTime.of(2026, 11, 5, 1, 0);
+        String email = UUID.randomUUID() + "@example.com";
+        for (int i = 0; i < 5; i++) {
+            assertTrue(rateLimits.tryAcquire(email, UUID.randomUUID().toString(), now).allowed());
+        }
+        var blocked = rateLimits.tryAcquire(email, UUID.randomUUID().toString(), now);
+        assertFalse(rateLimits.tryAcquire(email, UUID.randomUUID().toString(), blocked.retryAt().minusNanos(1000)).allowed());
+        assertTrue(rateLimits.tryAcquire(email, UUID.randomUUID().toString(), blocked.retryAt()).allowed());
+        String ip = UUID.randomUUID().toString();
+        for (int i = 0; i < 3; i++) {
+            assertTrue(rateLimits.tryAcquire(UUID.randomUUID() + "@example.com", ip, now).allowed());
+        }
+        var ipBlocked = rateLimits.tryAcquire(UUID.randomUUID() + "@example.com", ip, now);
+        assertTrue(rateLimits.tryAcquire(UUID.randomUUID() + "@example.com", ip, ipBlocked.retryAt()).allowed());
+    }
+
     private UUID insertUser(LocalDateTime now) {
         UUID id = UUID.randomUUID();
         jdbcTemplate.update(

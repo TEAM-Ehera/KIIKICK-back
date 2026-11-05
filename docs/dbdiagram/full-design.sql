@@ -192,7 +192,8 @@ CREATE TABLE `quarter_summaries` (
     `valid_gps_duration_seconds` DOUBLE NULL,
     `calculated_at` DATETIME(6) NULL,
     `updated_at` DATETIME(6) NOT NULL,
-    PRIMARY KEY (`quarter_id`)
+    PRIMARY KEY (`quarter_id`),
+    KEY `idx_summary_pending` (`calculation_status`, `updated_at`, `quarter_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `friend_pairs` (

@@ -28,7 +28,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @SpringBootTest
 @AutoConfigureMockMvc
-class FriendControllerTest {
+class FriendControllerTest extends AuthenticatedApiTest {
     private static final String REQUESTS = "/api/v1/friend-requests";
     private static final String SEARCH = "/api/v1/users/search";
     private final UUID first = UUID.randomUUID();
@@ -63,13 +63,13 @@ class FriendControllerTest {
                 .andExpect(content().string(created.getContentAsString()));
         mvc.perform(send(second, first, UUID.randomUUID())).andExpect(status().isConflict())
                 .andExpect(jsonPath("$.error.code").value("REQUEST_ALREADY_RECEIVED"));
-        mvc.perform(get(profile(second)).principal(first::toString))
+        mvc.perform(get(profile(second)).header("Authorization", bearer(first)))
                 .andExpect(jsonPath("$.data.relationship").value("PENDING_SENT"));
-        mvc.perform(get(profile(first)).principal(second::toString))
+        mvc.perform(get(profile(first)).header("Authorization", bearer(second)))
                 .andExpect(jsonPath("$.data.relationship").value("PENDING_RECEIVED"));
-        mvc.perform(get(REQUESTS).principal(second::toString).param("direction", "RECEIVED"))
+        mvc.perform(get(REQUESTS).header("Authorization", bearer(second)).param("direction", "RECEIVED"))
                 .andExpect(jsonPath("$.data[0].id").value(id));
-        mvc.perform(get(REQUESTS).principal(first::toString).param("direction", "SENT"))
+        mvc.perform(get(REQUESTS).header("Authorization", bearer(first)).param("direction", "SENT"))
                 .andExpect(jsonPath("$.data[0].recipientId").value(second.toString()));
 
         String acceptPath = REQUESTS + "/" + id + "/accept";
@@ -77,16 +77,16 @@ class FriendControllerTest {
         mvc.perform(write(post(acceptPath), third)).andExpect(status().isForbidden());
         mvc.perform(write(post(acceptPath), second)).andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("ACCEPTED"));
-        mvc.perform(get("/api/v1/friends").principal(first::toString))
+        mvc.perform(get("/api/v1/friends").header("Authorization", bearer(first)))
                 .andExpect(jsonPath("$.data[0].profile.relationship").value("FRIEND"));
-        mvc.perform(get(REQUESTS).principal(first::toString).param("direction", "SENT"))
+        mvc.perform(get(REQUESTS).header("Authorization", bearer(first)).param("direction", "SENT"))
                 .andExpect(jsonPath("$.data.length()").value(0));
 
         String match = mvc.perform(write(post("/api/v1/matches"), second).contentType("application/json").content("{}"))
                 .andExpect(status().isCreated()).andReturn().getResponse().getHeader("Location");
-        mvc.perform(get(match).principal(first::toString)).andExpect(status().isNotFound());
+        mvc.perform(get(match).header("Authorization", bearer(first))).andExpect(status().isNotFound());
         mvc.perform(write(delete("/api/v1/friends/" + second), first)).andExpect(status().isNoContent());
-        mvc.perform(get(profile(second)).principal(first::toString))
+        mvc.perform(get(profile(second)).header("Authorization", bearer(first)))
                 .andExpect(jsonPath("$.data.relationship").value("NONE"));
     }
 
@@ -101,18 +101,18 @@ class FriendControllerTest {
         String blockSecond = "/api/v1/users/" + second + "/block";
         String blockFirst = "/api/v1/users/" + first + "/block";
         mvc.perform(write(put(blockSecond), first)).andExpect(status().isNoContent());
-        mvc.perform(get(profile(second)).principal(first::toString)).andExpect(status().isNotFound());
-        mvc.perform(get(profile(first)).principal(second::toString)).andExpect(status().isNotFound());
-        mvc.perform(get(SEARCH).principal(second::toString).param("query", prefix + " Alpha"))
+        mvc.perform(get(profile(second)).header("Authorization", bearer(first))).andExpect(status().isNotFound());
+        mvc.perform(get(profile(first)).header("Authorization", bearer(second))).andExpect(status().isNotFound());
+        mvc.perform(get(SEARCH).header("Authorization", bearer(second)).param("query", prefix + " Alpha"))
                 .andExpect(jsonPath("$.data.length()").value(0));
         mvc.perform(send(second, first, UUID.randomUUID())).andExpect(status().isNotFound());
-        mvc.perform(get(REQUESTS).principal(second::toString).param("direction", "RECEIVED"))
+        mvc.perform(get(REQUESTS).header("Authorization", bearer(second)).param("direction", "RECEIVED"))
                 .andExpect(jsonPath("$.data.length()").value(0));
         mvc.perform(write(put(blockFirst), second)).andExpect(status().isNoContent());
         mvc.perform(write(delete(blockSecond), first)).andExpect(status().isNoContent());
-        mvc.perform(get(profile(second)).principal(first::toString)).andExpect(status().isNotFound());
+        mvc.perform(get(profile(second)).header("Authorization", bearer(first))).andExpect(status().isNotFound());
         mvc.perform(write(delete(blockFirst), second)).andExpect(status().isNoContent());
-        mvc.perform(get(profile(second)).principal(first::toString))
+        mvc.perform(get(profile(second)).header("Authorization", bearer(first)))
                 .andExpect(jsonPath("$.data.relationship").value("NONE"));
     }
 
@@ -120,18 +120,18 @@ class FriendControllerTest {
     void searchPaginatesOnlyPublicProfilesAndScopesTheCursor() throws Exception {
         UUID privateUser = UUID.randomUUID();
         users.save(privateUser, prefix + " Hidden");
-        mvc.perform(get(SEARCH).principal(first::toString).param("query", "C"))
+        mvc.perform(get(SEARCH).header("Authorization", bearer(first)).param("query", "C"))
                 .andExpect(status().isUnprocessableContent());
-        mvc.perform(get(profile(privateUser)).principal(first::toString)).andExpect(status().isNotFound());
-        var page = mvc.perform(get(SEARCH).principal(first::toString).param("query", prefix).param("limit", "1"))
+        mvc.perform(get(profile(privateUser)).header("Authorization", bearer(first))).andExpect(status().isNotFound());
+        var page = mvc.perform(get(SEARCH).header("Authorization", bearer(first)).param("query", prefix).param("limit", "1"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data[0].id").value(second.toString()))
                 .andExpect(jsonPath("$.data[0].email").doesNotExist())
                 .andExpect(jsonPath("$.meta.pagination.hasNext").value(true)).andReturn().getResponse();
         String cursor = json.readTree(page.getContentAsString()).at("/meta/pagination/nextCursor").stringValue();
-        mvc.perform(get(SEARCH).principal(first::toString).param("query", prefix).param("cursor", cursor))
+        mvc.perform(get(SEARCH).header("Authorization", bearer(first)).param("query", prefix).param("cursor", cursor))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.length()").value(1))
                 .andExpect(jsonPath("$.data[0].id").value(third.toString()));
-        mvc.perform(get(SEARCH).principal(second::toString).param("query", prefix).param("cursor", cursor))
+        mvc.perform(get(SEARCH).header("Authorization", bearer(second)).param("query", prefix).param("cursor", cursor))
                 .andExpect(status().isBadRequest());
     }
 
@@ -143,7 +143,7 @@ class FriendControllerTest {
             var received = pool.submit(concurrentSend(second, first, ready));
             assertEquals(Set.of(201, 409), Set.of(sent.get(10, TimeUnit.SECONDS), received.get(10, TimeUnit.SECONDS)));
         }
-        mvc.perform(get("/api/v1/friends").principal(first::toString)).andExpect(jsonPath("$.data.length()").value(0));
+        mvc.perform(get("/api/v1/friends").header("Authorization", bearer(first))).andExpect(jsonPath("$.data.length()").value(0));
     }
 
     @Test
@@ -154,33 +154,33 @@ class FriendControllerTest {
         String id = json.readTree(sent.getContentAsString()).at("/data/id").stringValue();
         String acceptPath = REQUESTS + "/" + id + "/accept";
         UUID acceptKey = UUID.randomUUID();
-        var accepted = mvc.perform(post(acceptPath).principal(second::toString).header("Idempotency-Key", acceptKey))
+        var accepted = mvc.perform(post(acceptPath).header("Authorization", bearer(second)).header("Idempotency-Key", acceptKey))
                 .andExpect(status().isOk()).andReturn().getResponse();
-        mvc.perform(post(acceptPath).principal(second::toString).header("Idempotency-Key", acceptKey))
+        mvc.perform(post(acceptPath).header("Authorization", bearer(second)).header("Idempotency-Key", acceptKey))
                 .andExpect(status().isOk()).andExpect(content().string(accepted.getContentAsString()));
 
         mvc.perform(write(put("/api/v1/users/" + first + "/block"), second)).andExpect(status().isNoContent());
         mvc.perform(send(first, second, sendKey)).andExpect(status().isNotFound());
-        mvc.perform(post(acceptPath).principal(second::toString).header("Idempotency-Key", acceptKey))
+        mvc.perform(post(acceptPath).header("Authorization", bearer(second)).header("Idempotency-Key", acceptKey))
                 .andExpect(status().isNotFound());
     }
 
     @Test
     void requestIdMatchesResponseMetadataAndIsReplayedForNoContent() throws Exception {
-        var profile = mvc.perform(get(profile(second)).principal(first::toString))
+        var profile = mvc.perform(get(profile(second)).header("Authorization", bearer(first)))
                 .andExpect(status().isOk()).andReturn().getResponse();
         assertEquals(json.readTree(profile.getContentAsString()).at("/meta/requestId").stringValue(),
                 profile.getHeader("X-Request-Id"));
-        var error = mvc.perform(get(SEARCH).principal(first::toString).param("query", "x"))
+        var error = mvc.perform(get(SEARCH).header("Authorization", bearer(first)).param("query", "x"))
                 .andExpect(status().isUnprocessableContent()).andReturn().getResponse();
         assertEquals(json.readTree(error.getContentAsString()).at("/meta/requestId").stringValue(),
                 error.getHeader("X-Request-Id"));
         UUID key = UUID.randomUUID();
         String path = "/api/v1/users/" + second + "/block";
-        var block = mvc.perform(put(path).principal(first::toString).header("Idempotency-Key", key))
+        var block = mvc.perform(put(path).header("Authorization", bearer(first)).header("Idempotency-Key", key))
                 .andExpect(status().isNoContent()).andExpect(header().exists("X-Request-Id"))
                 .andReturn().getResponse();
-        mvc.perform(put(path).principal(first::toString).header("Idempotency-Key", key))
+        mvc.perform(put(path).header("Authorization", bearer(first)).header("Idempotency-Key", key))
                 .andExpect(status().isNoContent()).andExpect(header().string("X-Request-Id",
                         block.getHeader("X-Request-Id")));
     }
@@ -200,12 +200,12 @@ class FriendControllerTest {
     }
 
     private MockHttpServletRequestBuilder send(UUID actor, UUID target, UUID key) {
-        return post(REQUESTS).principal(actor::toString).header("Idempotency-Key", key)
+        return post(REQUESTS).header("Authorization", bearer(actor)).header("Idempotency-Key", key)
                 .contentType("application/json").content(json.writeValueAsString(Map.of("targetUserId", target)));
     }
 
-    private static MockHttpServletRequestBuilder write(MockHttpServletRequestBuilder request, UUID actor) {
-        return request.principal(actor::toString).header("Idempotency-Key", UUID.randomUUID());
+    private MockHttpServletRequestBuilder write(MockHttpServletRequestBuilder request, UUID actor) {
+        return request.header("Authorization", bearer(actor)).header("Idempotency-Key", UUID.randomUUID());
     }
 
     private static String profile(UUID userId) {

@@ -140,7 +140,7 @@ public class FriendQuery {
     public record Profile(UUID id, String nickname, String avatarUrl, String relationship) {}
     public record Friend(Profile profile, OffsetDateTime friendsSince) {}
     public record Request(UUID id, UUID requesterId, UUID recipientId, String status, OffsetDateTime createdAt) {}
-    public record Page<T>(List<T> data, PageMeta meta) {}
-    public record PageMeta(UUID requestId, OffsetDateTime serverTime, Pagination pagination) {}
+    public record Page<T>(List<T> data, PageMeta meta) implements MatchApiResponse.Envelope {}
+    public record PageMeta(UUID requestId, OffsetDateTime serverTime, Pagination pagination) implements MatchApiResponse.Metadata {}
     public static final class InvalidSearch extends RuntimeException {}
 }

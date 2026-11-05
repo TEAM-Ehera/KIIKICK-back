@@ -121,7 +121,7 @@ public class VenueService {
         }
     }
 
-    public record Page(List<View> data, PageMeta meta) {}
+    public record Page(List<View> data, PageMeta meta) implements MatchApiResponse.Envelope {}
 
-    public record PageMeta(UUID requestId, OffsetDateTime serverTime, Pagination pagination) {}
+    public record PageMeta(UUID requestId, OffsetDateTime serverTime, Pagination pagination) implements MatchApiResponse.Metadata {}
 }
