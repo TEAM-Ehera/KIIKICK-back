@@ -100,7 +100,7 @@ public class WorkoutPayloadService {
                 .orElseThrow(() -> new UserNotFoundException(userId));
     }
 
-    private List<TrackPoint> createTrackPoints(
+    static List<TrackPoint> createTrackPoints(
             UUID workoutPayloadId,
             List<TrackPointRequest> requests
     ) {
@@ -135,7 +135,7 @@ public class WorkoutPayloadService {
         return trackPoints;
     }
 
-    private List<HeartRateSample> createHeartRateSamples(
+    static List<HeartRateSample> createHeartRateSamples(
             UUID workoutPayloadId,
             List<HeartRateSampleRequest> requests
     ) {
@@ -171,7 +171,7 @@ public class WorkoutPayloadService {
      * Apple epoch를 UTC LocalDateTime으로 변환한 후
      * MySQL DATETIME(6)에 저장 가능한 범위인지 검사한다.
      */
-    private LocalDateTime convertDate(
+    static LocalDateTime convertDate(
             String fieldPath,
             Double appleEpochSeconds
     ) {

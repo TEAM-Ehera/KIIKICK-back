@@ -2,7 +2,7 @@
 
 [전체 API 목차](../api-spec.md) · [공통 규칙](common.md) · [응답 필드 사전](schemas.md) · [정책 결정](../decisions.md)
 
-계약 버전: **v0.4 · 2026-11-02 · 구현 전 설계**
+계약 버전: **v0.4 · 2026-11-04 · #28 결과 조회**
 
 요구사항 F07. 경기 종료와 운동 요약 계산 완료는 독립이다. 본인 경기만 조회하며, 결과 화면을 열 때 원본 샘플 전체를 다시 계산하지 않는다.
 
@@ -57,6 +57,7 @@ path: matchId. query: cursor, limit.
 
 1. 본인 COMPLETED 경기의 쿼터를 number/id 오름차순으로 반환한다.
 2. 각 쿼터의 stats/position/workout/summary를 조합한다. 운동 미수신은 workout/summary=null이다.
+3. 한 페이지는 기본 20건이며 1–100건을 요청할 수 있다. 요약 게시나 지연 업로드로 경기 버전이 바뀐 뒤 기존 커서를 보내면 409 CURSOR_SNAPSHOT_CHANGED를 반환한다.
 
 ### 오류와 앱 대응
 
@@ -124,6 +125,22 @@ path: quarterId.
 ### 오류와 앱 대응
 
 미완료 결과는 409 RESULT_NOT_READY. 타인 개인 기록은 404. [공통 오류](common.md#errors)도 적용한다.
+
+## 응답 버전과 지연 업로드
+
+세 조회 모두 `ETag`와 `meta.matchVersion`을 반환한다. 경기 결과의 `summaryAvailability`는 각 쿼터의 현재 상태를 세며, 예를 들어 두 쿼터 중 하나만 운동 파일을 받았고 계산 중이면 다음과 같다.
+
+```json
+{
+  "ready": 0,
+  "partial": 0,
+  "processing": 1,
+  "failed": 0,
+  "missing": 1
+}
+```
+
+나중에 파일이 도착하거나 계산 상태가 바뀌면 결과를 다시 조회할 수 있다. 결과 응답의 Workout에는 측정 기본값만 포함한다. 그래프 원본은 [WORK-04/05](workouts.md#work-04)로 별도 조회한다.
 
 ## 제거된 계약
 
