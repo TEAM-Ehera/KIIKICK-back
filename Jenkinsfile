@@ -34,7 +34,7 @@ pipeline {
                 archiveArtifacts artifacts: 'build/libs/*.jar', fingerprint: true
             }
         }
-        stage('Deploy development') {
+        stage('Deploy development container') {
             when {
                 expression { env.JOB_NAME == 'kiikick-develop' && env.GIT_BRANCH == 'origin/develop' }
             }
@@ -43,7 +43,7 @@ pipeline {
                     set -eu
                     jar=build/libs/KIIKICK-back-0.0.1-SNAPSHOT.jar
                     digest=$(sha256sum "$jar" | cut -d ' ' -f 1)
-                    sudo -n /usr/local/sbin/kiikick-install-dev-jar "$GIT_COMMIT" "$digest" < "$jar"
+                    sudo -n /usr/local/sbin/kiikick-install-dev-container "$GIT_COMMIT" "$digest" < "$jar"
                 '''
             }
         }
