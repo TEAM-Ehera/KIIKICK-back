@@ -45,8 +45,8 @@ public class EmailVerificationController {
         );
         EmailVerificationResponse data = new EmailVerificationResponse(
                 result.verificationId(),
-                responseFactory.toSeoul(result.expiresAt()),
-                responseFactory.toSeoul(result.resendAvailableAt())
+                result.expiresAt(),
+                result.resendAvailableAt()
         );
         return ResponseEntity.status(HttpStatus.ACCEPTED)
                 .body(responseFactory.success(data));
@@ -62,7 +62,7 @@ public class EmailVerificationController {
         );
         return responseFactory.success(new EmailVerificationSuccessResponse(
                 result.registrationToken(),
-                responseFactory.toSeoul(result.expiresAt())
+                result.expiresAt()
         ));
     }
 }
