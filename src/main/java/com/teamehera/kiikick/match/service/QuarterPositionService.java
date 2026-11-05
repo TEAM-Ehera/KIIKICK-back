@@ -57,16 +57,23 @@ public class QuarterPositionService {
         if (quarter.endedAt() == null) {
             throw new QuarterLifecycleService.QuarterNotEnded();
         }
+        var position = store(quarterId, code);
+        if (matches.incrementVersion(match.id(), match.ownerId(), match.version()) != 1) {
+            throw new IllegalStateException("Could not advance the locked match version");
+        }
+        return response(position, Math.addExact(match.version(), 1));
+    }
+
+    // Call under the match lock after checking the quarter's ownership and lifecycle.
+    Position store(UUID quarterId, String code) {
         if (code == null || code.length() > 32 || !allowedCodes.contains(code)) {
             throw new InvalidPositionCode();
         }
-
         var now = LocalDateTime.now(ZoneOffset.UTC).truncatedTo(ChronoUnit.MICROS);
-        if (positions.upsert(quarterId, code, now) != 1
-                || matches.incrementVersion(match.id(), match.ownerId(), match.version()) != 1) {
+        if (positions.upsert(quarterId, code, now) != 1) {
             throw new IllegalStateException("Could not replace the locked quarter position");
         }
-        return response(Position.from(new QuarterPosition(quarterId, code, now)), Math.addExact(match.version(), 1));
+        return Position.from(new QuarterPosition(quarterId, code, now));
     }
 
     private static VersionedResponse<Position> response(Position position, long version) {

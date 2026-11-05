@@ -347,3 +347,32 @@ path: quarterId. 본문 없음.
 ## 계산 기준
 
 [쿼터 요약 계산 계약](../dbdiagram/quarter-summary.md)을 따른다. TRIMP는 Edwards 하나만 제공한다. GPS·심박 원본은 모두 보존하며 Zone별 체류 시간은 중간 계산으로만 사용한다. 최고/평균 속력은 m/s다. GPS·심박 유효 구간, 보간 및 이벤트 임계값은 쿼터 요약 계산 계약을 따른다.
+
+## 경기 단위 운동 기록 제출
+
+`POST /api/v1/matches/{matchId}/workout-submissions`는 완료된 본인 경기의 모든 쿼터 대표 포지션과 운동 원본을 한 요청으로 받는다. 인증과 `Idempotency-Key`, 경기 완료 응답에서 받은 최신 `If-Match`가 필요하다.
+
+```json
+{
+  "quarters": [
+    {
+      "quarterId": "d2b48276-e3bf-4130-a014-ae8488ddf99b",
+      "position": "CM",
+      "workout": {
+        "startDate": 815274000,
+        "endDate": 815274600,
+        "totalCalories": 100,
+        "totalDistance": 1500,
+        "points": [],
+        "heartRateSamples": []
+      }
+    }
+  ]
+}
+```
+
+- 경기의 모든 쿼터 ID가 정확히 한 번씩 필요하다. `position`은 서버에 설정된 대표 포지션 코드여야 하며, `workout`은 WORK-01과 같은 형식이다.
+- 쿼터별 포지션과 운동 원본을 하나의 트랜잭션에서 저장하고, 새 원본마다 요약 계산을 대기 상태로 등록한다. 기존 쿼터 원본과 같은 데이터는 재사용하고 다른 원본과 충돌하면 전체 제출을 롤백한다.
+- 요청 본문 전체에 `kiikick.workout.max-upload-bytes` 제한을 적용한다. 기본값은 8 MiB이며 초과하면 `413`을 반환한다.
+- 성공하면 `202 Accepted`, 새 경기 `ETag`, `Location: /api/v1/matches/{matchId}/result`, `Retry-After: 5`를 반환한다. 응답의 `data`에는 `matchId`와 `quarterCount`가 들어간다. iOS는 경기 결과의 `summaryAvailability`로 분석 진행 상태를 확인할 수 있다.
+- 응답을 받지 못한 경우 같은 본문과 헤더로 재시도한다. 완료된 경기의 대표 포지션을 정정하려면 같은 운동 원본과 수정한 포지션을 새 키 및 최신 경기 ETag로 제출할 수 있다.
