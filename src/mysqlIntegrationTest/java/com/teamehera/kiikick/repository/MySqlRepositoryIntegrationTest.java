@@ -346,7 +346,7 @@ class MySqlRepositoryIntegrationTest {
                         verified.registrationToken()),
                 () -> assertTrue(emailFlows.findActiveByActionToken(
                         authHashEncoder.hashActionToken(verified.registrationToken()),
-                        "SIGN_UP", verified.expiresAt().minusSeconds(1)
+                        "SIGN_UP", LocalDateTime.ofInstant(verified.expiresAt().minusSeconds(1), ZoneOffset.UTC)
                 ).isPresent())
         );
     }
@@ -386,7 +386,7 @@ class MySqlRepositoryIntegrationTest {
             assertTrue(!first.verificationId().equals(second.verificationId()));
             assertEquals(original, emailFlows.findById(first.verificationId()).orElseThrow());
             assertEquals(first.resendAvailableAt(), emailFlows.findById(second.verificationId())
-                    .orElseThrow().lastSentAt());
+                    .orElseThrow().lastSentAt().toInstant(ZoneOffset.UTC));
             verify(verificationEmailSender, times(2)).sendSignUpCode(email, "654321", 3);
             assertEquals(first.verificationId(), registrationTokenService.consume("mysql-token-" + email)
                     .verificationId());

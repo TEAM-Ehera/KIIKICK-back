@@ -17,10 +17,6 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 
 import java.time.Clock;
 import java.time.Duration;
-import java.time.LocalDateTime;
-import java.time.OffsetDateTime;
-import java.time.ZoneId;
-import java.time.ZoneOffset;
 import java.util.Map;
 import java.util.UUID;
 
@@ -29,7 +25,6 @@ import java.util.UUID;
 public class EmailVerificationExceptionHandler {
 
     private static final Clock CLOCK = Clock.systemUTC();
-    private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
 
     @ExceptionHandler(VerificationApiException.class)
     public ResponseEntity<AuthApiErrorResponse> handleVerification(
@@ -38,7 +33,7 @@ public class EmailVerificationExceptionHandler {
         HttpHeaders headers = new HttpHeaders();
         if (exception.retryAt() != null) {
             long seconds = Math.max(1, Duration.between(
-                    LocalDateTime.ofInstant(CLOCK.instant(), ZoneOffset.UTC),
+                    CLOCK.instant(),
                     exception.retryAt()
             ).toSeconds());
             headers.set(HttpHeaders.RETRY_AFTER, Long.toString(seconds));
@@ -94,7 +89,7 @@ public class EmailVerificationExceptionHandler {
                 ),
                 new AuthApiMeta(
                         "req-" + UUID.randomUUID(),
-                        OffsetDateTime.now(CLOCK.withZone(SEOUL))
+                        CLOCK.instant()
                 )
         );
     }

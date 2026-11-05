@@ -15,6 +15,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.UUID;
@@ -62,12 +63,12 @@ public class EmailVerificationService {
         String normalizedEmail = emailNormalizer.normalize(email);
         String canonicalIp = canonicalIpAddress(remoteAddress);
         String ipHash = hashEncoder.hashIpAddress(canonicalIp);
-        LocalDateTime now = now();
+        Instant now = now();
 
         SendRateLimitDecision decision = rateLimitRepository
-                .tryAcquireInCurrentTransaction(normalizedEmail, ipHash, now);
+                .tryAcquireInCurrentTransaction(normalizedEmail, ipHash, utc(now));
         if (!decision.allowed()) {
-            throw VerificationApiException.rateLimited(decision.retryAt());
+            throw VerificationApiException.rateLimited(instant(decision.retryAt()));
         }
 
         String code = secretGenerator.generateCode();
@@ -76,7 +77,7 @@ public class EmailVerificationService {
         // SMTP 실패 예외가 전파되면 Flow 변경과 Rate Limit 이벤트를 함께 롤백한다.
         emailSender.sendSignUpCode(normalizedEmail, code, CODE_LIFETIME.toMinutes());
         return new EmailVerificationRequestResult(
-                flow.id(), flow.codeExpiresAt(), now.plus(RESEND_COOLDOWN)
+                flow.id(), instant(flow.codeExpiresAt()), now.plus(RESEND_COOLDOWN)
         );
     }
 
@@ -88,7 +89,7 @@ public class EmailVerificationService {
         if (verificationId == null || code == null || !code.matches("\\d{6}")) {
             throw VerificationApiException.invalidVerification();
         }
-        LocalDateTime now = now();
+        Instant now = now();
         EmailVerificationFlow flow = flowRepository.findByIdForUpdate(verificationId)
                 .orElseThrow(VerificationApiException::invalidVerification);
 
@@ -96,29 +97,29 @@ public class EmailVerificationService {
                 || flow.codeHash() == null) {
             throw VerificationApiException.invalidVerification();
         }
-        if (!now.isBefore(flow.codeExpiresAt())) {
-            flowRepository.invalidate(flow.id(), now);
+        if (!now.isBefore(instant(flow.codeExpiresAt()))) {
+            flowRepository.invalidate(flow.id(), utc(now));
             throw VerificationApiException.expiredVerification();
         }
         if (flow.failedAttempts() >= MAX_FAILED_ATTEMPTS) {
-            throw VerificationApiException.attemptsExceeded(flow.codeExpiresAt());
+            throw VerificationApiException.attemptsExceeded(instant(flow.codeExpiresAt()));
         }
 
         String expectedHash = hashEncoder.hashEmailCode(flow.id(), code);
         if (!constantTimeEquals(flow.codeHash(), expectedHash)) {
-            flowRepository.incrementFailedAttempts(flow.id(), now);
+            flowRepository.incrementFailedAttempts(flow.id(), utc(now));
             int failedAttempts = flow.failedAttempts() + 1;
             if (failedAttempts >= MAX_FAILED_ATTEMPTS) {
-                throw VerificationApiException.attemptsExceeded(flow.codeExpiresAt());
+                throw VerificationApiException.attemptsExceeded(instant(flow.codeExpiresAt()));
             }
             throw VerificationApiException.invalidVerification();
         }
 
         String registrationToken = secretGenerator.generateActionToken();
         String tokenHash = hashEncoder.hashActionToken(registrationToken);
-        LocalDateTime tokenExpiresAt = now.plus(ACTION_TOKEN_LIFETIME);
+        Instant tokenExpiresAt = now.plus(ACTION_TOKEN_LIFETIME);
         if (flowRepository.verifyAndIssueActionToken(
-                flow.id(), expectedHash, tokenHash, tokenExpiresAt, now
+                flow.id(), expectedHash, tokenHash, utc(tokenExpiresAt), utc(now)
         ) != 1) {
             throw VerificationApiException.invalidVerification();
         }
@@ -130,14 +131,14 @@ public class EmailVerificationService {
     private EmailVerificationFlow prepareFlow(
             String normalizedEmail,
             String code,
-            LocalDateTime now
+            Instant now
     ) {
         EmailVerificationFlow latest = flowRepository
                 .findLatestForUpdate(normalizedEmail, PURPOSE)
                 .orElse(null);
         if (latest != null) {
             // 인증 완료 여부와 무관하게 마지막 발송부터 60초가 지나야 다시 발송한다.
-            LocalDateTime resendAt = latest.lastSentAt().plus(RESEND_COOLDOWN);
+            Instant resendAt = instant(latest.lastSentAt()).plus(RESEND_COOLDOWN);
             if (now.isBefore(resendAt)) {
                 throw VerificationApiException.rateLimited(resendAt);
             }
@@ -146,40 +147,48 @@ public class EmailVerificationService {
                 latest = null;
             }
         }
-        if (latest != null && !now.isBefore(latest.codeExpiresAt())) {
-            flowRepository.invalidate(latest.id(), now);
+        if (latest != null && !now.isBefore(instant(latest.codeExpiresAt()))) {
+            flowRepository.invalidate(latest.id(), utc(now));
             latest = null;
         }
         if (latest != null && latest.failedAttempts() >= MAX_FAILED_ATTEMPTS) {
-            throw VerificationApiException.attemptsExceeded(latest.codeExpiresAt());
+            throw VerificationApiException.attemptsExceeded(instant(latest.codeExpiresAt()));
         }
         if (latest != null) {
             String codeHash = hashEncoder.hashEmailCode(latest.id(), code);
-            LocalDateTime expiresAt = now.plus(CODE_LIFETIME);
-            if (flowRepository.resend(latest.id(), codeHash, expiresAt, now) != 1) {
+            Instant expiresAt = now.plus(CODE_LIFETIME);
+            if (flowRepository.resend(latest.id(), codeHash, utc(expiresAt), utc(now)) != 1) {
                 throw VerificationApiException.invalidVerification();
             }
             return new EmailVerificationFlow(
                     latest.id(), latest.normalizedEmail(), latest.purpose(), codeHash,
-                    latest.failedAttempts(), expiresAt, now, null, null,
-                    null, null, null, latest.createdAt(), now
+                    latest.failedAttempts(), utc(expiresAt), utc(now), null, null,
+                    null, null, null, latest.createdAt(), utc(now)
             );
         }
 
         UUID id = UUID.randomUUID();
-        LocalDateTime expiresAt = now.plus(CODE_LIFETIME);
+        Instant expiresAt = now.plus(CODE_LIFETIME);
         EmailVerificationFlow created = new EmailVerificationFlow(
                 id, normalizedEmail, PURPOSE,
                 hashEncoder.hashEmailCode(id, code), 0,
-                expiresAt, now, null, null,
-                null, null, null, now, now
+                utc(expiresAt), utc(now), null, null,
+                null, null, null, utc(now), utc(now)
         );
         flowRepository.save(created);
         return created;
     }
 
-    private LocalDateTime now() {
-        return LocalDateTime.ofInstant(clock.instant(), ZoneOffset.UTC);
+    private Instant now() {
+        return clock.instant().truncatedTo(java.time.temporal.ChronoUnit.MICROS);
+    }
+
+    private static LocalDateTime utc(Instant instant) {
+        return LocalDateTime.ofInstant(instant, ZoneOffset.UTC);
+    }
+
+    private static Instant instant(LocalDateTime utcDateTime) {
+        return utcDateTime.toInstant(ZoneOffset.UTC);
     }
 
     private String canonicalIpAddress(String remoteAddress) {

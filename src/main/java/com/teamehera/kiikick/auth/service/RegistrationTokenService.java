@@ -45,7 +45,7 @@ public class RegistrationTokenService {
             throw VerificationApiException.invalidRegistrationToken();
         }
         return new RegistrationTokenContext(
-                flow.id(), flow.normalizedEmail(), flow.verifiedAt()
+                flow.id(), flow.normalizedEmail(), flow.verifiedAt().toInstant(ZoneOffset.UTC)
         );
     }
 }

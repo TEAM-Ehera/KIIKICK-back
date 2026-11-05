@@ -11,7 +11,6 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static com.teamehera.kiikick.global.jdbc.JdbcValueConverter.bytesToUuid;
-import static com.teamehera.kiikick.global.jdbc.JdbcValueConverter.nullableDateTime;
 import static com.teamehera.kiikick.global.jdbc.JdbcValueConverter.uuidToBytes;
 
 @Repository
@@ -23,11 +22,12 @@ public class UserRepository {
             bytesToUuid(rs.getBytes("id")),
             rs.getString("nickname"),
             rs.getString("avatar_url"),
-            nullableDateTime(rs, "onboarding_completed_at"),
-            nullableDateTime(rs, "deletion_requested_at"),
-            rs.getTimestamp("created_at").toLocalDateTime(),
-            rs.getTimestamp("updated_at").toLocalDateTime(),
-            nullableDateTime(rs, "deleted_at")
+            // UTC DATETIME을 JVM 시간대 변환 없이 읽고 도메인의 LocalDateTime 경계를 유지한다.
+            rs.getObject("onboarding_completed_at", LocalDateTime.class),
+            rs.getObject("deletion_requested_at", LocalDateTime.class),
+            rs.getObject("created_at", LocalDateTime.class),
+            rs.getObject("updated_at", LocalDateTime.class),
+            rs.getObject("deleted_at", LocalDateTime.class)
     );
 
     public UserRepository(JdbcTemplate jdbcTemplate) {

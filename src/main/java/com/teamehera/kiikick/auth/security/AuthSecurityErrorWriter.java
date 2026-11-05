@@ -6,14 +6,11 @@ import tools.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
 import java.time.Clock;
-import java.time.OffsetDateTime;
-import java.time.ZoneId;
+import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
 
 public class AuthSecurityErrorWriter {
-
-    private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
 
     private final ObjectMapper objectMapper;
     private final Clock clock;
@@ -37,7 +34,7 @@ public class AuthSecurityErrorWriter {
                 new ErrorDetail(code, message, false, null, Map.of()),
                 new ErrorMeta(
                         "req-" + UUID.randomUUID(),
-                        OffsetDateTime.now(clock.withZone(SEOUL))
+                        clock.instant()
                 )
         );
         objectMapper.writeValue(response.getOutputStream(), body);
@@ -55,6 +52,6 @@ public class AuthSecurityErrorWriter {
     ) {
     }
 
-    record ErrorMeta(String requestId, OffsetDateTime serverTime) {
+    record ErrorMeta(String requestId, Instant serverTime) {
     }
 }

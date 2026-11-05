@@ -5,16 +5,10 @@ import com.teamehera.kiikick.auth.dto.AuthApiResponse;
 import org.springframework.stereotype.Component;
 
 import java.time.Clock;
-import java.time.LocalDateTime;
-import java.time.OffsetDateTime;
-import java.time.ZoneId;
-import java.time.ZoneOffset;
 import java.util.UUID;
 
 @Component
 public class AuthApiResponseFactory {
-
-    private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
 
     private final Clock clock;
 
@@ -29,12 +23,8 @@ public class AuthApiResponseFactory {
     public AuthApiMeta meta() {
         return new AuthApiMeta(
                 "req-" + UUID.randomUUID(),
-                OffsetDateTime.now(clock.withZone(SEOUL))
+                clock.instant()
         );
     }
 
-    public OffsetDateTime toSeoul(LocalDateTime utcDateTime) {
-        return utcDateTime.atOffset(ZoneOffset.UTC).atZoneSameInstant(SEOUL)
-                .toOffsetDateTime();
-    }
 }

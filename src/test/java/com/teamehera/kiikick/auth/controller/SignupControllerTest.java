@@ -15,7 +15,6 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.junit.jupiter.api.extension.ExtendWith;
 
 import java.time.Instant;
-import java.time.LocalDateTime;
 import java.util.UUID;
 
 import static org.mockito.Mockito.when;
@@ -46,7 +45,7 @@ class SignupControllerTest {
                         "refresh-token",
                         Instant.parse("2026-11-05T00:15:00Z"),
                         userId,
-                        LocalDateTime.of(2026, 11, 5, 0, 0)
+                        Instant.parse("2026-11-05T00:00:00Z")
                 ));
 
         mockMvc.perform(post("/api/v1/auth/signup")
@@ -62,7 +61,9 @@ class SignupControllerTest {
                 .andExpect(jsonPath("$.data.accessToken").value("access-token"))
                 .andExpect(jsonPath("$.data.refreshToken").value("refresh-token"))
                 .andExpect(jsonPath("$.data.expiresAt")
-                        .value("2026-11-05T09:15:00+09:00"))
+                        .value("2026-11-05T00:15:00Z"))
+                .andExpect(jsonPath("$.data.user.createdAt").value("2026-11-05T00:00:00Z"))
+                .andExpect(jsonPath("$.meta.serverTime").value(org.hamcrest.Matchers.endsWith("Z")))
                 .andExpect(jsonPath("$.data.user.id").value(userId.toString()))
                 .andExpect(jsonPath("$.data.user.nickname").isEmpty())
                 .andExpect(jsonPath("$.data.user.avatarUrl").isEmpty())

@@ -1,5 +1,8 @@
 # 이메일 회원가입 완료 API
 
+`createdAt`, `expiresAt`, 공통 Auth `serverTime`은 ISO 8601 UTC `Z`로 반환한다.
+클라이언트는 기기 시간대로 표시한다. DB UTC DATETIME(6), 토큰 수명과 가입 트랜잭션은 유지한다.
+
 공유 API 계약은 [`docs/api/auth.md`의 AUTH-01C](../api/auth.md#auth-01c)를 기준으로 한다.
 이 문서는 #72 구현의 전체 성공 응답과 저장 규칙을 보충한다.
 
@@ -21,19 +24,19 @@
     "sessionId": "00000010-0000-4000-8000-000000000010",
     "accessToken": "access-token",
     "refreshToken": "refresh-token",
-    "expiresAt": "2026-11-05T09:15:00+09:00",
+    "expiresAt": "2026-11-05T00:15:00Z",
     "user": {
       "id": "00000020-0000-4000-8000-000000000020",
       "nickname": null,
       "avatarUrl": null,
       "onboardingStatus": "REQUIRED",
       "comparisonConsent": false,
-      "createdAt": "2026-11-05T09:00:00+09:00"
+      "createdAt": "2026-11-05T00:00:00Z"
     }
   },
   "meta": {
     "requestId": "req-example",
-    "serverTime": "2026-11-05T09:00:00+09:00"
+    "serverTime": "2026-11-05T00:00:00Z"
   }
 }
 ```

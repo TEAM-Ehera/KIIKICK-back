@@ -31,6 +31,9 @@ v0.5. 표의 모든 키는 응답에 포함한다. nullable 값은 null이며 �
 <a id="session"></a>
 ## Session
 
+Auth 응답의 날짜는 ISO 8601 UTC `Z` 문자열이다. `UserSelf.createdAt`과 공통 Auth 메타의
+`serverTime`도 동일하며 클라이언트가 기기 시간대로 표시한다. 비Auth 날짜·통계 계약은 유지한다.
+
 | 필드 | 타입 | 필수 | null | 기본값 / 예시 | 설명 |
 | --- | --- | :---: | :---: | --- | --- |
 | `sessionId` | UUID | O | 불가 | — | 로그아웃 대상 세션 ID |

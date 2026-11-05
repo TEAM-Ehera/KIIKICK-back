@@ -14,8 +14,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 
 @RestController
 @RequestMapping("/api/v1/auth")
@@ -45,15 +43,13 @@ public class SignupController {
                 null,
                 "REQUIRED",
                 false,
-                responseFactory.toSeoul(result.userCreatedAt())
+                result.userCreatedAt()
         );
         SignupResponse response = new SignupResponse(
                 result.sessionId(),
                 result.accessToken(),
                 result.refreshToken(),
-                responseFactory.toSeoul(LocalDateTime.ofInstant(
-                        result.accessTokenExpiresAt(), ZoneOffset.UTC
-                )),
+                result.accessTokenExpiresAt(),
                 user
         );
         return ResponseEntity.status(HttpStatus.CREATED)
