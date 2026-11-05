@@ -16,3 +16,5 @@ kiikick:
       issuer: kiikick-api-test
       audience: kiikick-test
       lifetime: 15m
+  workout:
+    summary-worker-enabled: false

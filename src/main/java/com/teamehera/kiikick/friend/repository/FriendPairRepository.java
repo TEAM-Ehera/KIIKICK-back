@@ -55,6 +55,11 @@ public class FriendPairRepository {
         ).stream().findFirst();
     }
 
+    public Optional<FriendPair> findById(UUID id) {
+        return jdbcTemplate.query("SELECT * FROM friend_pairs WHERE id = ?", rowMapper, uuidToBytes(id))
+                .stream().findFirst();
+    }
+
     public Optional<FriendPair> findByIdAndUserId(UUID id, UUID userId) {
         return jdbcTemplate.query(
                 """

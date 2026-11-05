@@ -42,6 +42,11 @@ public class DeviceRepository {
         );
     }
 
+    public Optional<Device> findById(UUID id) {
+        return jdbcTemplate.query("SELECT * FROM devices WHERE id = ?", rowMapper, uuidToBytes(id))
+                .stream().findFirst();
+    }
+
     public Optional<Device> findByIdAndUserId(UUID id, UUID userId) {
         return jdbcTemplate.query(
                 "SELECT * FROM devices WHERE id = ? AND user_id = ?",

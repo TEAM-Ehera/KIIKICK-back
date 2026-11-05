@@ -70,6 +70,17 @@ class SecurityAuthenticationTest {
     }
 
     @Test
+    void servlet_Principal_이름은_검증된_사용자_UUID이다() throws Exception {
+        UUID userId = UUID.randomUUID();
+        String token = accessTokenService.issue(userId, UUID.randomUUID()).token();
+        mockMvc.perform(get("/api/v1/security-test/name")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value(userId.toString()));
+        verifyNoInteractions(authSessionRepository);
+    }
+
+    @Test
     void 세션이_폐기되어도_발급된_JWT는_만료_전까지_유효할_수_있다() throws Exception {
         UUID userId = UUID.randomUUID();
         UUID sessionId = UUID.randomUUID();
@@ -241,6 +252,10 @@ class SecurityAuthenticationTest {
 
     @RestController
     static class SecurityTestController {
+        @GetMapping("/api/v1/security-test/name")
+        Map<String, String> principalName(java.security.Principal principal) {
+            return Map.of("name", principal.getName());
+        }
 
         @GetMapping(value = "/api/v1/security-test",
                 produces = MediaType.APPLICATION_JSON_VALUE)

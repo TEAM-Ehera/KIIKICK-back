@@ -271,10 +271,12 @@ Authorization: Bearer <accessToken>
 서버가 계산하는 지표의 임계값·산식은 [정책 목록](decisions.md)에서 정한다. 아래 전체 목록 중 오프라인 조작 명령 큐는 지원 여부 검토 중인 기술 초안이다.
 
 <a id="all-apis"></a>
+홈 화면은 iOS에서 경기 목록과 쿼터 결과를 조합한다. [홈 화면 연동](api/home.md)을 참고한다.
+
 ## 7. 전체 API 목록
 
 
-총 **67개 경로/Method 계약**이다. 명령 동기화는 지원 범위 검토 중인 기술 초안도 포함한다. 각 행의 성공 상태는 아래 상세 문서와 함께 읽는다.
+총 **66개 경로/Method 계약**이다. 명령 동기화는 지원 범위 검토 중인 기술 초안도 포함한다. 각 행의 성공 상태는 아래 상세 문서와 함께 읽는다.
 
 ### [인증·온보딩·마이페이지](api/auth.md)
 
@@ -334,12 +336,6 @@ Authorization: Bearer <accessToken>
 | [GAME-12](api/gameplay.md#game-12) | 경기 묶음 종료 | `POST` | `/matches/{matchId}/end` | 200 |
 | [GAME-13](api/gameplay.md#game-13) | 쿼터 골·어시스트 조회 | `GET` | `/matches/{matchId}/quarters/{quarterId}/stats` | 200 |
 | [GAME-14](api/gameplay.md#game-14) | 쿼터 골·어시스트 합계 저장·수정 | `PUT` | `/matches/{matchId}/quarters/{quarterId}/stats` | 200 |
-
-### [홈](api/home.md)
-
-| API ID | 기능 | Method | 경로 | 성공 |
-| --- | --- | --- | --- | --- |
-| [HOME-01](api/home.md#home-01) | 홈 요약 조회 | `GET` | `/home` | 200 |
 
 ### [친구](api/friends.md)
 
