@@ -16,13 +16,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class CommonPasswordBlacklistTest {
 
     @Test
-    void 실제_차단목록은_중복_없는_1000개를_정확히_비교한다() {
+    void 실제_차단목록은_중복_없는_1000개를_소문자_기준으로_비교한다() {
         CommonPasswordBlacklist blacklist = new CommonPasswordBlacklist(
                 new ClassPathResource("blacklist.txt")
         );
 
         assertThat(blacklist.size()).isEqualTo(1_000);
         assertThat(blacklist.contains("password")).isTrue();
+        assertThat(blacklist.contains("PASSWORD")).isTrue();
         assertThat(blacklist.contains(" password")).isFalse();
         assertThat(blacklist.contains("password ")).isFalse();
     }

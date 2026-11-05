@@ -29,17 +29,17 @@ class PasswordPolicyValidatorTest {
     }
 
     @Test
-    void 비밀번호는_8자부터_32자까지_허용하고_조합이나_연속문자를_강제하지_않는다() {
+    void 비밀번호는_8자부터_64자까지_허용하고_조합이나_연속문자를_강제하지_않는다() {
         assertThatCode(() -> validator.validate("abcd5678"))
                 .doesNotThrowAnyException();
-        assertThatCode(() -> validator.validate("a".repeat(32)))
+        assertThatCode(() -> validator.validate("a".repeat(64)))
                 .doesNotThrowAnyException();
     }
 
     @Test
-    void 비밀번호는_8자_미만과_32자_초과를_거부한다() {
+    void 비밀번호는_8자_미만과_64자_초과를_거부한다() {
         assertInvalid("a".repeat(7));
-        assertInvalid("a".repeat(33));
+        assertInvalid("a".repeat(65));
     }
 
     @Test
@@ -50,8 +50,10 @@ class PasswordPolicyValidatorTest {
     }
 
     @Test
-    void 차단목록은_변환하지_않고_정확히_일치할_때만_거부한다() {
+    void 차단목록은_Locale_ROOT_소문자_기준으로_비교한다() {
         assertInvalid("password");
+        assertInvalid("Password");
+        assertInvalid("PASSWORD");
         assertThatCode(() -> validator.validate("Password!"))
                 .doesNotThrowAnyException();
     }

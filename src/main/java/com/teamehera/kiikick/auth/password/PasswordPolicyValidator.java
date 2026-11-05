@@ -9,7 +9,7 @@ import java.nio.charset.StandardCharsets;
 public class PasswordPolicyValidator {
 
     private static final int MINIMUM_CHARACTERS = 8;
-    private static final int MAXIMUM_CHARACTERS = 32;
+    private static final int MAXIMUM_CHARACTERS = 64;
     private static final int MAXIMUM_UTF8_BYTES = 72;
 
     private final CommonPasswordBlacklist blacklist;

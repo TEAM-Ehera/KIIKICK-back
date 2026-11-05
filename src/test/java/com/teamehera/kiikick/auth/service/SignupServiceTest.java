@@ -87,7 +87,7 @@ class SignupServiceTest {
         when(accessTokenService.issue(any(UUID.class), any(UUID.class)))
                 .thenAnswer(invocation -> new IssuedAccessToken(
                         "access-token",
-                        NOW.plusSeconds(4 * 60 * 60)
+                        NOW.plusSeconds(15 * 60)
                 ));
     }
 
@@ -109,6 +109,9 @@ class SignupServiceTest {
                     assertThat(passwordEncoder.matches(
                             "Valid-local-72!", credential.passwordHash()
                     )).isTrue();
+                    assertThat(passwordEncoder.matches(
+                            "valid-local-72!", credential.passwordHash()
+                    )).isFalse();
                 });
         assertThat(sessionRepository.findActiveById(
                 result.sessionId(), LocalDateTime.ofInstant(NOW, ZoneOffset.UTC)
@@ -119,6 +122,7 @@ class SignupServiceTest {
         });
         assertThat(result.accessToken()).isEqualTo("access-token");
         assertThat(result.refreshToken()).isEqualTo("refresh-token");
+        assertThat(result.accessTokenExpiresAt()).isEqualTo(NOW.plusSeconds(15 * 60));
     }
 
     @Test

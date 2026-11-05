@@ -116,9 +116,10 @@ registrationToken 원문 대신 해시만 저장한다.
 
 성공 응답은 [Session](schemas.md#session)이며 신규 사용자의 `nickname`과 `avatarUrl`은
 null, `onboardingStatus`는 `REQUIRED`, `comparisonConsent`는 false다. 비밀번호는
-8~32자이면서 UTF-8 72바이트 이하여야 하며 로컬 차단 목록과 정확히 일치하면 거부한다.
-BCrypt 해시만 저장한다. registrationToken 소비, User·EmailCredential·AuthSession 생성은
-한 트랜잭션으로 처리한다. Access Token은 4시간, Refresh Token은 최초 로그인 기준 최대
+8~64자이면서 UTF-8 72바이트 이하여야 한다. 차단 목록 비교에는 `Locale.ROOT` 기준 소문자
+변환을 적용하고 BCrypt 해싱에는 입력 원문을 사용한다. registrationToken 소비,
+User·EmailCredential·AuthSession 생성은 한 트랜잭션으로 처리한다. Access Token은 15분,
+Refresh Token은 최초 발급 기준 최대
 90일이며 DB에는 Refresh Token의 SHA-256 해시만 저장한다.
 
 | HTTP | code | 조건 |
@@ -205,7 +206,7 @@ Content-Type: application/json
 | `sessionId` | UUID | O | 불가 | — | 로그아웃 대상 세션 ID |
 | `accessToken` | string | O | 불가 | — | 서버 인증에 사용하는 비밀값. 로그 금지 |
 | `refreshToken` | string | O | 불가 | — | 갱신 시 회전하는 비밀값. 로그 금지 |
-| `expiresAt` | timestamp | O | 불가 | — | 4시간 유효한 access token의 만료 시각 |
+| `expiresAt` | timestamp | O | 불가 | — | 15분 유효한 access token의 만료 시각 |
 | `user` | UserSelf | O | 불가 | — | 본인 계정·온보딩 정보 |
 
 ```http
@@ -220,7 +221,7 @@ Content-Type: application/json
     "sessionId": "00000010-0000-4000-8000-000000000010",
     "accessToken": "example-access-token",
     "refreshToken": "example-refresh-token",
-    "expiresAt": "2026-11-02T11:00:00+09:00",
+    "expiresAt": "2026-11-02T10:25:00+09:00",
     "user": {
       "id": "00000001-0000-4000-8000-000000000001",
       "nickname": "준",

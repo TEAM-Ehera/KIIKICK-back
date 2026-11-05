@@ -21,7 +21,7 @@
     "sessionId": "00000010-0000-4000-8000-000000000010",
     "accessToken": "access-token",
     "refreshToken": "refresh-token",
-    "expiresAt": "2026-11-05T13:00:00+09:00",
+    "expiresAt": "2026-11-05T09:15:00+09:00",
     "user": {
       "id": "00000020-0000-4000-8000-000000000020",
       "nickname": null,
@@ -40,7 +40,7 @@
 
 - registrationToken은 `SIGN_UP` 목적, 10분 만료, 미소비 상태인 경우에만 사용할 수 있다.
 - 토큰 소비, User·EmailCredential·AuthSession 생성은 하나의 트랜잭션으로 처리한다.
-- Access Token은 4시간, Refresh Token은 최초 로그인 기준 최대 90일 동안 유효하다.
+- Access Token은 15분, Refresh Token은 최초 발급 기준 최대 90일 동안 유효하다.
 - Refresh Token 원문 대신 SHA-256 해시만 세션에 저장한다.
 - 신규 사용자는 닉네임·동의 온보딩 전이므로 `REQUIRED` 상태다.
 - 이메일 중복이나 동시 가입 충돌은 `409 SIGNUP_NOT_AVAILABLE`로 처리해 계정 상태를
