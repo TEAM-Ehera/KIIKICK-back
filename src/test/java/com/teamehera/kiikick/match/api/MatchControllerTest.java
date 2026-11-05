@@ -47,6 +47,7 @@ class MatchControllerTest {
 
     @DynamicPropertySource
     static void database(DynamicPropertyRegistry properties) {
+        properties.add("kiikick.match.position-codes", () -> "TEST_FIRST,TEST_SECOND");
         properties.add("spring.datasource.url", () -> "jdbc:h2:mem:match_controller;MODE=MySQL");
     }
 
@@ -499,6 +500,64 @@ class MatchControllerTest {
 
     private MockHttpServletRequestBuilder putStats(String path, UUID key, long version, String body) {
         return write(put(path), actor, key, body).header("If-Match", tag(version));
+    }
+
+    @Test
+    void missingQuarterPositionReturnsNullWithMatchVersionAndRequiresOwnership() throws Exception {
+        String match = create(actor, "{}");
+        String quarter = addQuarter(match + "/quarters", 1);
+        String path = quarter + "/position";
+        mvc.perform(get(path).principal(actor::toString))
+                .andExpect(status().isOk()).andExpect(header().string("ETag", tag(2)))
+                .andExpect(jsonPath("$.data").value(nullValue()))
+                .andExpect(jsonPath("$.meta.matchVersion").value(2));
+        mvc.perform(get(path).principal(other::toString)).andExpect(status().isNotFound());
+
+        String anotherMatch = create(actor, "{}");
+        String wrongParent = anotherMatch + quarter.substring(match.length()) + "/position";
+        mvc.perform(get(wrongParent).principal(actor::toString)).andExpect(status().isNotFound());
+    }
+
+    @Test
+    void positionCanBeReplacedAfterMeasurementAndIsOptionalForCompletion() throws Exception {
+        String match = create(actor, "{}");
+        String quarter = addQuarter(match + "/quarters", 1);
+        String path = quarter + "/position";
+        mvc.perform(transition(match, "ready", actor, UUID.randomUUID(), 2)).andExpect(status().isOk());
+        mvc.perform(transition(match, "start", actor, UUID.randomUUID(), 3)).andExpect(status().isOk());
+        mvc.perform(transition(quarter, "start", actor, UUID.randomUUID(), 4)).andExpect(status().isOk());
+        mvc.perform(putPosition(path, UUID.randomUUID(), 5, "TEST_FIRST"))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.error.code").value("QUARTER_NOT_ENDED"));
+        mvc.perform(transition(quarter, "end", actor, UUID.randomUUID(), 5)).andExpect(status().isOk());
+        for (String invalid : java.util.List.of("{}", "{\"positionCode\":null}", "{\"positionCode\":1}")) {
+            mvc.perform(write(put(path), actor, UUID.randomUUID(), invalid).header("If-Match", tag(6)))
+                    .andExpect(status().isUnprocessableContent())
+                    .andExpect(jsonPath("$.error.details.fields[0]").value("positionCode"));
+        }
+        mvc.perform(putPosition(path, UUID.randomUUID(), 6, "UNKNOWN"))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.error.details.fields[0]").value("positionCode"));
+
+        mvc.perform(transition(quarter, "complete", actor, UUID.randomUUID(), 6)).andExpect(status().isOk());
+        UUID key = UUID.randomUUID();
+        var saved = mvc.perform(putPosition(path, key, 7, "TEST_FIRST"))
+                .andExpect(status().isOk()).andExpect(header().string("ETag", tag(8)))
+                .andExpect(jsonPath("$.data.positionCode").value("TEST_FIRST"))
+                .andReturn().getResponse();
+        mvc.perform(putPosition(path, key, 7, "TEST_FIRST"))
+                .andExpect(status().isOk()).andExpect(content().string(saved.getContentAsString()));
+        mvc.perform(putPosition(path, UUID.randomUUID(), 8, "TEST_SECOND"))
+                .andExpect(status().isOk()).andExpect(header().string("ETag", tag(9)));
+        mvc.perform(transition(match, "end", actor, UUID.randomUUID(), 9)).andExpect(status().isOk());
+        mvc.perform(putPosition(path, UUID.randomUUID(), 10, "TEST_FIRST")).andExpect(status().isConflict());
+        mvc.perform(get(path).principal(actor::toString))
+                .andExpect(status().isOk()).andExpect(header().string("ETag", tag(10)))
+                .andExpect(jsonPath("$.data.positionCode").value("TEST_SECOND"));
+    }
+
+    private MockHttpServletRequestBuilder putPosition(String path, UUID key, long version, String code) {
+        return write(put(path), actor, key, json.writeValueAsString(java.util.Map.of("positionCode", code)))
+                .header("If-Match", tag(version));
     }
 
     private int startConcurrently(String quarter, CountDownLatch ready) throws Exception {

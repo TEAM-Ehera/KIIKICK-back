@@ -8,6 +8,7 @@ import com.teamehera.kiikick.match.service.MatchMutation;
 import com.teamehera.kiikick.match.service.MatchSettingsService;
 import com.teamehera.kiikick.match.service.MatchOwnership;
 import com.teamehera.kiikick.match.service.QuarterLifecycleService;
+import com.teamehera.kiikick.match.service.QuarterPositionService;
 import com.teamehera.kiikick.match.service.QuarterSettingsService;
 import com.teamehera.kiikick.match.service.QuarterStatsService;
 import org.springframework.beans.factory.annotation.Value;
@@ -44,6 +45,7 @@ public class MatchController {
     static final String PATH = "/api/v1/matches";
     private static final String QUARTERS = "/{matchId}/quarters";
     private static final String QUARTER = QUARTERS + "/{quarterId}";
+    private static final String QUARTER_POSITION = QUARTER + "/position";
     private static final String QUARTER_STATS = QUARTER + "/stats";
 
     private final MatchListQuery list;
@@ -55,13 +57,14 @@ public class MatchController {
     private final QuarterSettingsService quarters;
     private final QuarterLifecycleService quarterLifecycle;
     private final QuarterStatsService quarterStats;
+    private final QuarterPositionService quarterPosition;
     private final ObjectMapper json;
     private final Duration retention;
 
     public MatchController(MatchListQuery list, MatchDetailQuery detail, MatchSettingsService settings,
                            MatchMutation mutation, MatchOwnership ownership, QuarterSettingsService quarters,
                            MatchLifecycleService lifecycle, QuarterLifecycleService quarterLifecycle,
-                           QuarterStatsService quarterStats, ObjectMapper json,
+                           QuarterStatsService quarterStats, QuarterPositionService quarterPosition, ObjectMapper json,
                            @Value("${kiikick.match.idempotency-retention:P1D}") Duration retention) {
         this.list = list;
         this.detail = detail;
@@ -72,6 +75,7 @@ public class MatchController {
         this.quarters = quarters;
         this.quarterLifecycle = quarterLifecycle;
         this.quarterStats = quarterStats;
+        this.quarterPosition = quarterPosition;
         this.json = json;
         this.retention = retention;
     }
@@ -178,6 +182,35 @@ public class MatchController {
         return replay(mutation.execute(request, expiresAt(),
                 match -> ownership.requireQuarter(actor, matchId, quarterId),
                 match -> serializeQuarter(quarterLifecycle.transition(match, quarterId, action), 200, null)));
+    }
+
+    @GetMapping(QUARTER_POSITION)
+    public ResponseEntity<MatchDetailQuery.VersionedResponse<QuarterPositionService.Position>> getQuarterPosition(
+            Principal principal, @PathVariable UUID matchId, @PathVariable UUID quarterId) {
+        var response = quarterPosition.find(actor(principal), matchId, quarterId);
+        return ResponseEntity.ok().eTag(MatchMutation.etag(response.meta().matchVersion())).body(response);
+    }
+
+    @PutMapping(path = QUARTER_POSITION, consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<String> replaceQuarterPosition(
+            Principal principal, @PathVariable UUID matchId, @PathVariable UUID quarterId,
+            @RequestHeader(value = "Idempotency-Key", required = false) String key,
+            @RequestHeader(value = HttpHeaders.IF_MATCH, required = false) String ifMatch,
+            @RequestBody(required = false) byte[] body) {
+        UUID actor = actor(principal);
+        var request = new MatchMutation.Request(actor, matchId, "PUT",
+                quarterPath(matchId) + "/" + quarterId + "/position", key(key), ifMatch, body);
+        return replay(mutation.execute(request, expiresAt(),
+                match -> ownership.requireQuarter(actor, matchId, quarterId), match -> {
+                    var input = MatchSettings.readBody(json, body);
+                    MatchSettings.checkObject(input, "body", Set.of("positionCode"));
+                    var code = input.path("positionCode");
+                    if (!code.isTextual()) {
+                        throw new MatchSettings.InvalidSettings(List.of("positionCode"));
+                    }
+                    var response = quarterPosition.replace(match, quarterId, code.stringValue());
+                    return serialize(response, response.meta().matchVersion(), 200, null);
+                }));
     }
 
     @GetMapping(QUARTER_STATS)

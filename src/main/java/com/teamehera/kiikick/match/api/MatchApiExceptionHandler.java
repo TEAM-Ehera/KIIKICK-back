@@ -50,6 +50,12 @@ public class MatchApiExceptionHandler {
                 "입력값을 확인해주세요.", Map.of("fields", fields), request);
     }
 
+    @ExceptionHandler(com.teamehera.kiikick.match.service.QuarterPositionService.InvalidPositionCode.class)
+    public ResponseEntity<MatchApiResponse.Failure> invalidPositionCode(HttpServletRequest request) {
+        return failure(HttpStatus.UNPROCESSABLE_CONTENT, "VALIDATION_FAILED", "입력값을 확인해주세요.",
+                Map.of("fields", java.util.List.of("positionCode")), request);
+    }
+
     @ExceptionHandler(MatchSettings.InvalidSettings.class)
     public ResponseEntity<MatchApiResponse.Failure> invalidSettings(
             MatchSettings.InvalidSettings exception, HttpServletRequest request) {
