@@ -41,7 +41,7 @@ kiikick:
       secret-base64: ${AUTH_ACCESS_TOKEN_SECRET_BASE64}
       issuer: ${AUTH_ACCESS_TOKEN_ISSUER:kiikick-api}
       audience: ${AUTH_ACCESS_TOKEN_AUDIENCE:kiikick-ios}
-      lifetime: 4h
+      lifetime: 15m
     verification:
       email-code-secret: ${AUTH_EMAIL_CODE_HMAC_SECRET}
       ip-secret: ${AUTH_IP_HMAC_SECRET}
