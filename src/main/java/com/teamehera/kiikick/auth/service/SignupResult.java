@@ -1,7 +1,6 @@
 package com.teamehera.kiikick.auth.service;
 
 import java.time.Instant;
-import java.time.LocalDateTime;
 import java.util.UUID;
 
 public record SignupResult(
@@ -10,6 +9,6 @@ public record SignupResult(
         String refreshToken,
         Instant accessTokenExpiresAt,
         UUID userId,
-        LocalDateTime userCreatedAt
+        Instant userCreatedAt
 ) {
 }

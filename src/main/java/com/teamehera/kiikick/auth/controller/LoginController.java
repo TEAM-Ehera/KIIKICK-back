@@ -15,8 +15,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 
 @RestController
 @RequestMapping("/api/v1/auth")
@@ -35,9 +33,9 @@ public class LoginController {
         User user = result.user();
         SignupUserResponse profile = new SignupUserResponse(user.id(), user.nickname(), user.avatarUrl(),
                 user.onboardingCompletedAt() == null ? "REQUIRED" : "COMPLETED",
-                result.comparisonConsent(), responses.toSeoul(user.createdAt()));
+                result.comparisonConsent(), result.userCreatedAt());
         LoginResponse response = new LoginResponse(result.sessionId(), result.accessToken(), result.refreshToken(),
-                responses.toSeoul(LocalDateTime.ofInstant(result.expiresAt(), ZoneOffset.UTC)), profile);
+                result.expiresAt(), profile);
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(responses.success(response));
     }
 }

@@ -160,7 +160,7 @@ class EmailVerificationServiceTest {
         ).orElseThrow();
         assertThat(newFlow.verifiedAt()).isNull();
         assertThat(newFlow.failedAttempts()).isZero();
-        assertThat(newFlow.lastSentAt()).isEqualTo(first.resendAvailableAt());
+        assertThat(newFlow.lastSentAt().toInstant(ZoneOffset.UTC)).isEqualTo(first.resendAvailableAt());
         assertThat(flowRepository.findById(first.verificationId()).orElseThrow())
                 .isEqualTo(original);
         verify(emailSender, times(2)).sendSignUpCode(

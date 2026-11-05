@@ -19,7 +19,6 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -52,7 +51,9 @@ class LoginControllerTest {
                 .andExpect(jsonPath("$.data.sessionId").value(sessionId.toString()))
                 .andExpect(jsonPath("$.data.accessToken").value("access-test"))
                 .andExpect(jsonPath("$.data.refreshToken").value("refresh-test"))
-                .andExpect(jsonPath("$.data.expiresAt").value("2026-11-05T09:15:00+09:00"))
+                .andExpect(jsonPath("$.data.expiresAt").value("2026-11-05T00:15:00Z"))
+                .andExpect(jsonPath("$.data.user.createdAt").value("2026-11-04T00:00:00Z"))
+                .andExpect(jsonPath("$.meta.serverTime").value(org.hamcrest.Matchers.endsWith("Z")))
                 .andExpect(jsonPath("$.data.user.id").value(userId.toString()))
                 .andExpect(jsonPath("$.data.user.onboardingStatus").value("COMPLETED"))
                 .andExpect(jsonPath("$.data.user.comparisonConsent").value(true))
@@ -80,7 +81,7 @@ class LoginControllerTest {
     @Test
     void 제한은_429와_Retry_After를_반환한다() throws Exception {
         when(loginService.login("user@example.com", "Original-Case-73!"))
-                .thenThrow(VerificationApiException.rateLimited(LocalDateTime.now(ZoneOffset.UTC).plusMinutes(15)));
+                .thenThrow(VerificationApiException.rateLimited(Instant.now().plusSeconds(900)));
         mvc.perform(post("/api/v1/auth/login").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"email\":\"user@example.com\",\"password\":\"Original-Case-73!\"}"))
                 .andExpect(status().isTooManyRequests())

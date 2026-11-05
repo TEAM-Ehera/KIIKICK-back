@@ -2,7 +2,7 @@ package com.teamehera.kiikick.auth.service;
 
 import org.springframework.http.HttpStatus;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 public class VerificationApiException extends RuntimeException {
 
@@ -10,7 +10,7 @@ public class VerificationApiException extends RuntimeException {
     private final String code;
     private final boolean retryable;
     private final String persistence;
-    private final LocalDateTime retryAt;
+    private final Instant retryAt;
 
     private VerificationApiException(
             HttpStatus status,
@@ -18,7 +18,7 @@ public class VerificationApiException extends RuntimeException {
             String message,
             boolean retryable,
             String persistence,
-            LocalDateTime retryAt,
+            Instant retryAt,
             Throwable cause
     ) {
         super(message, cause);
@@ -36,7 +36,7 @@ public class VerificationApiException extends RuntimeException {
         );
     }
 
-    public static VerificationApiException rateLimited(LocalDateTime retryAt) {
+    public static VerificationApiException rateLimited(Instant retryAt) {
         return new VerificationApiException(
                 HttpStatus.TOO_MANY_REQUESTS, "RATE_LIMITED",
                 "잠시 후 다시 시도해주세요.", true, "NOT_SAVED", retryAt, null
@@ -59,7 +59,7 @@ public class VerificationApiException extends RuntimeException {
         );
     }
 
-    public static VerificationApiException attemptsExceeded(LocalDateTime retryAt) {
+    public static VerificationApiException attemptsExceeded(Instant retryAt) {
         return new VerificationApiException(
                 HttpStatus.TOO_MANY_REQUESTS, "VERIFICATION_ATTEMPTS_EXCEEDED",
                 "인증 시도 횟수를 초과했습니다.", true, "NOT_SAVED", retryAt, null
@@ -108,7 +108,7 @@ public class VerificationApiException extends RuntimeException {
         return persistence;
     }
 
-    public LocalDateTime retryAt() {
+    public Instant retryAt() {
         return retryAt;
     }
 }

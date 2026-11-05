@@ -1,9 +1,9 @@
 package com.teamehera.kiikick.auth.dto;
 
-import java.time.OffsetDateTime;
+import java.time.Instant;
 
 public record EmailVerificationSuccessResponse(
         String registrationToken,
-        OffsetDateTime expiresAt
+        Instant expiresAt
 ) {
 }

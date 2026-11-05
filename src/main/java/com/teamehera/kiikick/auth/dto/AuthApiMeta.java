@@ -1,6 +1,6 @@
 package com.teamehera.kiikick.auth.dto;
 
-import java.time.OffsetDateTime;
+import java.time.Instant;
 
-public record AuthApiMeta(String requestId, OffsetDateTime serverTime) {
+public record AuthApiMeta(String requestId, Instant serverTime) {
 }

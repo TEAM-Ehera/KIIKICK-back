@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.UUID;
@@ -56,9 +57,9 @@ public class LoginTransactionService {
     public Attempt authenticate(String email, String password) {
         // 계정별 잠금 안에서 제한 검사·실패 기록·성공 초기화를 직렬화한다.
         attempts.lockAccount(email);
-        LocalDateTime now = now();
-        LocalDateTime blockedUntil = attempts.blockedUntil(email, now);
-        if (blockedUntil != null) return new Attempt(null, blockedUntil);
+        Instant now = now();
+        LocalDateTime blockedUntil = attempts.blockedUntil(email, utc(now));
+        if (blockedUntil != null) return new Attempt(null, blockedUntil.toInstant(ZoneOffset.UTC));
 
         EmailCredential credential = credentials.findByNormalizedEmail(email).orElse(null);
         boolean acceptable = password != null && password.codePointCount(0, password.length()) >= 8
@@ -70,15 +71,16 @@ public class LoginTransactionService {
                 ? users.findById(credential.userId()).orElse(null) : null;
         if (user == null) {
             now = now();
-            attempts.recordFailure(email, now);
+            attempts.recordFailure(email, utc(now));
             // 정상 인증 실패는 예외 대신 결과로 반환하여 실패 이력을 커밋한다.
-            return new Attempt(null, attempts.blockedUntil(email, now));
+            LocalDateTime until = attempts.blockedUntil(email, utc(now));
+            return new Attempt(null, until == null ? null : until.toInstant(ZoneOffset.UTC));
         }
 
         UUID sessionId = UUID.randomUUID();
         IssuedRefreshToken refresh = refreshTokens.issue();
         sessions.save(new AuthSession(sessionId, user.id(), null, refresh.tokenHash(), 0,
-                LocalDateTime.ofInstant(refresh.expiresAt(), ZoneOffset.UTC), null, now()));
+                LocalDateTime.ofInstant(refresh.expiresAt(), ZoneOffset.UTC), null, utc(now())));
         IssuedAccessToken access = accessTokens.issue(user.id(), sessionId);
         boolean comparisonConsent = consents.findLatest(user.id(), "FRIEND_COMPARISON")
                 .map(consent -> consent.granted()).orElse(false);
@@ -88,9 +90,13 @@ public class LoginTransactionService {
                 user, comparisonConsent), null);
     }
 
-    private LocalDateTime now() {
-        return LocalDateTime.ofInstant(clock.instant(), ZoneOffset.UTC);
+    private Instant now() {
+        return clock.instant().truncatedTo(java.time.temporal.ChronoUnit.MICROS);
     }
 
-    public record Attempt(LoginResult result, LocalDateTime blockedUntil) { }
+    private static LocalDateTime utc(Instant instant) {
+        return LocalDateTime.ofInstant(instant, ZoneOffset.UTC);
+    }
+
+    public record Attempt(LoginResult result, Instant blockedUntil) { }
 }

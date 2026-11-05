@@ -12,7 +12,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.eq;
@@ -37,8 +37,8 @@ class EmailVerificationControllerTest {
                 eq("user@example.com"), eq("127.0.0.1")
         )).thenReturn(new EmailVerificationRequestResult(
                 verificationId,
-                LocalDateTime.of(2026, 11, 5, 0, 3),
-                LocalDateTime.of(2026, 11, 5, 0, 1)
+                Instant.parse("2026-11-05T00:03:00Z"),
+                Instant.parse("2026-11-05T00:01:00Z")
         ));
 
         mockMvc.perform(post("/api/v1/auth/email-verifications")
@@ -51,11 +51,11 @@ class EmailVerificationControllerTest {
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.data.verificationId")
                         .value(verificationId.toString()))
-                .andExpect(jsonPath("$.data.expiresAt").value("2026-11-05T09:03:00+09:00"))
+                .andExpect(jsonPath("$.data.expiresAt").value("2026-11-05T00:03:00Z"))
                 .andExpect(jsonPath("$.data.resendAvailableAt")
-                        .value("2026-11-05T09:01:00+09:00"))
+                        .value("2026-11-05T00:01:00Z"))
                 .andExpect(jsonPath("$.meta.requestId").exists())
-                .andExpect(jsonPath("$.meta.serverTime").exists());
+                .andExpect(jsonPath("$.meta.serverTime").value(org.hamcrest.Matchers.endsWith("Z")));
     }
 
     @Test
@@ -64,7 +64,7 @@ class EmailVerificationControllerTest {
         when(verificationService.verifyCode(verificationId, "123456"))
                 .thenReturn(new EmailVerificationSuccessResult(
                         "registration-token",
-                        LocalDateTime.of(2026, 11, 5, 0, 10)
+                        Instant.parse("2026-11-05T00:10:00Z")
                 ));
 
         mockMvc.perform(post(
@@ -76,12 +76,12 @@ class EmailVerificationControllerTest {
                 .andExpect(jsonPath("$.data.registrationToken")
                         .value("registration-token"))
                 .andExpect(jsonPath("$.data.expiresAt")
-                        .value("2026-11-05T09:10:00+09:00"));
+                        .value("2026-11-05T00:10:00Z"));
     }
 
     @Test
     void 발송제한은_429와_Retry_After를_반환한다() throws Exception {
-        LocalDateTime retryAt = LocalDateTime.now().plusSeconds(60);
+        Instant retryAt = Instant.now().plusSeconds(60);
         when(verificationService.requestCode(
                 eq("limited@example.com"), eq("127.0.0.1")
         )).thenThrow(VerificationApiException.rateLimited(retryAt));
@@ -96,7 +96,8 @@ class EmailVerificationControllerTest {
                 .andExpect(status().isTooManyRequests())
                 .andExpect(header().exists("Retry-After"))
                 .andExpect(jsonPath("$.error.code").value("RATE_LIMITED"))
-                .andExpect(jsonPath("$.error.persistence").value("NOT_SAVED"));
+                .andExpect(jsonPath("$.error.persistence").value("NOT_SAVED"))
+                .andExpect(jsonPath("$.meta.serverTime").value(org.hamcrest.Matchers.endsWith("Z")));
     }
 
     @Test

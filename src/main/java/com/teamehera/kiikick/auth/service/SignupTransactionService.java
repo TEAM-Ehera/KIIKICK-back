@@ -62,7 +62,7 @@ public class SignupTransactionService {
                 registration.normalizedEmail(),
                 registration.normalizedEmail(),
                 passwordHash,
-                registration.verifiedAt(),
+                LocalDateTime.ofInstant(registration.verifiedAt(), ZoneOffset.UTC),
                 now,
                 now,
                 now
@@ -89,7 +89,7 @@ public class SignupTransactionService {
                 refreshToken.token(),
                 accessToken.expiresAt(),
                 userId,
-                user.createdAt()
+                user.createdAt().toInstant(ZoneOffset.UTC)
         );
     }
 }
