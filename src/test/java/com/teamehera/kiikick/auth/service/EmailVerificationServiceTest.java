@@ -13,6 +13,7 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.http.HttpStatus;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -37,6 +38,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -112,6 +114,86 @@ class EmailVerificationServiceTest {
     }
 
     @Test
+    void 인증_성공_후_59초에는_추가_발송을_거부한다() {
+        EmailVerificationRequestResult first = verificationService.requestCode(
+                "verified-cooldown@example.com", "192.0.2.20"
+        );
+        verificationService.verifyCode(first.verificationId(), "123456");
+        clock.advance(Duration.ofSeconds(59));
+
+        assertThatThrownBy(() -> verificationService.requestCode(
+                "VERIFIED-COOLDOWN@example.com", "192.0.2.21"
+        )).isInstanceOfSatisfying(VerificationApiException.class, exception -> {
+            assertThat(exception.status()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+            assertThat(exception.code()).isEqualTo("RATE_LIMITED");
+            assertThat(exception.retryAt()).isEqualTo(first.resendAvailableAt());
+        });
+        verify(emailSender, times(1)).sendSignUpCode(
+                eq("verified-cooldown@example.com"), eq("123456"), eq(3L)
+        );
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM email_verification_flows WHERE normalized_email = ?",
+                Integer.class, "verified-cooldown@example.com"
+        )).isEqualTo(1);
+    }
+
+    @Test
+    void 인증_성공_후_정확히_60초에는_새_Flow를_발송하고_기존_토큰을_보존한다() {
+        EmailVerificationRequestResult first = verificationService.requestCode(
+                "verified-new-flow@example.com", "192.0.2.22"
+        );
+        EmailVerificationSuccessResult verified = verificationService.verifyCode(
+                first.verificationId(), "123456"
+        );
+        EmailVerificationFlow original = flowRepository.findById(
+                first.verificationId()
+        ).orElseThrow();
+        clock.advance(Duration.ofSeconds(60));
+
+        EmailVerificationRequestResult second = verificationService.requestCode(
+                "verified-new-flow@example.com", "192.0.2.22"
+        );
+
+        assertThat(second.verificationId()).isNotEqualTo(first.verificationId());
+        EmailVerificationFlow newFlow = flowRepository.findById(
+                second.verificationId()
+        ).orElseThrow();
+        assertThat(newFlow.verifiedAt()).isNull();
+        assertThat(newFlow.failedAttempts()).isZero();
+        assertThat(newFlow.lastSentAt()).isEqualTo(first.resendAvailableAt());
+        assertThat(flowRepository.findById(first.verificationId()).orElseThrow())
+                .isEqualTo(original);
+        verify(emailSender, times(2)).sendSignUpCode(
+                eq("verified-new-flow@example.com"), eq("123456"), eq(3L)
+        );
+        assertThat(registrationTokenService.consume(verified.registrationToken())
+                .verificationId()).isEqualTo(first.verificationId());
+    }
+
+    @Test
+    void 미인증_Flow도_59초에는_재발송을_거부한다() {
+        EmailVerificationRequestResult first = verificationService.requestCode(
+                "unverified-cooldown@example.com", "192.0.2.23"
+        );
+        EmailVerificationFlow original = flowRepository.findById(
+                first.verificationId()
+        ).orElseThrow();
+        clock.advance(Duration.ofSeconds(59));
+
+        assertThatThrownBy(() -> verificationService.requestCode(
+                "unverified-cooldown@example.com", "192.0.2.23"
+        )).isInstanceOfSatisfying(VerificationApiException.class, exception -> {
+            assertThat(exception.status()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+            assertThat(exception.code()).isEqualTo("RATE_LIMITED");
+        });
+        assertThat(flowRepository.findById(first.verificationId()).orElseThrow())
+                .isEqualTo(original);
+        verify(emailSender, times(1)).sendSignUpCode(
+                eq("unverified-cooldown@example.com"), eq("123456"), eq(3L)
+        );
+    }
+
+    @Test
     void 재발송은_이전_코드를_무효화하고_실패횟수를_유지한다() {
         when(secretGenerator.generateCode()).thenReturn("111111", "222222");
         EmailVerificationRequestResult first = verificationService.requestCode(
@@ -120,7 +202,7 @@ class EmailVerificationServiceTest {
 
         assertInvalidCode(first.verificationId(), "000000");
         assertInvalidCode(first.verificationId(), "000000");
-        clock.advance(Duration.ofSeconds(61));
+        clock.advance(Duration.ofSeconds(60));
 
         EmailVerificationRequestResult resent = verificationService.requestCode(
                 "RESEND@example.com", "127.0.0.2"
