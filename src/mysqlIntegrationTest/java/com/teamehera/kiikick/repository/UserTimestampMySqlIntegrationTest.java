@@ -123,6 +123,28 @@ class UserTimestampMySqlIntegrationTest {
     }
 
     @Test
+    void INSERT_UPDATE는_UTC와_마이크로초를_저장한다() {
+        Instant before=Instant.now().minusSeconds(1);
+        UUID id=UUID.randomUUID(); ownedUsers.add(id);
+        users.save(id,"utc-write");
+        Instant created=jdbc.queryForObject("SELECT created_at FROM users WHERE id=?",
+                (rs,n) -> rs.getObject(1,LocalDateTime.class).toInstant(ZoneOffset.UTC),uuidToBytes(id));
+        assertThat(created).isBetween(before,Instant.now().plusSeconds(1));
+        LocalDateTime exact=LocalDateTime.of(2026,11,5,2,3,4,654321000);
+        users.completeOnboarding(id,"utc-write",exact);
+        users.markDeletionRequested(id,exact.plusSeconds(1));
+        assertThat(users.findById(id).orElseThrow().onboardingCompletedAt()).isEqualTo(exact);
+        assertThat(users.findById(id).orElseThrow().deletionRequestedAt()).isEqualTo(exact.plusSeconds(1));
+        users.updateProfile(id,"utc-profile",null);
+        users.softDelete(id);
+        for(String column : new String[]{"updated_at","deleted_at"}) {
+            Instant stored=jdbc.queryForObject("SELECT "+column+" FROM users WHERE id=?",
+                    (rs,n) -> rs.getObject(1,LocalDateTime.class).toInstant(ZoneOffset.UTC),uuidToBytes(id));
+            assertThat(stored).isBetween(before,Instant.now().plusSeconds(1));
+        }
+    }
+
+    @Test
     void 이메일_인증과_오류_인증실패_메타는_Z를_반환한다() throws Exception {
         String email=newEmail();
         String requested=postJson("/api/v1/auth/email-verifications","{\"email\":\""+email+"\"}",202);
