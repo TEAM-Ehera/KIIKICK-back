@@ -65,9 +65,16 @@ public class MatchMutation {
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public Response execute(Request request, LocalDateTime expiresAt,
                             Consumer<Match> checkAccess, Function<Match, Response> change) {
+        return execute(request, expiresAt, checkAccess, match -> {}, change);
+    }
+
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public Response execute(Request request, LocalDateTime expiresAt, Consumer<Match> checkAccess,
+                            Consumer<Match> checkNewRequest, Function<Match, Response> change) {
         Match match = lockMatch(request);
         checkAccess.accept(match);
         return executeOnce(request, expiresAt, () -> {
+            checkNewRequest.accept(match);
             if (request.ifMatch() == null) {
                 throw new Rejected(428, "PRECONDITION_REQUIRED", null);
             }

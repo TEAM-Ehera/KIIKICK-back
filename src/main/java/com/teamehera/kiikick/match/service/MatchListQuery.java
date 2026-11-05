@@ -88,7 +88,7 @@ public class MatchListQuery {
     public record Pagination(String nextCursor, boolean hasNext) {}
 
     public static final class InvalidListRequest extends RuntimeException {
-        private InvalidListRequest(String code) {
+        InvalidListRequest(String code) {
             super(code);
         }
     }

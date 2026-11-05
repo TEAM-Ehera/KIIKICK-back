@@ -1,6 +1,8 @@
 package com.teamehera.kiikick.match.api;
 
 import com.teamehera.kiikick.match.repository.MatchRepository;
+import com.teamehera.kiikick.match.repository.QuarterPlayerStatsRepository;
+import com.teamehera.kiikick.match.repository.QuarterRepository;
 import com.teamehera.kiikick.user.repository.UserRepository;
 import com.teamehera.kiikick.venue.domain.Venue;
 import com.teamehera.kiikick.venue.repository.VenueRepository;
@@ -40,6 +42,8 @@ class MatchControllerTest {
     @Autowired UserRepository users;
     @Autowired VenueRepository venues;
     @Autowired MatchRepository matches;
+    @Autowired QuarterRepository quarters;
+    @Autowired QuarterPlayerStatsRepository stats;
 
     @DynamicPropertySource
     static void database(DynamicPropertyRegistry properties) {
@@ -202,6 +206,119 @@ class MatchControllerTest {
                     .andExpect(jsonPath("$.error.code").value("VALIDATION_FAILED"));
         }
         assertEquals(0, matches.findPageByOwnerId(actor, null, 10).size());
+    }
+
+    @Test
+    void quarterPaginationCarriesMatchVersionAndRejectsStaleCursors() throws Exception {
+        String match = create(actor, "{}");
+        String path = match + "/quarters";
+        String first = addQuarter(path, 1);
+        addQuarter(path, 2);
+        var page = mvc.perform(get(path).principal(actor::toString).param("limit", "1"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("ETag", tag(3)))
+                .andExpect(jsonPath("$.data[0].number").value(1))
+                .andExpect(jsonPath("$.data[0].matchVersion").value(3))
+                .andExpect(jsonPath("$.meta.matchVersion").value(3))
+                .andExpect(jsonPath("$.meta.pagination.hasNext").value(true))
+                .andReturn().getResponse();
+        String cursor = json.readTree(page.getContentAsString()).at("/meta/pagination/nextCursor").asText();
+        mvc.perform(get(path).principal(actor::toString).param("cursor", cursor))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].number").value(2))
+                .andExpect(jsonPath("$.meta.pagination.hasNext").value(false));
+        mvc.perform(get(path).principal(other::toString)).andExpect(status().isNotFound());
+        mvc.perform(write(patch(first), actor, UUID.randomUUID(), "{\"durationSeconds\":75}")
+                        .header("If-Match", tag(3)))
+                .andExpect(status().isOk())
+                .andExpect(header().string("ETag", tag(4)))
+                .andExpect(jsonPath("$.data.durationSeconds").value(75));
+        mvc.perform(get(path).principal(actor::toString).param("cursor", cursor))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("CURSOR_SNAPSHOT_CHANGED"));
+    }
+
+    @Test
+    void deletesOnlyUnusedLastQuarterAndReplaysNoContent() throws Exception {
+        String path = create(actor, "{}") + "/quarters";
+        String first = addQuarter(path, 1);
+        String last = addQuarter(path, 2);
+        UUID lastId = UUID.fromString(last.substring(last.lastIndexOf('/') + 1));
+        assertTrue(stats.findByQuarterId(lastId).isEmpty());
+        mvc.perform(remove(first, UUID.randomUUID(), 3)).andExpect(status().isConflict());
+
+        String wrongParent = create(actor, "{}") + "/quarters/" + lastId;
+        mvc.perform(remove(wrongParent, UUID.randomUUID(), 3)).andExpect(status().isNotFound());
+        UUID key = UUID.randomUUID();
+        for (int attempt = 0; attempt < 2; attempt++) {
+            mvc.perform(remove(last, key, 3)).andExpect(status().isNoContent())
+                    .andExpect(header().string("ETag", tag(4))).andExpect(content().string(""));
+        }
+        mvc.perform(remove(last, UUID.randomUUID(), 4)).andExpect(status().isNotFound());
+        UUID firstId = UUID.fromString(first.substring(first.lastIndexOf('/') + 1));
+        stats.upsert(firstId, 0, 0, LocalDateTime.of(2026, 11, 4, 0, 0));
+        mvc.perform(remove(first, UUID.randomUUID(), 4)).andExpect(status().isConflict());
+    }
+
+    @Test
+    void validatesDurationAndQuarterState() throws Exception {
+        String match = create(actor, "{}");
+        String path = match + "/quarters";
+        for (String body : new String[]{"{}", "{\"durationSeconds\":0}", "{\"durationSeconds\":1.5}"}) {
+            mvc.perform(write(post(path), actor, UUID.randomUUID(), body).header("If-Match", tag(1)))
+                    .andExpect(status().isUnprocessableContent());
+        }
+        String quarter = addQuarter(path, 1);
+        UUID quarterId = UUID.fromString(quarter.substring(quarter.lastIndexOf('/') + 1));
+        quarters.updateStatus(quarterId, id(match), "READY", "IN_PROGRESS", LocalDateTime.now(), null);
+        mvc.perform(write(patch(quarter), actor, UUID.randomUUID(), "{\"durationSeconds\":75}")
+                        .header("If-Match", tag(2)))
+                .andExpect(status().isConflict());
+        matches.updateStatus(id(match), actor, 2, "DRAFT", "COMPLETED", null, null);
+        mvc.perform(write(post(path), actor, UUID.randomUUID(), "{\"durationSeconds\":60}")
+                        .header("If-Match", tag(3)))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    void concurrentQuarterAddsWithTheSameVersionHaveOneWinner() throws Exception {
+        String path = create(actor, "{}") + "/quarters";
+        var ready = new CountDownLatch(2);
+        Callable<Integer> add = () -> {
+            ready.countDown();
+            assertTrue(ready.await(5, TimeUnit.SECONDS));
+            return mvc.perform(write(post(path), actor, UUID.randomUUID(), "{\"durationSeconds\":60}")
+                            .header("If-Match", tag(1))).andReturn().getResponse().getStatus();
+        };
+        try (var pool = Executors.newFixedThreadPool(2)) {
+            var first = pool.submit(add);
+            var second = pool.submit(add);
+            assertEquals(java.util.Set.of(201, 412),
+                    java.util.Set.of(first.get(10, TimeUnit.SECONDS), second.get(10, TimeUnit.SECONDS)));
+        }
+        addQuarter(path, 2);
+        mvc.perform(get(path).principal(actor::toString)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(2))
+                .andExpect(jsonPath("$.data[0].number").value(1))
+                .andExpect(jsonPath("$.data[1].number").value(2));
+    }
+
+    private String addQuarter(String path, long version) throws Exception {
+        return mvc.perform(write(post(path), actor, UUID.randomUUID(), "{\"durationSeconds\":60}")
+                        .header("If-Match", tag(version)))
+                .andExpect(status().isCreated())
+                .andExpect(header().string("ETag", tag(version + 1)))
+                .andExpect(jsonPath("$.data.status").value("READY"))
+                .andReturn().getResponse().getHeader("Location");
+    }
+
+    private MockHttpServletRequestBuilder remove(String path, UUID key, long version) {
+        return delete(path).principal(actor::toString).header("Idempotency-Key", key.toString())
+                .header("If-Match", tag(version));
+    }
+
+    private static String tag(long version) {
+        return "\"" + version + "\"";
     }
 
     private String create(UUID owner, String body) throws Exception {

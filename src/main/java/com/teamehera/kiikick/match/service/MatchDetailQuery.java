@@ -32,6 +32,8 @@ public class MatchDetailQuery {
         }
     }
 
+    public record VersionedResponse<T>(T data, DetailMeta meta) {}
+
     public record DetailMeta(UUID requestId, OffsetDateTime serverTime, long matchVersion) {
     }
 

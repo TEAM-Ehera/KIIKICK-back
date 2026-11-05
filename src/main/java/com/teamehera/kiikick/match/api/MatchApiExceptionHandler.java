@@ -55,6 +55,12 @@ public class MatchApiExceptionHandler {
                 Map.of("fields", exception.fields()), request);
     }
 
+    @ExceptionHandler(com.teamehera.kiikick.match.service.QuarterSettingsService.CursorSnapshotChanged.class)
+    public ResponseEntity<MatchApiResponse.Failure> cursorSnapshotChanged(HttpServletRequest request) {
+        return failure(HttpStatus.CONFLICT, "CURSOR_SNAPSHOT_CHANGED", "첫 페이지부터 다시 조회해주세요.",
+                Map.of(), request);
+    }
+
     @ExceptionHandler(InvalidState.class)
     public ResponseEntity<MatchApiResponse.Failure> invalidState(HttpServletRequest request) {
         return failure(HttpStatus.CONFLICT, "INVALID_STATE", "경기 상태를 확인해주세요.", Map.of(), request);
