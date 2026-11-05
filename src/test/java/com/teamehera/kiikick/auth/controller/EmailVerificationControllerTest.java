@@ -51,11 +51,11 @@ class EmailVerificationControllerTest {
                 .andExpect(status().isAccepted())
                 .andExpect(jsonPath("$.data.verificationId")
                         .value(verificationId.toString()))
-                .andExpect(jsonPath("$.data.expiresAt").value("2026-11-05T00:03:00Z"))
+                .andExpect(jsonPath("$.data.expiresAt").value("2026-11-05T09:03:00+09:00"))
                 .andExpect(jsonPath("$.data.resendAvailableAt")
-                        .value("2026-11-05T00:01:00Z"))
+                        .value("2026-11-05T09:01:00+09:00"))
                 .andExpect(jsonPath("$.meta.requestId").exists())
-                .andExpect(jsonPath("$.meta.serverTime").value(org.hamcrest.Matchers.endsWith("Z")));
+                .andExpect(jsonPath("$.meta.serverTime").value(org.hamcrest.Matchers.endsWith("+09:00")));
     }
 
     @Test
@@ -76,7 +76,7 @@ class EmailVerificationControllerTest {
                 .andExpect(jsonPath("$.data.registrationToken")
                         .value("registration-token"))
                 .andExpect(jsonPath("$.data.expiresAt")
-                        .value("2026-11-05T00:10:00Z"));
+                        .value("2026-11-05T09:10:00+09:00"));
     }
 
     @Test
@@ -97,7 +97,7 @@ class EmailVerificationControllerTest {
                 .andExpect(header().exists("Retry-After"))
                 .andExpect(jsonPath("$.error.code").value("RATE_LIMITED"))
                 .andExpect(jsonPath("$.error.persistence").value("NOT_SAVED"))
-                .andExpect(jsonPath("$.meta.serverTime").value(org.hamcrest.Matchers.endsWith("Z")));
+                .andExpect(jsonPath("$.meta.serverTime").value(org.hamcrest.Matchers.endsWith("+09:00")));
     }
 
     @Test

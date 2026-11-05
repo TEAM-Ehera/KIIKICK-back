@@ -78,7 +78,7 @@ public class EmailVerificationExceptionHandler {
                 ),
                 new AuthApiMeta(
                         "req-" + UUID.randomUUID(),
-                        CLOCK.instant()
+                        AuthApiResponseFactory.toSeoul(CLOCK.instant())
                 )
         );
     }

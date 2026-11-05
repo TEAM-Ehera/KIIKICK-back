@@ -6,7 +6,8 @@ import tools.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
 import java.time.Clock;
-import java.time.Instant;
+import java.time.OffsetDateTime;
+import com.teamehera.kiikick.auth.controller.AuthApiResponseFactory;
 import java.util.Map;
 import java.util.UUID;
 
@@ -34,7 +35,7 @@ public class AuthSecurityErrorWriter {
                 new ErrorDetail(code, message, false, null, Map.of()),
                 new ErrorMeta(
                         "req-" + UUID.randomUUID(),
-                        clock.instant()
+                        AuthApiResponseFactory.toSeoul(clock.instant())
                 )
         );
         objectMapper.writeValue(response.getOutputStream(), body);
@@ -52,6 +53,6 @@ public class AuthSecurityErrorWriter {
     ) {
     }
 
-    record ErrorMeta(String requestId, Instant serverTime) {
+    record ErrorMeta(String requestId, OffsetDateTime serverTime) {
     }
 }

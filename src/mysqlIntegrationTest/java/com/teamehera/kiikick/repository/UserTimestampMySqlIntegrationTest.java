@@ -123,20 +123,20 @@ class UserTimestampMySqlIntegrationTest {
     }
 
     @Test
-    void 이메일_인증과_오류_인증실패_메타는_Z를_반환한다() throws Exception {
+    void 이메일_인증과_오류_인증실패_메타는_서울_오프셋을_반환한다() throws Exception {
         String email=newEmail();
         String requested=postJson("/api/v1/auth/email-verifications","{\"email\":\""+email+"\"}",202);
         String expires=JsonPath.read(requested,"$.data.expiresAt");
-        assertThat(Instant.parse(expires)).isEqualTo(clock.instant().plusSeconds(180));
-        assertUtc(requested,"$.data.resendAvailableAt");
+        assertThat(java.time.OffsetDateTime.parse(expires).toInstant()).isEqualTo(clock.instant().plusSeconds(180));
+        assertSeoul(requested,"$.data.resendAvailableAt");
         String id=JsonPath.read(requested,"$.data.verificationId");
         String verified=postJson("/api/v1/auth/email-verifications/"+id+"/verify","{\"code\":\"654321\"}",200);
         String tokenExpiry=JsonPath.read(verified,"$.data.expiresAt");
-        assertThat(Instant.parse(tokenExpiry)).isEqualTo(clock.instant().plusSeconds(600));
+        assertThat(java.time.OffsetDateTime.parse(tokenExpiry).toInstant()).isEqualTo(clock.instant().plusSeconds(600));
         postJson("/api/v1/auth/email-verifications","{",400);
         var denied=mvc.perform(get("/api/v1/utc-time-protected-probe")).andReturn().getResponse();
         assertThat(denied.getStatus()).isEqualTo(401);
-        assertUtc(denied.getContentAsString(),"$.meta.serverTime");
+        assertSeoul(denied.getContentAsString(),"$.meta.serverTime");
     }
 
     String newEmail() {
@@ -147,11 +147,11 @@ class UserTimestampMySqlIntegrationTest {
         var response=mvc.perform(post(path).with(request -> {request.setRemoteAddr(ip);return request;})
                 .contentType(MediaType.APPLICATION_JSON).content(body)).andReturn().getResponse();
         assertThat(response.getStatus()).isEqualTo(status);
-        String json=response.getContentAsString(); assertUtc(json,"$.meta.serverTime"); return json;
+        String json=response.getContentAsString(); assertSeoul(json,"$.meta.serverTime"); return json;
     }
 
-    void assertUtc(String json,String path) {
-        String value=JsonPath.read(json,path); assertThat(value).endsWith("Z"); Instant.parse(value);
+    void assertSeoul(String json,String path) {
+        String value=JsonPath.read(json,path); assertThat(value).endsWith("+09:00"); java.time.OffsetDateTime.parse(value);
     }
 
     void assertUserCreatedAt(String json) {
@@ -160,7 +160,7 @@ class UserTimestampMySqlIntegrationTest {
                 String.class,uuidToBytes(userId));
         Instant expected=LocalDateTime.parse(stored).toInstant(ZoneOffset.UTC);
         String returned=JsonPath.read(json,"$.data.user.createdAt");
-        assertUtc(json,"$.data.user.createdAt"); assertUtc(json,"$.data.expiresAt");
-        assertThat(Instant.parse(returned)).isEqualTo(expected);
+        assertSeoul(json,"$.data.user.createdAt"); assertSeoul(json,"$.data.expiresAt");
+        assertThat(java.time.OffsetDateTime.parse(returned).toInstant()).isEqualTo(expected);
     }
 }
