@@ -142,7 +142,7 @@ path: quarterId.
 
 워커는 기본 5초 간격으로 커밋된 PROCESSING 행을 최대 20건 조회한다. 프로세스가 중단돼도 다음 실행이 미완료 행을 다시 처리한다. 결과를 게시할 때 현재 작업 ID와 원본 해시를 검사하고 같은 트랜잭션에서 경기 버전을 올린다. 유효하지 않은 저장 원본은 FAILED로 기록하고, 트랜잭션 실패는 PROCESSING 상태에서 다음 폴링에 재시도한다.
 
-기본 계산은 원본 총거리와 칼로리를 저장해 PARTIAL로 게시한다. 활동 시간과 평균속력은 P08의 휴식·일시정지 정책이 확정될 때까지 null이다. 워커는 `KIIKICK_WORKOUT_SUMMARY_WORKER_ENABLED`로 끄거나 `KIIKICK_WORKOUT_SUMMARY_POLL_MS`로 조회 주기를 조정할 수 있다.
+워커는 원본 총거리·칼로리와 계산 가능한 심박 지표를 저장해 PARTIAL로 게시한다. Edwards TRIMP는 계산 작업에 개인 기준 최대심박수 스냅샷이 있어야 산출한다. 활동 시간과 평균속력은 P08의 휴식·일시정지 정책이 확정될 때까지 null이다. 워커는 `KIIKICK_WORKOUT_SUMMARY_WORKER_ENABLED`로 끄거나 `KIIKICK_WORKOUT_SUMMARY_POLL_MS`로 조회 주기를 조정할 수 있다.
 
 ### 성공 응답 예시
 
@@ -346,4 +346,4 @@ path: quarterId. 본문 없음.
 
 ## 계산 기준
 
-[쿼터 요약 계산 계약](../dbdiagram/quarter-summary.md)을 따른다. TRIMP는 Edwards 하나만 제공한다. GPS·심박 원본은 모두 보존하며 Zone별 체류 시간은 중간 계산으로만 사용한다. 최고/평균 속력은 m/s다. 고강도 심박 기준, 가속·감속 임계값, 방향전환 기준, 누락 보간은 아직 P08에서 정해야 한다.
+[쿼터 요약 계산 계약](../dbdiagram/quarter-summary.md)을 따른다. TRIMP는 Edwards 하나만 제공한다. GPS·심박 원본은 모두 보존하며 Zone별 체류 시간은 중간 계산으로만 사용한다. 최고/평균 속력은 m/s다. 고강도 심박 기준, 가속·감속 임계값, 방향전환 기준과 GPS 누락 처리 기준은 아직 P08에서 정해야 한다. 심박 보간과 유효 구간은 쿼터 요약 계산 계약을 따른다.

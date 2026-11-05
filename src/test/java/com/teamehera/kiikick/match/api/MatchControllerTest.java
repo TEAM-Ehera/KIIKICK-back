@@ -779,6 +779,36 @@ class MatchControllerTest {
         assertTrue(workouts.findById(workoutId).isPresent());
     }
 
+    @Test
+    void summaryPersistsHeartRateMetricsAndReferenceSnapshot() throws Exception {
+        String upload = completedQuarterUploadPath();
+        UUID quarterId = UUID.fromString(upload.split("/")[4]);
+        mvc.perform(workoutUpload(upload, actor, UUID.randomUUID(), 8, WORKOUT)).andExpect(status().isCreated());
+        var pending = pendingSummary(quarterId).summary();
+        heartRates.saveAll(List.of(new HeartRateSample(pending.workoutPayloadId(), 1,
+                LocalDateTime.of(2001, 1, 1, 0, 0).plusSeconds(815274007), 142)));
+        String path = upload.replace("/workout-payloads", "/summary");
+        summaryCalculation.process(pendingSummary(quarterId));
+        mvc.perform(get(path).principal(actor::toString))
+                .andExpect(jsonPath("$.data.trimpEdwards").value(nullValue()))
+                .andExpect(jsonPath("$.data.metricStatus.trimpEdwards.status").value("MISSING_INPUT"))
+                .andExpect(jsonPath("$.data.averageHeartRateBpm").value(142.0));
+
+        summaries.saveProcessing(quarterId, pending.workoutPayloadId(), "v2",
+                json.writeValueAsString(java.util.Map.of("hrMaxReferenceBpm", 200)),
+                "{}", pending.sourcePayloadHash(), pending.updatedAt());
+        summaryCalculation.process(pendingSummary(quarterId));
+        mvc.perform(get(path).principal(actor::toString))
+                .andExpect(status().isOk()).andExpect(header().string("ETag", tag(11)))
+                .andExpect(jsonPath("$.data.calculationVersion").value("v2"))
+                .andExpect(jsonPath("$.data.averageHeartRateBpm").value(142.0))
+                .andExpect(jsonPath("$.data.validHrDurationSeconds").value(6.0))
+                .andExpect(jsonPath("$.data.trimpEdwards").value(0.3))
+                .andExpect(jsonPath("$.data.hrMaxReferenceBpm").value(200.0));
+        var parameters = json.readTree(summaries.findByQuarterId(quarterId).orElseThrow().calculationParameters());
+        assertEquals(10, parameters.at("/heartRatePolicy/maxGapSeconds").intValue());
+    }
+
     private QuarterSummaryRepository.PendingCalculation pendingSummary(UUID quarterId) {
         return summaries.findProcessing(100).stream().filter(job -> job.summary().quarterId().equals(quarterId))
                 .findFirst().orElseThrow();
