@@ -20,7 +20,7 @@ Auth 날짜 응답과 성공·오류 메타는 ISO 8601 Asia/Seoul `+09:00` 문�
 | [AUTH-01C](#auth-01c) | 이메일 회원가입 완료 | `POST` | `/auth/signup` | 구현 (#72) |
 | [AUTH-01](#auth-01) | 이메일·비밀번호 로그인 | `POST` | `/auth/login` | 구현 (#73) |
 | [AUTH-02](#auth-02) | 로그인 세션 갱신 | `POST` | `/auth/refresh` | 구현 (#62) |
-| [AUTH-03](#auth-03) | 로그아웃 | `POST` | `/auth/logout` | 예정 (#63) |
+| [AUTH-03](#auth-03) | 로그아웃 | `POST` | `/auth/logout` | 구현 (#63) |
 | [AUTH-04](#auth-04) | 내 프로필 조회 | `GET` | `/users/me` | 예정 (#65) |
 | [AUTH-05](#auth-05) | 내 프로필 수정 | `PATCH` | `/users/me` | 예정 (#65) |
 | [AUTH-06](#auth-06) | 온보딩 완료 | `PUT` | `/users/me/onboarding` | 예정 (#66) |
@@ -300,7 +300,7 @@ Content-Type: application/json
 ---
 
 <a id="auth-03"></a>
-## AUTH-03 · 로그아웃 (예정 · #63)
+## AUTH-03 · 로그아웃 (#63 구현)
 
 현재 또는 명시한 본인 세션을 폐기한다.
 
@@ -337,7 +337,11 @@ Query parameter: 없음.
 ### 처리 규칙
 
 1. 다른 세션의 로그아웃이 현재 세션 전체 로그아웃을 의미하지 않는다.
-2. 같은 본인 세션의 반복 폐기는 204. Refresh Token 세션은 폐기하지만 기존 Access Token은 만료까지 최대 15분간 유효할 수 있다.
+2. 같은 본인 세션의 반복 폐기는 204(이미 폐기되거나 Refresh 유효기간이 지난 본인 세션 포함). Refresh Token 세션은 폐기하지만 기존 Access Token은 만료까지 최대 15분간 유효할 수 있다. 요청 자체에는 유효한 Access Token이 필요하다.
+3. 본문은 `{}` 또는 `{"sessionId":"UUID"}`다. `sessionId` 누락은 현재 세션, 명시적 `null`·잘못된 타입·알 수 없는 필드는 422다. 존재하지 않는 세션과 타인 세션은 같은 403 응답으로 구분하지 않는다.
+4. 사용자 행 → 대상 세션 행을 잠근 트랜잭션 안에서 소유권을 확인하고 폐기·멱등 성공 응답을 함께 저장한다. Refresh도 같은 세션 행을 잠근다. Refresh가 먼저 성공했더라도 뒤이은 로그아웃으로 새 Refresh Token을 사용할 수 없게 된다.
+5. 멱등 키는 사용자·메서드·경로 범위에 적용된다. 같은 키의 원문 본문/If-Match가 다르면 409이며, `{}` 요청도 인증된 현재 세션이 달라지면 다른 동작으로 취급한다. 재생 전에도 소유권을 재확인한다. 동일 요청은 최초 204와 `X-Request-Id`를 재생한다.
+6. 멱등 키 보존 기간은 기존 `kiikick.match.idempotency-retention`의 1일(`P1D`)을 **임시 재사용**하며 확정된 Auth 보존 정책이 아니다. 같은 로그아웃 키로 재요청할 때 만료 기록만 제거하여 새 요청으로 처리한다. 미사용 만료 기록의 일괄 정리는 이번 범위에 포함하지 않는다.
 
 ### 요청 예시
 
@@ -366,10 +370,11 @@ X-Request-Id: req-example
 
 | HTTP | code | 발생 조건 | 앱 대응 |
 | --- | --- | --- | --- |
-| 403 | `FORBIDDEN` | 타인 세션 ID를 지정 | 본인 세션만 지정 |
+| 403 | `FORBIDDEN` | 존재하지 않거나 본인 소유가 아닌 세션 | 본인 세션만 지정 |
 | 401 | `UNAUTHENTICATED / TOKEN_EXPIRED` | access token 없음·만료 | 토큰 갱신/로그인 |
 | 409 | `IDEMPOTENCY_KEY_REUSED` | 같은 멱등 키로 다른 본문/If-Match 제출 | 기존 요청 결과 확인. 별도 동작은 새 키 |
-| 422 | `VALIDATION_FAILED` | 누락·타입·읽기 전용 필드 등 검증 실패 | error.details.fields 확인 |
+| 422 | `VALIDATION_FAILED` | 본문·Idempotency-Key 누락/형식 오류, sessionId null·타입 오류, 알 수 없는 필드 | error.details.fields 확인 |
+| 503 | `SERVICE_UNAVAILABLE` | DB 처리 실패(세션 폐기·멱등 기록 롤백) | 같은 키로 재시도 |
 
 [공통 오류](common.md)에 정의한 400·403·429·500·503도 적용된다. 네트워크 응답 유실 시 저장 여부는 알 수 없으므로 새 ID로 재등록하지 않는다.
 
@@ -379,7 +384,7 @@ X-Request-Id: req-example
 {
   "error": {
     "code": "FORBIDDEN",
-    "message": "타인 세션 ID를 지정",
+    "message": "해당 세션에 접근할 수 없습니다.",
     "retryable": false,
     "persistence": "NOT_SAVED",
     "details": {}
