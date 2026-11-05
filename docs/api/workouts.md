@@ -92,7 +92,7 @@ path: quarterId. 본문은 위 WorkoutPayload 원형이며 userId/matchId/quarte
 
 ### 오류와 앱 대응
 
-미마감은 409 QUARTER_NOT_ENDED. 다른 파일은 409 WORKOUT_ALREADY_EXISTS. 유효하지 않은 숫자·날짜·배열은 422. [공통 오류](common.md#errors)도 적용한다.
+미마감은 409 QUARTER_NOT_ENDED. 다른 파일은 409 WORKOUT_ALREADY_EXISTS. 유효하지 않은 숫자·날짜·배열은 422. P10 확정 전 서버 요청 본문 제한은 기본 8 MiB이며 `KIIKICK_WORKOUT_MAX_UPLOAD_BYTES` 설정으로 조정할 수 있다. 제한 초과는 413 PAYLOAD_TOO_LARGE. [공통 오류](common.md#errors)도 적용한다.
 
 <a id="work-02"></a>
 ## WORK-02 · 저장 운동 기본값 조회
