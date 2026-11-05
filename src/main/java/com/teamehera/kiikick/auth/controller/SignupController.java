@@ -43,13 +43,13 @@ public class SignupController {
                 null,
                 "REQUIRED",
                 false,
-                result.userCreatedAt()
+                AuthApiResponseFactory.toSeoul(result.userCreatedAt())
         );
         SignupResponse response = new SignupResponse(
                 result.sessionId(),
                 result.accessToken(),
                 result.refreshToken(),
-                result.accessTokenExpiresAt(),
+                AuthApiResponseFactory.toSeoul(result.accessTokenExpiresAt()),
                 user
         );
         return ResponseEntity.status(HttpStatus.CREATED)

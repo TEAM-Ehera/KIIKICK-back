@@ -1,6 +1,6 @@
 package com.teamehera.kiikick.auth.dto;
 
-import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.util.UUID;
 
 public record SignupUserResponse(
@@ -9,6 +9,6 @@ public record SignupUserResponse(
         String avatarUrl,
         String onboardingStatus,
         boolean comparisonConsent,
-        Instant createdAt
+        OffsetDateTime createdAt
 ) {
 }
