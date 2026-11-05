@@ -52,8 +52,12 @@ tasks.named('test') {
 }
 
 sourceSets {
+    test {
+        java.srcDir 'src/testSupport/java'
+    }
     mysqlIntegrationTest {
         java.srcDir 'src/mysqlIntegrationTest/java'
+        java.srcDir 'src/testSupport/java'
         resources.srcDir 'src/mysqlIntegrationTest/resources'
         compileClasspath = sourceSets.main.output + configurations.testCompileClasspath
         runtimeClasspath = output + compileClasspath + configurations.testRuntimeClasspath
@@ -67,6 +71,9 @@ tasks.register('mysqlIntegrationTest', Test) {
     classpath = sourceSets.mysqlIntegrationTest.runtimeClasspath
     useJUnitPlatform()
     shouldRunAfter tasks.named('test')
+    // 외부 DB 상태와 환경변수가 바뀔 수 있어 이전 실행 결과를 재사용하지 않는다.
+    outputs.upToDateWhen { false }
+    outputs.doNotCacheIf('Uses an external local MySQL database') { true }
 
     doFirst {
         String database = System.getenv('MYSQL_TEST_DB_NAME')
@@ -85,6 +92,10 @@ tasks.register('mysqlIntegrationTest', Test) {
                     'MYSQL_TEST_DB_HOST, MYSQL_TEST_DB_PORT, MYSQL_TEST_DB_USERNAME, '
                             + 'and MYSQL_TEST_DB_PASSWORD are required'
             )
+        }
+
+        if (!(host in ['127.0.0.1', 'localhost']) || port != '3306') {
+            throw new GradleException('MySQL integration tests require localhost or 127.0.0.1 and port 3306')
         }
 
         String jdbcUrl = "jdbc:mysql://${host}:${port}/${database}" +
