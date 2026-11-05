@@ -21,8 +21,8 @@ Auth 날짜 응답과 성공·오류 메타는 ISO 8601 Asia/Seoul `+09:00` 문�
 | [AUTH-01](#auth-01) | 이메일·비밀번호 로그인 | `POST` | `/auth/login` | 구현 (#73) |
 | [AUTH-02](#auth-02) | 로그인 세션 갱신 | `POST` | `/auth/refresh` | 구현 (#62) |
 | [AUTH-03](#auth-03) | 로그아웃 | `POST` | `/auth/logout` | 구현 (#63) |
-| [AUTH-04](#auth-04) | 내 프로필 조회 | `GET` | `/users/me` | 예정 (#65) |
-| [AUTH-05](#auth-05) | 내 프로필 수정 | `PATCH` | `/users/me` | 예정 (#65) |
+| [AUTH-04](#auth-04) | 내 프로필 조회 | `GET` | `/users/me` | 구현 (#65) |
+| [AUTH-05](#auth-05) | 내 프로필 수정 | `PATCH` | `/users/me` | 구현 (#65) |
 | [AUTH-06](#auth-06) | 온보딩 완료 | `PUT` | `/users/me/onboarding` | 예정 (#66) |
 | [AUTH-07](#auth-07) | 현재 동의 목록 조회 | `GET` | `/users/me/consents` | 예정 (#68) |
 | [AUTH-08](#auth-08) | 동의 부여·철회 | `PUT` | `/users/me/consents/{purpose}` | 예정 (#68) |
@@ -402,7 +402,7 @@ X-Request-Id: req-example
 ---
 
 <a id="auth-04"></a>
-## AUTH-04 · 내 프로필 조회 (예정 · #65)
+## AUTH-04 · 내 프로필 조회 (#65 구현)
 
 홈 진입·마이페이지·온보딩 분기를 위해 본인 프로필을 확인한다.
 
@@ -431,7 +431,11 @@ Request body: 없음.
 
 ### 처리 규칙
 
-1. comparisonConsent는 동의 최신 이력에서 파생하며 본인 프로필 PATCH로 변경하지 않는다.
+1. 인증된 Principal의 사용자 UUID만 사용한다. 요청의 사용자 ID로 조회 대상을 바꿀 수 없다. 삭제되었거나 존재하지 않는 사용자의 JWT는 이 API에서 401이다.
+2. `comparisonConsent`는 기존 로그인과 동일하게 최신 `FRIEND_COMPARISON` 이력에서 파생하며 이력이 없으면 false다. 새 동의 정책을 정의하거나 본인 프로필 PATCH로 변경하지 않는다.
+3. `onboardingStatus`는 `onboarding_completed_at`이 null이면 REQUIRED, 아니면 COMPLETED다. 닉네임 수정만으로 온보딩을 완료하지 않는다.
+4. 응답 날짜는 DB UTC를 기준으로 변환한 ISO 8601 `+09:00`이며 소수초를 보존한다.
+5. iOS의 내 프로필 조회·수정은 `/users/me`를 사용한다. 기존 `/user/{userId}`를 포함한 User CRUD는 개발·호환 경로로 유지하고 동작을 바꾸지 않는다. 이 경로의 기존 UUID 지정 기능을 `/users/me`의 SELF 보장과 혼동하면 안 된다. 기존 CRUD의 제한·폐기는 별도 협의 대상이다.
 
 ### 요청 예시
 
@@ -481,7 +485,8 @@ Content-Type: application/json
 
 | HTTP | code | 발생 조건 | 앱 대응 |
 | --- | --- | --- | --- |
-| 401 | `UNAUTHENTICATED / TOKEN_EXPIRED` | access token 없음·만료 | 토큰 갱신/로그인 |
+| 401 | `UNAUTHENTICATED / TOKEN_EXPIRED` | access token 없음·만료, 본인 사용자 없음·삭제 | 토큰 갱신/로그인 |
+| 503 | `SERVICE_UNAVAILABLE` | DB 처리 실패 | 잠시 후 재시도 |
 
 [공통 오류](common.md)에 정의한 400·403·429·500·503도 적용된다. 네트워크 응답 유실 시 저장 여부는 알 수 없으므로 새 ID로 재등록하지 않는다.
 
@@ -491,7 +496,7 @@ Content-Type: application/json
 ---
 
 <a id="auth-05"></a>
-## AUTH-05 · 내 프로필 수정 (예정 · #65)
+## AUTH-05 · 내 프로필 수정 (#65 구현)
 
 닉네임 또는 프로필 이미지 URL을 변경한다.
 
@@ -521,7 +526,7 @@ Query parameter: 없음.
 
 | 필드 | 타입 | 필수 | null | 기본값 / 예시 | 설명 |
 | --- | --- | :---: | :---: | --- | --- |
-| `nickname` | string | X | 불가 | — | 공백만 있는 값 거절. 중복/최대 길이 정책 P01/P07 미정 |
+| `nickname` | string | X | 불가 | — | 공백·null 거절. #65는 기존 CRUD와 동일한 최대 16자·중복 허용 적용(아래 정책 참고) |
 | `avatarUrl` | string | X | 허용 | — | 이미 등록된 이미지 URL. null은 이미지 제거 |
 
 중첩 필드의 필수 O는 부모 객체/배열을 제출했을 때 적용한다. PATCH의 누락·null 규칙은 [공통 계약](common.md)을 따른다.
@@ -529,7 +534,10 @@ Query parameter: 없음.
 ### 처리 규칙
 
 1. 수정 필드가 최소 1개 필요하다. 이미지 업로드 API는 원문 확인 전 보류한다.
-2. id, comparisonConsent, onboardingStatus 등 읽기 전용 필드는 422.
+2. id, comparisonConsent, onboardingStatus 등 읽기 전용 필드와 알 수 없는 필드는 422. `nickname: null`은 422, `avatarUrl: null`은 제거이며 생략한 필드는 유지한다. 서버는 제출한 avatarUrl에 접속하거나 이미지를 업로드하지 않는다.
+3. #65 승인 정책: 닉네임은 기존 `UserUpdateRequest`와 동일한 Java 문자열 길이(UTF-16 코드 단위) 최대 16자이고 중복을 허용한다. UNIQUE·중복 검사·자동 공백 제거를 추가하지 않는다. 이는 #65에 기존 정책을 적용한 결정이며 향후 P01/P07 정책 확정 시 재검토한다.
+4. 공통 멱등 트랜잭션의 사용자 행 잠금 안에서 현재 값 조회 → 제출 필드 병합 → 프로필 수정 → 응답 저장을 수행한다. 실패하면 프로필과 멱등 기록을 함께 롤백한다. 같은 키의 원문 본문/If-Match가 다르면 409이며 동일 요청은 최초 본문·meta·X-Request-Id를 재생한다. If-Match는 신규 요청에서 사용하지 않는다(제출하면 400).
+5. 멱등 키는 사용자·메서드·경로별로 구분한다. 기존 `kiikick.match.idempotency-retention=P1D` 설정을 재사용하며 Auth의 확정 보존 정책으로 취급하지 않는다. 같은 범위·키의 만료 기록은 재요청 시 제거하고 미사용 기록의 일괄 정리는 후속 검토한다.
 
 ### 요청 예시
 
@@ -587,7 +595,8 @@ Content-Type: application/json
 | HTTP | code | 발생 조건 | 앱 대응 |
 | --- | --- | --- | --- |
 | 422 | `VALIDATION_FAILED` | 빈 PATCH, 공백 닉네임, 허용되지 않은 필드 | details.fields에 따라 수정 |
-| 401 | `UNAUTHENTICATED / TOKEN_EXPIRED` | access token 없음·만료 | 토큰 갱신/로그인 |
+| 401 | `UNAUTHENTICATED / TOKEN_EXPIRED` | access token 없음·만료, 본인 사용자 없음·삭제 | 토큰 갱신/로그인 |
+| 503 | `SERVICE_UNAVAILABLE` | DB 처리 실패 | 잠시 후 재시도 |
 | 409 | `IDEMPOTENCY_KEY_REUSED` | 같은 멱등 키로 다른 본문/If-Match 제출 | 기존 요청 결과 확인. 별도 동작은 새 키 |
 | 422 | `VALIDATION_FAILED` | 누락·타입·읽기 전용 필드 등 검증 실패 | error.details.fields 확인 |
 

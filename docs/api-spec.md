@@ -288,8 +288,8 @@ Authorization: Bearer <accessToken>
 | [AUTH-01](api/auth.md#auth-01) | 이메일·비밀번호 로그인 (구현 #73) | `POST` | `/auth/login` | 200 |
 | [AUTH-02](api/auth.md#auth-02) | 로그인 세션 갱신 (구현 #62) | `POST` | `/auth/refresh` | 200 |
 | [AUTH-03](api/auth.md#auth-03) | 로그아웃 (#63 구현) | `POST` | `/auth/logout` | 204 |
-| [AUTH-04](api/auth.md#auth-04) | 내 프로필 조회 (예정 #65) | `GET` | `/users/me` | 200 |
-| [AUTH-05](api/auth.md#auth-05) | 내 프로필 수정 (예정 #65) | `PATCH` | `/users/me` | 200 |
+| [AUTH-04](api/auth.md#auth-04) | 내 프로필 조회 (#65 구현) | `GET` | `/users/me` | 200 |
+| [AUTH-05](api/auth.md#auth-05) | 내 프로필 수정 (#65 구현) | `PATCH` | `/users/me` | 200 |
 | [AUTH-06](api/auth.md#auth-06) | 온보딩 완료 (예정 #66) | `PUT` | `/users/me/onboarding` | 200 |
 | [AUTH-07](api/auth.md#auth-07) | 현재 동의 목록 조회 (예정 #68) | `GET` | `/users/me/consents` | 200 |
 | [AUTH-08](api/auth.md#auth-08) | 동의 부여·철회 (예정 #68) | `PUT` | `/users/me/consents/{purpose}` | 200 |
