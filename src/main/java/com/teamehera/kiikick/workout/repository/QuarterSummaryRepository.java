@@ -3,11 +3,14 @@ package com.teamehera.kiikick.workout.repository;
 import com.teamehera.kiikick.workout.domain.QuarterSummary;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -19,6 +22,7 @@ import static com.teamehera.kiikick.global.jdbc.JdbcValueConverter.uuidToBytes;
 public class QuarterSummaryRepository {
 
     private final JdbcTemplate jdbcTemplate;
+    private final NamedParameterJdbcTemplate namedJdbc;
     private final RowMapper<QuarterSummary> rowMapper = (rs, rowNum) ->
             new QuarterSummary(
                     bytesToUuid(rs.getBytes("quarter_id")),
@@ -50,6 +54,7 @@ public class QuarterSummaryRepository {
 
     public QuarterSummaryRepository(JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
+        this.namedJdbc = new NamedParameterJdbcTemplate(jdbcTemplate);
     }
 
     @Transactional
@@ -141,12 +146,38 @@ public class QuarterSummaryRepository {
         );
     }
 
+    public List<QuarterSummary> findByQuarterIds(List<UUID> quarterIds) {
+        return namedJdbc.query(
+                "SELECT * FROM quarter_summaries WHERE quarter_id IN (:quarterIds)",
+                Map.of("quarterIds", quarterIds.stream().map(id -> uuidToBytes(id)).toList()), rowMapper
+        );
+    }
+
     public Optional<QuarterSummary> findByQuarterId(UUID quarterId) {
         return jdbcTemplate.query(
                 "SELECT * FROM quarter_summaries WHERE quarter_id = ?",
                 rowMapper, uuidToBytes(quarterId)
         ).stream().findFirst();
     }
+
+    public List<PendingCalculation> findProcessing(int limit) {
+        return jdbcTemplate.query(
+                """
+                SELECT s.*, q.match_id, m.owner_id
+                FROM quarter_summaries s
+                JOIN quarters q ON q.id = s.quarter_id
+                JOIN matches m ON m.id = q.match_id
+                WHERE s.calculation_status = 'PROCESSING'
+                ORDER BY s.updated_at, s.quarter_id
+                LIMIT ?
+                """,
+                (rs, rowNum) -> new PendingCalculation(rowMapper.mapRow(rs, rowNum),
+                        bytesToUuid(rs.getBytes("match_id")), bytesToUuid(rs.getBytes("owner_id"))),
+                limit
+        );
+    }
+
+    public record PendingCalculation(QuarterSummary summary, UUID matchId, UUID ownerId) {}
 
     public int updateCalculated(
             QuarterSummary summary,
@@ -155,7 +186,7 @@ public class QuarterSummaryRepository {
         return jdbcTemplate.update(
                 """
                 UPDATE quarter_summaries SET
-                    calculation_status = ?, metric_status = ?,
+                    calculation_status = ?, metric_status = ?, calculation_version = ?, calculation_parameters = ?,
                     duration_seconds = ?, max_speed_mps = ?, total_distance_m = ?,
                     total_calories_kcal = ?, average_speed_mps = ?,
                     high_intensity_distance_m = ?, acceleration_count = ?,
@@ -169,7 +200,7 @@ public class QuarterSummaryRepository {
                   AND calculation_job_id = ?
                   AND calculation_status = 'PROCESSING'
                 """,
-                summary.calculationStatus(), summary.metricStatus(),
+                summary.calculationStatus(), summary.metricStatus(), summary.calculationVersion(), summary.calculationParameters(),
                 summary.durationSeconds(), summary.maxSpeedMps(),
                 summary.totalDistanceM(), summary.totalCaloriesKcal(),
                 summary.averageSpeedMps(), summary.highIntensityDistanceM(),
@@ -190,15 +221,20 @@ public class QuarterSummaryRepository {
             UUID expectedCalculationJobId,
             LocalDateTime updatedAt
     ) {
+        return markFailed(quarterId, expectedSourceHash, expectedCalculationJobId, null, updatedAt);
+    }
+
+    public int markFailed(UUID quarterId, String expectedSourceHash, UUID expectedCalculationJobId,
+                          String metricStatus, LocalDateTime updatedAt) {
         return jdbcTemplate.update(
                 """
                 UPDATE quarter_summaries
-                SET calculation_status = 'FAILED', updated_at = ?
+                SET calculation_status = 'FAILED', metric_status = COALESCE(?, metric_status), updated_at = ?
                 WHERE quarter_id = ? AND source_payload_hash = ?
                   AND calculation_job_id = ?
                   AND calculation_status = 'PROCESSING'
                 """,
-                updatedAt, uuidToBytes(quarterId), expectedSourceHash,
+                metricStatus, updatedAt, uuidToBytes(quarterId), expectedSourceHash,
                 uuidToBytes(expectedCalculationJobId)
         );
     }

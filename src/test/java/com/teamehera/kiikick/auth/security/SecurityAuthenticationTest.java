@@ -70,6 +70,17 @@ class SecurityAuthenticationTest {
     }
 
     @Test
+    void servlet_Principal_이름은_검증된_사용자_UUID이다() throws Exception {
+        UUID userId = UUID.randomUUID();
+        String token = accessTokenService.issue(userId, UUID.randomUUID()).token();
+        mockMvc.perform(get("/api/v1/security-test/name")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value(userId.toString()));
+        verifyNoInteractions(authSessionRepository);
+    }
+
+    @Test
     void 세션이_폐기되어도_발급된_JWT는_만료_전까지_유효할_수_있다() throws Exception {
         UUID userId = UUID.randomUUID();
         UUID sessionId = UUID.randomUUID();
@@ -120,6 +131,25 @@ class SecurityAuthenticationTest {
                 .andExpect(jsonPath("$.error.code").value("UNAUTHENTICATED"));
         mockMvc.perform(get("/api/v1/security-test")
                         .header("Authorization", "Bearer " + invalidSessionId))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code").value("UNAUTHENTICATED"));
+
+        verifyNoInteractions(authSessionRepository);
+    }
+
+    @Test
+    void exp가_없는_정상서명_토큰도_401이다() throws Exception {
+        String token = customToken(
+                Instant.now().minusSeconds(1),
+                null,
+                Map.of(
+                        AccessTokenService.USER_ID_CLAIM, UUID.randomUUID().toString(),
+                        AccessTokenService.SESSION_ID_CLAIM, UUID.randomUUID().toString()
+                )
+        );
+
+        mockMvc.perform(get("/api/v1/security-test")
+                        .header("Authorization", "Bearer " + token))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error.code").value("UNAUTHENTICATED"));
 
@@ -207,9 +237,11 @@ class SecurityAuthenticationTest {
                 .issuer("kiikick-api-test")
                 .audience(List.of("kiikick-test"))
                 .issuedAt(issuedAt)
-                .expiresAt(expiresAt)
                 .claim(AccessTokenService.TOKEN_TYPE_CLAIM,
                         AccessTokenService.ACCESS_TOKEN_TYPE);
+        if (expiresAt != null) {
+            claims.expiresAt(expiresAt);
+        }
         extraClaims.forEach(claims::claim);
 
         return jwtEncoder.encode(JwtEncoderParameters.from(
@@ -220,6 +252,10 @@ class SecurityAuthenticationTest {
 
     @RestController
     static class SecurityTestController {
+        @GetMapping("/api/v1/security-test/name")
+        Map<String, String> principalName(java.security.Principal principal) {
+            return Map.of("name", principal.getName());
+        }
 
         @GetMapping(value = "/api/v1/security-test",
                 produces = MediaType.APPLICATION_JSON_VALUE)
