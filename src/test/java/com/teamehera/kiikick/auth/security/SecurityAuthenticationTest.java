@@ -151,8 +151,11 @@ class SecurityAuthenticationTest {
         String validToken = accessTokenService.issue(
                 UUID.randomUUID(), UUID.randomUUID()
         ).token();
-        String tamperedToken = validToken.substring(0, validToken.length() - 1)
-                + (validToken.endsWith("a") ? "b" : "a");
+        String[] tokenParts = validToken.split("\\.");
+        String signature = tokenParts[2];
+        char tamperedFirstCharacter = signature.charAt(0) == 'a' ? 'b' : 'a';
+        String tamperedToken = tokenParts[0] + "." + tokenParts[1] + "."
+                + tamperedFirstCharacter + signature.substring(1);
 
         mockMvc.perform(get("/api/v1/security-test")
                         .header("Authorization", "Bearer " + tamperedToken))
