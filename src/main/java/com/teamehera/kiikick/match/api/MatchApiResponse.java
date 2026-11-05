@@ -10,6 +10,8 @@ import java.util.UUID;
 
 public final class MatchApiResponse {
 
+    static final String REQUEST_ID_HEADER = "X-Request-Id";
+
     private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
 
     private MatchApiResponse() {}
