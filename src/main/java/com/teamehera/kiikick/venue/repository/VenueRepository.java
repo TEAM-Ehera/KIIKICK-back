@@ -61,6 +61,25 @@ public class VenueRepository {
         );
     }
 
+    public List<Venue> findPageByOwnerId(UUID ownerId, String query, LocalDateTime before, UUID beforeId, int limit) {
+        String pattern = query == null ? "%" : "%" + query.replace("!", "!!").replace("%", "!%").replace("_", "!_") + "%";
+        if (before == null) {
+            return jdbcTemplate.query(
+                    """
+                    SELECT * FROM venues
+                    WHERE owner_id = ? AND name LIKE ? ESCAPE '!'
+                    ORDER BY updated_at DESC, id DESC LIMIT ?
+                    """, rowMapper, uuidToBytes(ownerId), pattern, limit);
+        }
+        return jdbcTemplate.query(
+                """
+                SELECT * FROM venues
+                WHERE owner_id = ? AND name LIKE ? ESCAPE '!'
+                  AND (updated_at < ? OR (updated_at = ? AND id < ?))
+                ORDER BY updated_at DESC, id DESC LIMIT ?
+                """, rowMapper, uuidToBytes(ownerId), pattern, before, before, uuidToBytes(beforeId), limit);
+    }
+
     public int update(UUID id, UUID ownerId, String name, String address) {
         return jdbcTemplate.update(
                 """

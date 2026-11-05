@@ -25,6 +25,7 @@ public class AuthAuthenticationEntryPoint implements AuthenticationEntryPoint {
             AuthenticationException exception
     ) throws IOException, ServletException {
         boolean expired = isExpired(exception);
+        response.setHeader(org.springframework.http.HttpHeaders.WWW_AUTHENTICATE, "Bearer");
         errorWriter.write(
                 response,
                 HttpServletResponse.SC_UNAUTHORIZED,

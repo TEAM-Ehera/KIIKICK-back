@@ -47,10 +47,14 @@ import com.teamehera.kiikick.workout.domain.HeartRateSample;
 import com.teamehera.kiikick.workout.domain.QuarterSummary;
 import com.teamehera.kiikick.workout.domain.TrackPoint;
 import com.teamehera.kiikick.workout.domain.WorkoutPayload;
+import com.teamehera.kiikick.workout.dto.HeartRateSampleRequest;
+import com.teamehera.kiikick.workout.dto.TrackPointRequest;
+import com.teamehera.kiikick.workout.dto.WorkoutPayloadCreateRequest;
 import com.teamehera.kiikick.workout.repository.HeartRateSampleRepository;
 import com.teamehera.kiikick.workout.repository.QuarterSummaryRepository;
 import com.teamehera.kiikick.workout.repository.TrackPointRepository;
 import com.teamehera.kiikick.workout.repository.WorkoutPayloadRepository;
+import com.teamehera.kiikick.workout.service.WorkoutPayloadService;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -123,6 +127,7 @@ class MySqlRepositoryIntegrationTest {
     @Autowired MatchRepository matches;
     @Autowired QuarterRepository quarters;
     @Autowired WorkoutPayloadRepository workouts;
+    @Autowired WorkoutPayloadService legacyWorkoutUploads;
     @Autowired TrackPointRepository trackPoints;
     @Autowired HeartRateSampleRepository heartRates;
     @Autowired QuarterSummaryRepository summaries;
@@ -166,6 +171,34 @@ class MySqlRepositoryIntegrationTest {
                 Integer.class
         );
         assertEquals(27, tableCount);
+    }
+
+    @Test
+    @Transactional
+    void legacyUploadRemainsAvailableAfterMigration() {
+        UUID userId = UUID.randomUUID();
+        users.save(userId, "legacy-player");
+        var request = new WorkoutPayloadCreateRequest(
+                1000.0, 1060.0, 5.25, 12.5,
+                List.of(new TrackPointRequest(37.5, 127.0, 10.5, 1.25, -1.0, -1.0, 1000.0)),
+                List.of(new HeartRateSampleRequest(1000.0, 135.5))
+        );
+
+        UUID workoutId = legacyWorkoutUploads.create(userId, request).workoutPayloadId();
+        byte[] storedId = uuidToBytes(workoutId);
+
+        assertAll(
+                () -> assertEquals(1, jdbc.queryForObject(
+                        "SELECT COUNT(*) FROM workoutPayloads WHERE id = ? AND userId = ?",
+                        Integer.class, storedId, uuidToBytes(userId))),
+                () -> assertEquals(1, jdbc.queryForObject(
+                        "SELECT COUNT(*) FROM trackPoints WHERE workoutPayloadId = ? AND sampleSeq = 0",
+                        Integer.class, storedId)),
+                () -> assertEquals(1, jdbc.queryForObject(
+                        "SELECT COUNT(*) FROM heartRateSamples WHERE workoutPayloadId = ? AND sampleSeq = 0",
+                        Integer.class, storedId)),
+                () -> assertTrue(workouts.findById(workoutId).isEmpty())
+        );
     }
 
     @Test

@@ -73,12 +73,42 @@ public class QuarterRepository {
         );
     }
 
+    public List<Quarter> findPageAfter(UUID matchId, int number, UUID id, int limit) {
+        return jdbcTemplate.query(
+                """
+                SELECT * FROM quarters WHERE match_id = ?
+                  AND (number > ? OR (number = ? AND id > ?))
+                ORDER BY number ASC, id ASC LIMIT ?
+                """,
+                rowMapper, uuidToBytes(matchId), number, number, uuidToBytes(id), limit
+        );
+    }
+
     public int findNextNumber(UUID matchId) {
         Integer number = jdbcTemplate.queryForObject(
                 "SELECT COALESCE(MAX(number), 0) + 1 FROM quarters WHERE match_id = ?",
                 Integer.class, uuidToBytes(matchId)
         );
         return number == null ? 1 : number;
+    }
+
+    public boolean hasQuarterInStatus(UUID matchId, String status) {
+        return Boolean.TRUE.equals(jdbcTemplate.queryForObject(
+                "SELECT EXISTS (SELECT 1 FROM quarters WHERE match_id = ? AND status = ?)",
+                Boolean.class, uuidToBytes(matchId), status
+        ));
+    }
+
+    public boolean hasOnlyCompletedQuarters(UUID matchId) {
+        return Boolean.TRUE.equals(jdbcTemplate.queryForObject(
+                """
+                SELECT EXISTS (SELECT 1 FROM quarters WHERE match_id = ?)
+                   AND NOT EXISTS (
+                       SELECT 1 FROM quarters WHERE match_id = ? AND status <> 'COMPLETED'
+                   )
+                """,
+                Boolean.class, uuidToBytes(matchId), uuidToBytes(matchId)
+        ));
     }
 
     public int updateDuration(UUID id, UUID matchId, int durationSeconds) {
