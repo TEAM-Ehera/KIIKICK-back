@@ -12,6 +12,7 @@ import com.teamehera.kiikick.global.exception.InvalidWorkoutPayloadException;
 import com.teamehera.kiikick.workout.service.QuarterSummaryCommands;
 import com.teamehera.kiikick.workout.service.QuarterWorkoutUpload;
 import jakarta.servlet.http.HttpServletRequest;
+import com.teamehera.kiikick.analytics.service.AnalyticsQuery;
 import org.springframework.http.HttpHeaders;
 import com.teamehera.kiikick.match.service.MatchOwnership.ResourceNotFound;
 import com.teamehera.kiikick.notification.service.NotificationService;
@@ -56,6 +57,17 @@ public class MatchApiExceptionHandler {
             MatchController.InvalidRequest.class})
     public ResponseEntity<MatchApiResponse.Failure> invalidRequest(HttpServletRequest request) {
         return failure(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", "요청 형식을 확인해주세요.", Map.of(), request);
+    }
+
+    @ExceptionHandler(AnalyticsQuery.InvalidAnalytics.class)
+    public ResponseEntity<MatchApiResponse.Failure> invalidAnalytics(
+            AnalyticsQuery.InvalidAnalytics exception, HttpServletRequest request) {
+        return invalidSettings(new MatchSettings.InvalidSettings(java.util.List.of(exception.getMessage())), request);
+    }
+
+    @ExceptionHandler(AnalyticsQuery.ConsentRequired.class)
+    public ResponseEntity<MatchApiResponse.Failure> analyticsConsentRequired(HttpServletRequest request) {
+        return failure(HttpStatus.FORBIDDEN, "CONSENT_REQUIRED", "양쪽 사용자의 비교 동의가 필요합니다.", Map.of(), request);
     }
 
     @ExceptionHandler(InvalidListRequest.class)
