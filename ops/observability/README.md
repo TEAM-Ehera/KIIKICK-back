@@ -39,3 +39,9 @@ docker compose logs --since 15m --tail 100
 ```
 
 장애 재현 기록에는 감지 시간, 증상, 확인한 로그, 복구 조치, 정상 응답 확인 시간을 남긴다. 로그 원문을 Discord에 공유할 때는 토큰, 요청 본문, 위치·심박 등 개인 데이터를 제거한다.
+
+### 개발 서버 자동 배포
+
+개발 서버의 내부 Jenkins는 `127.0.0.1:8090`에서 실행한다. SSH 로컬 포트 포워딩으로 접속한다. `kiikick-develop`은 공개 저장소의 `develop`만 체크아웃하는 Pipeline from SCM 잡이며, Jenkins가 약 2분 간격으로 변경을 확인한다. JDK 21 에이전트에서 테스트와 JAR 보관을 완료한 뒤 같은 서버의 배포 도우미를 실행한다.
+
+배포 도우미 [install-dev-jar.sh](../deploy/install-dev-jar.sh)는 관리자가 `/usr/local/sbin/kiikick-install-dev-jar`에 root 소유로 설치한다. Jenkins 계정에는 이 도우미의 sudo 실행만 허용한다. 도우미는 JAR의 SHA-256을 검증하고 서비스 재시작 후 헬스체크를 확인한다. 실패하면 직전 JAR를 복원하고 빌드를 실패로 표시한다. DB 스키마 변경은 배포 전에 별도 이행 절차로 적용한다.
