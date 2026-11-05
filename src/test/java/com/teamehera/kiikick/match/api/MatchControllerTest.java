@@ -303,6 +303,86 @@ class MatchControllerTest {
                 .andExpect(jsonPath("$.data[1].number").value(2));
     }
 
+    @Test
+    void transitionsMatchAndReplaysEndWithoutWaitingForWorkout() throws Exception {
+        String match = create(actor, "{}");
+        mvc.perform(transition(match, "ready", actor, UUID.randomUUID(), 1))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.error.code").value("INVALID_STATE"));
+        mvc.perform(transition(match, "start", actor, UUID.randomUUID(), 1))
+                .andExpect(status().isConflict());
+        String quarter = addQuarter(match + "/quarters", 1);
+        UUID quarterId = UUID.fromString(quarter.substring(quarter.lastIndexOf('/') + 1));
+        mvc.perform(transition(match, "ready", other, UUID.randomUUID(), 2))
+                .andExpect(status().isNotFound());
+        mvc.perform(transition(match, "ready", actor, UUID.randomUUID(), 1))
+                .andExpect(status().isPreconditionFailed());
+        mvc.perform(transition(match, "ready", actor, UUID.randomUUID(), 2))
+                .andExpect(status().isOk()).andExpect(header().string("ETag", tag(3)))
+                .andExpect(jsonPath("$.data.status").value("READY"));
+        mvc.perform(transition(match, "start", actor, UUID.randomUUID(), 3))
+                .andExpect(status().isOk()).andExpect(header().string("ETag", tag(4)))
+                .andExpect(jsonPath("$.data.status").value("IN_PROGRESS"))
+                .andExpect(jsonPath("$.data.startedAt").isNotEmpty());
+
+        mvc.perform(transition(match, "cancel", actor, UUID.randomUUID(), 4))
+                .andExpect(status().isConflict());
+        mvc.perform(transition(match, "end", actor, UUID.randomUUID(), 4))
+                .andExpect(status().isConflict());
+        var startedAt = matches.findByIdAndOwnerId(id(match), actor).orElseThrow().startedAt();
+        assertEquals(1, quarters.updateStatus(quarterId, id(match), "READY", "IN_PROGRESS", startedAt, null));
+        mvc.perform(transition(match, "end", actor, UUID.randomUUID(), 4))
+                .andExpect(status().isConflict());
+        assertEquals(1, quarters.updateStatus(quarterId, id(match), "IN_PROGRESS", "COMPLETED", null, startedAt));
+
+        UUID key = UUID.randomUUID();
+        var completed = mvc.perform(transition(match, "end", actor, key, 4))
+                .andExpect(status().isOk()).andExpect(header().string("ETag", tag(5)))
+                .andExpect(jsonPath("$.data.status").value("COMPLETED"))
+                .andExpect(jsonPath("$.data.endedAt").isNotEmpty())
+                .andExpect(jsonPath("$.meta.matchVersion").value(5))
+                .andReturn().getResponse();
+        mvc.perform(transition(match, "end", actor, key, 4))
+                .andExpect(status().isOk()).andExpect(header().string("ETag", tag(5)))
+                .andExpect(content().string(completed.getContentAsString()));
+    }
+
+    @Test
+    void cancelsBeforeStartAndRejectsBody() throws Exception {
+        String draft = create(actor, "{}");
+        mvc.perform(transition(draft, "cancel", actor, UUID.randomUUID(), 1)
+                        .contentType("application/json").content("{}"))
+                .andExpect(status().isBadRequest());
+        mvc.perform(transition(draft, "cancel", actor, UUID.randomUUID(), 1))
+                .andExpect(status().isOk()).andExpect(header().string("ETag", tag(2)))
+                .andExpect(jsonPath("$.data.status").value("CANCELLED"));
+
+        String ready = create(actor, "{}");
+        addQuarter(ready + "/quarters", 1);
+        mvc.perform(transition(ready, "ready", actor, UUID.randomUUID(), 2))
+                .andExpect(status().isOk());
+        mvc.perform(transition(ready, "cancel", actor, UUID.randomUUID(), 3))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.status").value("CANCELLED"));
+        mvc.perform(transition(ready, "start", actor, UUID.randomUUID(), 4))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    void cannotEndInProgressMatchWithNoQuarters() throws Exception {
+        String match = create(actor, "{}");
+        String quarter = addQuarter(match + "/quarters", 1);
+        mvc.perform(transition(match, "ready", actor, UUID.randomUUID(), 2)).andExpect(status().isOk());
+        mvc.perform(transition(match, "start", actor, UUID.randomUUID(), 3)).andExpect(status().isOk());
+        mvc.perform(remove(quarter, UUID.randomUUID(), 4)).andExpect(status().isNoContent());
+        mvc.perform(transition(match, "end", actor, UUID.randomUUID(), 5))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.error.code").value("INVALID_STATE"));
+    }
+
+    private static MockHttpServletRequestBuilder transition(String match, String action, UUID owner, UUID key,
+                                                           long version) {
+        return post(match + "/" + action).principal(owner::toString)
+                .header("Idempotency-Key", key.toString()).header("If-Match", tag(version));
+    }
+
     private String addQuarter(String path, long version) throws Exception {
         return mvc.perform(write(post(path), actor, UUID.randomUUID(), "{\"durationSeconds\":60}")
                         .header("If-Match", tag(version)))

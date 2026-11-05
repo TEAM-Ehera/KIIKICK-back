@@ -92,6 +92,25 @@ public class QuarterRepository {
         return number == null ? 1 : number;
     }
 
+    public boolean hasReadyQuarter(UUID matchId) {
+        return Boolean.TRUE.equals(jdbcTemplate.queryForObject(
+                "SELECT EXISTS (SELECT 1 FROM quarters WHERE match_id = ? AND status = 'READY')",
+                Boolean.class, uuidToBytes(matchId)
+        ));
+    }
+
+    public boolean hasOnlyCompletedQuarters(UUID matchId) {
+        return Boolean.TRUE.equals(jdbcTemplate.queryForObject(
+                """
+                SELECT EXISTS (SELECT 1 FROM quarters WHERE match_id = ?)
+                   AND NOT EXISTS (
+                       SELECT 1 FROM quarters WHERE match_id = ? AND status <> 'COMPLETED'
+                   )
+                """,
+                Boolean.class, uuidToBytes(matchId), uuidToBytes(matchId)
+        ));
+    }
+
     public int updateDuration(UUID id, UUID matchId, int durationSeconds) {
         return jdbcTemplate.update(
                 """
