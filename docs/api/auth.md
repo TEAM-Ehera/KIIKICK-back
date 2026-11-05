@@ -2,154 +2,141 @@
 
 [전체 API 목차](../api-spec.md) · [공통 규칙](common.md) · [응답 필드 사전](schemas.md) · [정책 결정 목록](../decisions.md)
 
-요구사항: **F01 / F09** · 관련 정책: **P01 / P11** · 계약 버전: **v0.4 검토 초안**
+요구사항: **F01 / F09** · 관련 정책: **P01 / P11** · 계약 버전: **v0.5 구현 기준**
 
-가입/로그인 제공자와 필수 동의는 P01/P11 미확정이다. 아래는 외부 제공자 인증을 채택할 경우의 상세 계약 후보다. 비밀번호 로그인·이미지 업로드·계정 연결은 이번 범위에서 확정하지 않는다.
+P01의 인증 방식은 이메일 인증과 비밀번호로 확정되었다. Apple·Google 등 외부 제공자
+로그인은 현재 범위에서 지원하지 않는다. 아래 표의 `구현`은 현재 서버 코드와 일치하는
+계약이고 `예정`은 관련 Issue가 완료되기 전까지 호출할 수 없는 목표 계약이다.
 
 ## API 바로가기
 
-| ID | 기능 | Method | 경로 |
-| --- | --- | --- | --- |
-| [AUTH-01](#auth-01) | 로그인·가입 토큰 교환 | `POST` | `/auth/exchange` |
-| [AUTH-02](#auth-02) | 로그인 세션 갱신 | `POST` | `/auth/refresh` |
-| [AUTH-03](#auth-03) | 로그아웃 | `POST` | `/auth/logout` |
-| [AUTH-04](#auth-04) | 내 프로필 조회 | `GET` | `/users/me` |
-| [AUTH-05](#auth-05) | 내 프로필 수정 | `PATCH` | `/users/me` |
-| [AUTH-06](#auth-06) | 온보딩 완료 | `PUT` | `/users/me/onboarding` |
-| [AUTH-07](#auth-07) | 현재 동의 목록 조회 | `GET` | `/users/me/consents` |
-| [AUTH-08](#auth-08) | 동의 부여·철회 | `PUT` | `/users/me/consents/{purpose}` |
-| [AUTH-09](#auth-09) | 회원 탈퇴 요청 | `POST` | `/users/me/deletion-requests` |
-| [AUTH-10](#auth-10) | 탈퇴 처리 상태 조회 | `GET` | `/users/me/deletion-requests/{deletionId}` |
+| ID | 기능 | Method | 경로 | 상태 |
+| --- | --- | --- | --- | --- |
+| [AUTH-01A](#auth-01a) | 이메일 인증번호 발송·재발송 | `POST` | `/auth/email-verifications` | 구현 (#61) |
+| [AUTH-01B](#auth-01b) | 이메일 인증번호 검증 | `POST` | `/auth/email-verifications/{verificationId}/verify` | 구현 (#61) |
+| [AUTH-01C](#auth-01c) | 이메일 회원가입 완료 | `POST` | `/auth/signup` | 구현 (#72) |
+| [AUTH-01](#auth-01) | 이메일·비밀번호 로그인 | `POST` | `/auth/login` | 예정 (#73) |
+| [AUTH-02](#auth-02) | 로그인 세션 갱신 | `POST` | `/auth/refresh` | 예정 (#62) |
+| [AUTH-03](#auth-03) | 로그아웃 | `POST` | `/auth/logout` | 예정 (#63) |
+| [AUTH-04](#auth-04) | 내 프로필 조회 | `GET` | `/users/me` | 예정 (#65) |
+| [AUTH-05](#auth-05) | 내 프로필 수정 | `PATCH` | `/users/me` | 예정 (#65) |
+| [AUTH-06](#auth-06) | 온보딩 완료 | `PUT` | `/users/me/onboarding` | 예정 (#66) |
+| [AUTH-07](#auth-07) | 현재 동의 목록 조회 | `GET` | `/users/me/consents` | 예정 (#68) |
+| [AUTH-08](#auth-08) | 동의 부여·철회 | `PUT` | `/users/me/consents/{purpose}` | 예정 (#68) |
+| [AUTH-09](#auth-09) | 회원 탈퇴 요청 | `POST` | `/users/me/deletion-requests` | 예정 (#69) |
+| [AUTH-10](#auth-10) | 탈퇴 처리 상태 조회 | `GET` | `/users/me/deletion-requests/{deletionId}` | 예정 (#69) |
 
 ---
 
-<a id="auth-01"></a>
-## AUTH-01 · 로그인·가입 토큰 교환
-
-인증 제공자에서 발급받은 토큰으로 앱 세션을 만든다. 기존 계정은 로그인, 최초 계정은 온보딩 필요 상태로 반환하는 후보 계약이다.
+<a id="auth-01a"></a>
+## AUTH-01A · 이메일 인증번호 발송·재발송 (구현)
 
 | 항목 | 내용 |
 | --- | --- |
-| 요청 | `POST /api/v1/auth/exchange` |
+| 요청 | `POST /api/v1/auth/email-verifications` |
 | 권한 | 공개 |
-| 성공 | **200** · [응답 필드 사전 · Session](schemas.md#session) |
-| 정책 검토 | P01 / P11 ([결정 목록](../decisions.md)) |
+| 성공 | **202 Accepted** · [EmailVerification](schemas.md#emailverification) |
 
-### 요청 헤더
-
-| 헤더 | 필수 | 값 / 사용법 |
-| --- | :---: | --- |
-| Authorization | X | 사용하지 않음 |
-| Content-Type | O | `application/json` |
-| Idempotency-Key | X | 사용하지 않음 |
-| If-Match | X | 사용하지 않음 |
-
-### 보내는 값: 경로·조회 조건·본문
-
-Path parameter: 없음.
-
-Query parameter: 없음.
-
-**Request body**
-
-| 필드 | 타입 | 필수 | null | 기본값 / 예시 | 설명 |
-| --- | --- | :---: | :---: | --- | --- |
-| `provider` | string | O | 불가 | — | 지원 인증 제공자. EXAMPLE_PROVIDER는 예시이며 지원 목록 P01 미정 |
-| `identityToken` | string | O | 불가 | — | 제공자가 발급한 신원 증명 토큰. 비밀값 |
-| `authorizationCode` | string | X | 불가 | — | 선택한 제공자 흐름에서 요구할 때 필수 |
-| `nonce` | string | X | 불가 | — | 제공자별 재전송 검증에 필요할 때 필수 |
-
-중첩 필드의 필수 O는 부모 객체/배열을 제출했을 때 적용한다. PATCH의 누락·null 규칙은 [공통 계약](common.md)을 따른다.
-
-### 처리 규칙
-
-1. 서버가 제공자·audience·만료·nonce를 검증한다. 토큰은 로그에 남기지 않는다.
-2. (provider,subject)로 계정을 유일하게 찾는다. 첫 가입이면 user.onboardingStatus=REQUIRED, nickname/avatarUrl=null을 반환한다.
-3. 이메일/비밀번호 가입과 별도 회원가입 API의 필요 여부는 P01 확정 후 설계한다. 예시 토큰의 만료 간격은 운영 수명이 아니다.
-
-### 요청 예시
-
-```http
-POST /api/v1/auth/exchange HTTP/1.1
-Accept: application/json
-Content-Type: application/json
-
-{
-  "provider": "EXAMPLE_PROVIDER",
-  "identityToken": "example-provider-token",
-  "authorizationCode": "example-code",
-  "nonce": "example-nonce"
-}
-```
-
-### 성공 응답
-
-아래는 `data`의 필드다. 중첩 객체의 전체 필드는 [응답 필드 사전 · Session](schemas.md#session)에서 확인한다.
-
-| 필드 | 타입 | 필수 | null | 기본값 / 예시 | 설명 |
-| --- | --- | :---: | :---: | --- | --- |
-| `sessionId` | UUID | O | 불가 | — | 로그아웃 대상 세션 ID |
-| `accessToken` | string | O | 불가 | — | 서버 인증에 사용하는 비밀값. 로그 금지 |
-| `refreshToken` | string | O | 불가 | — | 갱신 시 회전하는 비밀값. 로그 금지 |
-| `expiresAt` | timestamp | O | 불가 | — | access token 만료 시각. 예시의 수명은 확정값 아님 |
-| `user` | UserSelf | O | 불가 | — | 본인 계정·온보딩 정보 |
-
-```http
-HTTP/1.1 200 OK
-X-Request-Id: req-example
-Content-Type: application/json
+```json
+{"email":"user@example.com"}
 ```
 
 ```json
 {
   "data": {
-    "sessionId": "00000010-0000-4000-8000-000000000010",
-    "accessToken": "example-access-token",
-    "refreshToken": "example-refresh-token",
-    "expiresAt": "2026-11-02T11:00:00+09:00",
-    "user": {
-      "id": "00000001-0000-4000-8000-000000000001",
-      "nickname": "준",
-      "avatarUrl": null,
-      "onboardingStatus": "COMPLETED",
-      "comparisonConsent": true,
-      "createdAt": "2026-11-02T10:00:00+09:00"
-    }
+    "verificationId": "00000010-0000-4000-8000-000000000010",
+    "expiresAt": "2026-11-05T09:03:00+09:00",
+    "resendAvailableAt": "2026-11-05T09:01:00+09:00"
   },
-  "meta": {
-    "requestId": "req-example",
-    "serverTime": "2026-11-02T10:10:00+09:00"
-  }
+  "meta": {"requestId":"00000000-0000-4000-8000-000000000001","serverTime":"2026-11-05T09:00:00+09:00"}
 }
 ```
 
-### 오류와 앱 대응
+같은 이메일로 다시 호출하면 재발송으로 처리한다. 코드는 6자리 숫자이며 3분 후
+만료되고 재발송은 60초 후 가능하다. 이메일별 24시간 5회와 IP별 1분 3회 제한을
+독립적으로 적용한다. 재발송 시 이전 코드는 무효화하지만 누적 실패 횟수는 유지한다.
 
-| HTTP | code | 발생 조건 | 앱 대응 |
-| --- | --- | --- | --- |
-| 401 | `INVALID_CREDENTIALS` | 토큰 서명·대상·만료 검증 실패 | 제공자 로그인을 다시 진행 |
-| 422 | `UNSUPPORTED_PROVIDER` | 지원하지 않는 인증 제공자 | 확정된 제공자 목록 확인 |
-| 422 | `VALIDATION_FAILED` | 누락·타입·읽기 전용 필드 등 검증 실패 | error.details.fields 확인 |
+| HTTP | code | 조건 |
+| --- | --- | --- |
+| 400 | `VALIDATION_FAILED` / `INVALID_REQUEST` | 이메일 또는 요청 IP 형식 오류 |
+| 429 | `RATE_LIMITED` | 재발송 대기 또는 이메일·IP 발송 한도 초과 |
+| 429 | `VERIFICATION_ATTEMPTS_EXCEEDED` | 해당 인증 흐름의 실패 횟수 소진 |
+| 503 | `EMAIL_DELIVERY_UNAVAILABLE` | SMTP 전송 실패. DB 변경과 제한 이벤트도 롤백 |
 
-[공통 오류](common.md)에 정의한 400·403·429·500·503도 적용된다. 네트워크 응답 유실 시 저장 여부는 알 수 없으므로 새 ID로 재등록하지 않는다.
+429 응답은 `Retry-After` 헤더를 포함한다.
 
-**대표 오류 응답 · HTTP 401**
+<a id="auth-01b"></a>
+## AUTH-01B · 이메일 인증번호 검증 (구현)
+
+| 항목 | 내용 |
+| --- | --- |
+| 요청 | `POST /api/v1/auth/email-verifications/{verificationId}/verify` |
+| 권한 | 공개 |
+| 성공 | **200 OK** · [RegistrationAuthorization](schemas.md#registrationauthorization) |
+
+```json
+{"code":"123456"}
+```
 
 ```json
 {
-  "error": {
-    "code": "INVALID_CREDENTIALS",
-    "message": "토큰 서명·대상·만료 검증 실패",
-    "retryable": false,
-    "persistence": "NOT_SAVED",
-    "details": {}
+  "data": {
+    "registrationToken": "opaque-registration-token",
+    "expiresAt": "2026-11-05T09:10:00+09:00"
   },
-  "meta": {
-    "requestId": "req-error-example",
-    "serverTime": "2026-11-02T10:10:00+09:00"
-  }
+  "meta": {"requestId":"00000000-0000-4000-8000-000000000001","serverTime":"2026-11-05T09:00:00+09:00"}
 }
 ```
+
+검증 실패는 최대 5회까지 누적한다. 성공하면 코드를 즉시 무효화하고 인증 이메일과
+`SIGN_UP` 목적에 귀속된 10분 유효 일회용 registrationToken을 반환한다. 서버는 코드와
+registrationToken 원문 대신 해시만 저장한다.
+
+| HTTP | code | 조건 |
+| --- | --- | --- |
+| 400 | `VALIDATION_FAILED` / `INVALID_REQUEST` / `INVALID_VERIFICATION` | 코드·경로·본문 형식 오류 또는 사용할 수 없는 코드 |
+| 400 | `VERIFICATION_EXPIRED` | 3분 만료 |
+| 429 | `VERIFICATION_ATTEMPTS_EXCEEDED` | 실패 5회 도달 |
+
+<a id="auth-01c"></a>
+## AUTH-01C · 이메일 회원가입 완료 (구현)
+
+| 항목 | 내용 |
+| --- | --- |
+| 요청 | `POST /api/v1/auth/signup` |
+| 권한 | 공개 |
+| 성공 | **201 Created** · [Session](schemas.md#session) |
+
+```json
+{
+  "registrationToken": "opaque-registration-token",
+  "password": "user-entered-password"
+}
+```
+
+성공 응답은 [Session](schemas.md#session)이며 신규 사용자의 `nickname`과 `avatarUrl`은
+null, `onboardingStatus`는 `REQUIRED`, `comparisonConsent`는 false다. 비밀번호는
+8~32자이면서 UTF-8 72바이트 이하여야 하며 로컬 차단 목록과 정확히 일치하면 거부한다.
+BCrypt 해시만 저장한다. registrationToken 소비, User·EmailCredential·AuthSession 생성은
+한 트랜잭션으로 처리한다. Access Token은 15분, Refresh Token은 최초 로그인 기준 최대
+90일이며 DB에는 Refresh Token의 SHA-256 해시만 저장한다.
+
+| HTTP | code | 조건 |
+| --- | --- | --- |
+| 400 | `VALIDATION_FAILED` / `INVALID_REQUEST` / `INVALID_REGISTRATION_TOKEN` | 필수값 누락, 잘못된 본문 또는 만료·소비·목적 불일치 토큰 |
+| 409 | `SIGNUP_NOT_AVAILABLE` | 중복·동시 가입 충돌. 계정 존재 여부는 노출하지 않음 |
+| 422 | `INVALID_PASSWORD` | 비밀번호 정책 위반 |
+| 503 | `TOKEN_ISSUANCE_FAILED` | 로그인 세션 토큰 발급 실패 |
+
+전체 JSON 예시는 [회원가입 구현 계약](../auth/signup-api.md)을 따른다.
+
+<a id="auth-01"></a>
+## AUTH-01 · 이메일·비밀번호 로그인 (예정 · #73)
+
+목표 경로는 `POST /api/v1/auth/login`이다. 정규화 이메일과 BCrypt 비밀번호를 검증해
+Session을 발급하며 미등록 이메일과 비밀번호 불일치는 동일한 `INVALID_CREDENTIALS`로
+처리한다. 계정·IP 제한과 CAPTCHA를 적용한다. **현재 Controller가 없어 호출할 수 없으며,
+요청·응답의 최종 세부 계약은 #73 구현 시 이 문서와 함께 확정한다.**
 
 [이 문서 위로](#api-바로가기) · [전체 API 목차](../api-spec.md)
 
@@ -157,7 +144,7 @@ Content-Type: application/json
 ---
 
 <a id="auth-02"></a>
-## AUTH-02 · 로그인 세션 갱신
+## AUTH-02 · 로그인 세션 갱신 (예정 · #62)
 
 access token 만료 시 refresh token을 교환한다.
 
@@ -166,7 +153,7 @@ access token 만료 시 refresh token을 교환한다.
 | 요청 | `POST /api/v1/auth/refresh` |
 | 권한 | refresh token |
 | 성공 | **200** · [응답 필드 사전 · Session](schemas.md#session) |
-| 정책 검토 | P01 / P11 ([결정 목록](../decisions.md)) |
+| 구현 상태 | 예정. 현재 Controller가 없어 호출할 수 없음 |
 
 ### 요청 헤더
 
@@ -194,7 +181,8 @@ Query parameter: 없음.
 ### 처리 규칙
 
 1. 성공하면 기존 refresh token을 원자적으로 폐기하고 새 토큰을 안전하게 저장한다.
-2. 일반 멱등 응답 캐시를 적용하지 않는다. 회전 응답 유실 시 유예/재로그인 정책과 이전 토큰 재사용 탐지는 P01 미정. 클라이언트는 동시 갱신을 한 건으로 합친다.
+2. 최초 로그인 기준 90일 절대 만료, Rotation, 이전 토큰 재사용 탐지와 해당 세션 폐기는 확정 정책이다.
+3. 정상적인 동시 갱신·네트워크 재시도를 공격성 재사용과 구분하는 구체 방식은 #62 구현 전 결정한다. 클라이언트는 동시 갱신을 한 건으로 합친다.
 
 ### 요청 예시
 
@@ -217,12 +205,12 @@ Content-Type: application/json
 | `sessionId` | UUID | O | 불가 | — | 로그아웃 대상 세션 ID |
 | `accessToken` | string | O | 불가 | — | 서버 인증에 사용하는 비밀값. 로그 금지 |
 | `refreshToken` | string | O | 불가 | — | 갱신 시 회전하는 비밀값. 로그 금지 |
-| `expiresAt` | timestamp | O | 불가 | — | access token 만료 시각. 예시의 수명은 확정값 아님 |
+| `expiresAt` | timestamp | O | 불가 | — | 15분 유효한 access token의 만료 시각 |
 | `user` | UserSelf | O | 불가 | — | 본인 계정·온보딩 정보 |
 
 ```http
 HTTP/1.1 200 OK
-X-Request-Id: req-example
+X-Request-Id: 00000000-0000-4000-8000-000000000001
 Content-Type: application/json
 ```
 
@@ -243,7 +231,7 @@ Content-Type: application/json
     }
   },
   "meta": {
-    "requestId": "req-example",
+    "requestId": "00000000-0000-4000-8000-000000000001",
     "serverTime": "2026-11-02T10:10:00+09:00"
   }
 }
@@ -270,7 +258,7 @@ Content-Type: application/json
     "details": {}
   },
   "meta": {
-    "requestId": "req-error-example",
+    "requestId": "00000000-0000-4000-8000-000000000002",
     "serverTime": "2026-11-02T10:10:00+09:00"
   }
 }
@@ -282,7 +270,7 @@ Content-Type: application/json
 ---
 
 <a id="auth-03"></a>
-## AUTH-03 · 로그아웃
+## AUTH-03 · 로그아웃 (예정 · #63)
 
 현재 또는 명시한 본인 세션을 폐기한다.
 
@@ -319,7 +307,7 @@ Query parameter: 없음.
 ### 처리 규칙
 
 1. 다른 세션의 로그아웃이 현재 세션 전체 로그아웃을 의미하지 않는다.
-2. 같은 본인 세션의 반복 폐기는 204. access token의 즉시 무효화 방식은 인증 구현에서 보장한다.
+2. 같은 본인 세션의 반복 폐기는 204. Refresh Token 세션은 폐기하지만 기존 Access Token은 만료까지 최대 15분간 유효할 수 있다.
 
 ### 요청 예시
 
@@ -339,7 +327,7 @@ Content-Type: application/json
 
 ```http
 HTTP/1.1 204 No Content
-X-Request-Id: req-example
+X-Request-Id: 00000000-0000-4000-8000-000000000001
 ```
 
 본문을 반환하지 않는다.
@@ -367,7 +355,7 @@ X-Request-Id: req-example
     "details": {}
   },
   "meta": {
-    "requestId": "req-error-example",
+    "requestId": "00000000-0000-4000-8000-000000000002",
     "serverTime": "2026-11-02T10:10:00+09:00"
   }
 }
@@ -379,7 +367,7 @@ X-Request-Id: req-example
 ---
 
 <a id="auth-04"></a>
-## AUTH-04 · 내 프로필 조회
+## AUTH-04 · 내 프로필 조회 (예정 · #65)
 
 홈 진입·마이페이지·온보딩 분기를 위해 본인 프로필을 확인한다.
 
@@ -433,7 +421,7 @@ Authorization: Bearer <accessToken>
 
 ```http
 HTTP/1.1 200 OK
-X-Request-Id: req-example
+X-Request-Id: 00000000-0000-4000-8000-000000000001
 Content-Type: application/json
 ```
 
@@ -448,7 +436,7 @@ Content-Type: application/json
     "createdAt": "2026-11-02T10:00:00+09:00"
   },
   "meta": {
-    "requestId": "req-example",
+    "requestId": "00000000-0000-4000-8000-000000000001",
     "serverTime": "2026-11-02T10:10:00+09:00"
   }
 }
@@ -468,7 +456,7 @@ Content-Type: application/json
 ---
 
 <a id="auth-05"></a>
-## AUTH-05 · 내 프로필 수정
+## AUTH-05 · 내 프로필 수정 (예정 · #65)
 
 닉네임 또는 프로필 이미지 URL을 변경한다.
 
@@ -538,7 +526,7 @@ Content-Type: application/json
 
 ```http
 HTTP/1.1 200 OK
-X-Request-Id: req-example
+X-Request-Id: 00000000-0000-4000-8000-000000000001
 Content-Type: application/json
 ```
 
@@ -553,7 +541,7 @@ Content-Type: application/json
     "createdAt": "2026-11-02T10:00:00+09:00"
   },
   "meta": {
-    "requestId": "req-example",
+    "requestId": "00000000-0000-4000-8000-000000000001",
     "serverTime": "2026-11-02T10:10:00+09:00"
   }
 }
@@ -582,7 +570,7 @@ Content-Type: application/json
     "details": {}
   },
   "meta": {
-    "requestId": "req-error-example",
+    "requestId": "00000000-0000-4000-8000-000000000002",
     "serverTime": "2026-11-02T10:10:00+09:00"
   }
 }
@@ -594,7 +582,7 @@ Content-Type: application/json
 ---
 
 <a id="auth-06"></a>
-## AUTH-06 · 온보딩 완료
+## AUTH-06 · 온보딩 완료 (예정 · #66)
 
 닉네임과 동의 내역을 제출하고 온보딩을 완료한다.
 
@@ -674,7 +662,7 @@ Content-Type: application/json
 
 ```http
 HTTP/1.1 200 OK
-X-Request-Id: req-example
+X-Request-Id: 00000000-0000-4000-8000-000000000001
 Content-Type: application/json
 ```
 
@@ -689,7 +677,7 @@ Content-Type: application/json
     "createdAt": "2026-11-02T10:00:00+09:00"
   },
   "meta": {
-    "requestId": "req-example",
+    "requestId": "00000000-0000-4000-8000-000000000001",
     "serverTime": "2026-11-02T10:10:00+09:00"
   }
 }
@@ -719,7 +707,7 @@ Content-Type: application/json
     "details": {}
   },
   "meta": {
-    "requestId": "req-error-example",
+    "requestId": "00000000-0000-4000-8000-000000000002",
     "serverTime": "2026-11-02T10:10:00+09:00"
   }
 }
@@ -731,7 +719,7 @@ Content-Type: application/json
 ---
 
 <a id="auth-07"></a>
-## AUTH-07 · 현재 동의 목록 조회
+## AUTH-07 · 현재 동의 목록 조회 (예정 · #68)
 
 마이페이지 동의 설정을 표시한다.
 
@@ -784,7 +772,7 @@ Authorization: Bearer <accessToken>
 
 ```http
 HTTP/1.1 200 OK
-X-Request-Id: req-example
+X-Request-Id: 00000000-0000-4000-8000-000000000001
 Content-Type: application/json
 ```
 
@@ -799,7 +787,7 @@ Content-Type: application/json
     }
   ],
   "meta": {
-    "requestId": "req-example",
+    "requestId": "00000000-0000-4000-8000-000000000001",
     "serverTime": "2026-11-02T10:10:00+09:00"
   }
 }
@@ -819,7 +807,7 @@ Content-Type: application/json
 ---
 
 <a id="auth-08"></a>
-## AUTH-08 · 동의 부여·철회
+## AUTH-08 · 동의 부여·철회 (예정 · #68)
 
 특정 목적의 동의를 변경한다.
 
@@ -891,7 +879,7 @@ Content-Type: application/json
 
 ```http
 HTTP/1.1 200 OK
-X-Request-Id: req-example
+X-Request-Id: 00000000-0000-4000-8000-000000000001
 Content-Type: application/json
 ```
 
@@ -904,7 +892,7 @@ Content-Type: application/json
     "recordedAt": "2026-11-02T10:00:00+09:00"
   },
   "meta": {
-    "requestId": "req-example",
+    "requestId": "00000000-0000-4000-8000-000000000001",
     "serverTime": "2026-11-02T10:10:00+09:00"
   }
 }
@@ -933,7 +921,7 @@ Content-Type: application/json
     "details": {}
   },
   "meta": {
-    "requestId": "req-error-example",
+    "requestId": "00000000-0000-4000-8000-000000000002",
     "serverTime": "2026-11-02T10:10:00+09:00"
   }
 }
@@ -945,7 +933,7 @@ Content-Type: application/json
 ---
 
 <a id="auth-09"></a>
-## AUTH-09 · 회원 탈퇴 요청
+## AUTH-09 · 회원 탈퇴 요청 (예정 · #69)
 
 회원 탈퇴 처리를 접수한다.
 
@@ -999,7 +987,7 @@ Idempotency-Key: 00000016-0000-4000-8000-000000000016
 
 ```http
 HTTP/1.1 202 Accepted
-X-Request-Id: req-example
+X-Request-Id: 00000000-0000-4000-8000-000000000001
 Content-Type: application/json
 Location: /api/v1/users/me/deletion-requests/00000014-0000-4000-8000-000000000014
 Retry-After: 3
@@ -1014,7 +1002,7 @@ Retry-After: 3
     "completedAt": null
   },
   "meta": {
-    "requestId": "req-example",
+    "requestId": "00000000-0000-4000-8000-000000000001",
     "serverTime": "2026-11-02T10:10:00+09:00"
   }
 }
@@ -1042,7 +1030,7 @@ Retry-After: 3
     "details": {}
   },
   "meta": {
-    "requestId": "req-error-example",
+    "requestId": "00000000-0000-4000-8000-000000000002",
     "serverTime": "2026-11-02T10:10:00+09:00"
   }
 }
@@ -1054,7 +1042,7 @@ Retry-After: 3
 ---
 
 <a id="auth-10"></a>
-## AUTH-10 · 탈퇴 처리 상태 조회
+## AUTH-10 · 탈퇴 처리 상태 조회 (예정 · #69)
 
 접수한 탈퇴 요청의 진행 상태를 확인한다.
 
@@ -1110,7 +1098,7 @@ Authorization: Bearer <accessToken>
 
 ```http
 HTTP/1.1 200 OK
-X-Request-Id: req-example
+X-Request-Id: 00000000-0000-4000-8000-000000000001
 Content-Type: application/json
 ```
 
@@ -1123,7 +1111,7 @@ Content-Type: application/json
     "completedAt": null
   },
   "meta": {
-    "requestId": "req-example",
+    "requestId": "00000000-0000-4000-8000-000000000001",
     "serverTime": "2026-11-02T10:10:00+09:00"
   }
 }
@@ -1150,7 +1138,7 @@ Content-Type: application/json
     "details": {}
   },
   "meta": {
-    "requestId": "req-error-example",
+    "requestId": "00000000-0000-4000-8000-000000000002",
     "serverTime": "2026-11-02T10:10:00+09:00"
   }
 }

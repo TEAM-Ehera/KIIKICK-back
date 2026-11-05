@@ -45,13 +45,21 @@ public class UserRepository {
     }
 
     public Optional<User> findById(UUID id) {
+        return findById(id, "");
+    }
+
+    public Optional<User> findByIdForUpdate(UUID id) {
+        return findById(id, " FOR UPDATE");
+    }
+
+    private Optional<User> findById(UUID id, String lockClause) {
         return jdbcTemplate.query(
                 """
                 SELECT id, nickname, avatar_url, onboarding_completed_at,
                        deletion_requested_at, created_at, updated_at, deleted_at
                 FROM users
                 WHERE id = ? AND deleted_at IS NULL
-                """,
+                """ + lockClause,
                 rowMapper,
                 uuidToBytes(id)
         ).stream().findFirst();

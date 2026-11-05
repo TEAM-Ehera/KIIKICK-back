@@ -40,13 +40,13 @@
 <a id="flow"></a>
 ## 2. 화면별로 호출하는 순서
 
-모든 경로 앞에 `/api/v1`을 붙인다. `{matchId}`와 `{quarterId}`는 앞 단계에서 서버가 반환한 실제 UUID로 바꾼다. 서버 ID가 없는 오프라인 시작 방식은 아직 협의 대상이다.
+모든 경로 앞에 `/api/v1`을 붙인다. `{matchId}`와 `{quarterId}`는 앞 단계에서 서버가 반환한 실제 UUID로 바꾼다. 서버 ID가 없는 오프라인 시작은 지원하지 않는다. 경기·쿼터 조작은 온라인에서만 처리한다(#44).
 
 ### 2-1. 경기 준비
 
 | 순서 | 사용자가 하는 일 | 호출 | 보내는 값 / 보관할 값 |
 | --- | --- | --- | --- |
-| 1 | 로그인 | AUTH-01 | 제공자 토큰 / accessToken. 인증 제공자는 미확정 |
+| 1 | 로그인 | AUTH-01 | 이메일·비밀번호 / accessToken. API는 #73 구현 예정 |
 | 2 | 저장한 경기장 선택 | GET /venues | 선택한 venueId |
 | 3 | 새 경기 묶음 생성 | POST /matches | 제목·장소·예정 시각 / matchId와 ETag |
 | 4 | 쿼터 시간 설정 | POST /matches/{matchId}/quarters | durationSeconds / quarterId와 새 ETag |
@@ -311,32 +311,37 @@ Authorization: Bearer <accessToken>
 
 1. 서버 quarterId와 워치 측정 파일을 어떻게 연결할지.
 2. 골·어시스트·포지션을 워치에서 iPhone으로 어떻게 함께 전달할지.
-3. 오프라인 시작, 전송 실패, 앱 재실행 뒤에도 연결과 중복 식별자를 유지할지.
+3. 오프라인 시작은 지원하지 않는다. 전송 실패·앱 재실행 뒤에도 센서 파일의 쿼터 매핑과 중복 식별자를 보존한다(#44).
 4. 새 URL·응답 래퍼·인증·날짜 형식을 어느 시점에 함께 적용할지.
 5. 쿼터당 재측정 파일 수, 업로드 시 경기 버전 검사, 서버 마감과 파일 도착 순서를 어떻게 처리할지.
 
-서버가 계산하는 지표의 임계값·산식은 정책 목록에서 정한다. 아래 전체 목록 중 오프라인 조작 명령 큐는 지원 여부 검토 중인 기술 초안이다.
+서버가 계산하는 지표의 임계값·산식은 정책 목록에서 정한다. 아래 전체 목록 중 오프라인 조작 명령 큐는 #44에서 보류했으며 현재 제공 API가 아니다.
 
 <a id="all-apis"></a>
+홈 화면은 iOS에서 경기 목록과 쿼터 결과를 조합한다. [홈 화면 연동](../api/home.md)을 참고한다.
+
 ## 7. 전체 API 목록
 
 
-총 **67개 경로/Method 계약**이다. 명령 동기화는 지원 범위 검토 중인 기술 초안도 포함한다. 각 행의 성공 상태는 아래 상세 문서와 함께 읽는다.
+총 **70개 경로/Method 계약**이다. 구현 예정 인증 API 및 #44에서 보류한 명령 동기화 계약도 포함한다. 현재 구현 상태는 원본 API 목차를 따른다.
 
 ### 인증·온보딩·마이페이지
 
 | API ID | 기능 | Method | 경로 | 성공 |
 | --- | --- | --- | --- | --- |
-| AUTH-01 | 로그인·가입 토큰 교환 | `POST` | `/auth/exchange` | 200 |
-| AUTH-02 | 로그인 세션 갱신 | `POST` | `/auth/refresh` | 200 |
-| AUTH-03 | 로그아웃 | `POST` | `/auth/logout` | 204 |
-| AUTH-04 | 내 프로필 조회 | `GET` | `/users/me` | 200 |
-| AUTH-05 | 내 프로필 수정 | `PATCH` | `/users/me` | 200 |
-| AUTH-06 | 온보딩 완료 | `PUT` | `/users/me/onboarding` | 200 |
-| AUTH-07 | 현재 동의 목록 조회 | `GET` | `/users/me/consents` | 200 |
-| AUTH-08 | 동의 부여·철회 | `PUT` | `/users/me/consents/{purpose}` | 200 |
-| AUTH-09 | 회원 탈퇴 요청 | `POST` | `/users/me/deletion-requests` | 202 |
-| AUTH-10 | 탈퇴 처리 상태 조회 | `GET` | `/users/me/deletion-requests/{deletionId}` | 200 |
+| AUTH-01A | 이메일 인증번호 발송·재발송 (구현) | `POST` | `/auth/email-verifications` | 202 |
+| AUTH-01B | 이메일 인증번호 검증 (구현) | `POST` | `/auth/email-verifications/{verificationId}/verify` | 200 |
+| AUTH-01C | 이메일 회원가입 완료 (구현) | `POST` | `/auth/signup` | 201 |
+| AUTH-01 | 이메일·비밀번호 로그인 (예정 #73) | `POST` | `/auth/login` | 200 |
+| AUTH-02 | 로그인 세션 갱신 (예정 #62) | `POST` | `/auth/refresh` | 200 |
+| AUTH-03 | 로그아웃 (예정 #63) | `POST` | `/auth/logout` | 204 |
+| AUTH-04 | 내 프로필 조회 (예정 #65) | `GET` | `/users/me` | 200 |
+| AUTH-05 | 내 프로필 수정 (예정 #65) | `PATCH` | `/users/me` | 200 |
+| AUTH-06 | 온보딩 완료 (예정 #66) | `PUT` | `/users/me/onboarding` | 200 |
+| AUTH-07 | 현재 동의 목록 조회 (예정 #68) | `GET` | `/users/me/consents` | 200 |
+| AUTH-08 | 동의 부여·철회 (예정 #68) | `PUT` | `/users/me/consents/{purpose}` | 200 |
+| AUTH-09 | 회원 탈퇴 요청 (예정 #69) | `POST` | `/users/me/deletion-requests` | 202 |
+| AUTH-10 | 탈퇴 처리 상태 조회 (예정 #69) | `GET` | `/users/me/deletion-requests/{deletionId}` | 200 |
 
 ### 알림·기기
 
@@ -381,12 +386,6 @@ Authorization: Bearer <accessToken>
 | GAME-12 | 경기 묶음 종료 | `POST` | `/matches/{matchId}/end` | 200 |
 | GAME-13 | 쿼터 골·어시스트 조회 | `GET` | `/matches/{matchId}/quarters/{quarterId}/stats` | 200 |
 | GAME-14 | 쿼터 골·어시스트 합계 저장·수정 | `PUT` | `/matches/{matchId}/quarters/{quarterId}/stats` | 200 |
-
-### 홈
-
-| API ID | 기능 | Method | 경로 | 성공 |
-| --- | --- | --- | --- | --- |
-| HOME-01 | 홈 요약 조회 | `GET` | `/home` | 200 |
 
 ### 친구
 
@@ -437,8 +436,8 @@ Authorization: Bearer <accessToken>
 
 | API ID | 기능 | Method | 경로 | 성공 |
 | --- | --- | --- | --- | --- |
-| WATCH-01 | 오프라인 명령 배치 반영 | `POST` | `/sync/operations` | 200 |
-| WATCH-02 | 명령 처리 결과 조회 | `GET` | `/sync/operations/{operationId}` | 200 |
+| WATCH-01 | 오프라인 명령 배치 반영 | `POST` | `/sync/operations` | 보류·미제공 |
+| WATCH-02 | 명령 처리 결과 조회 | `GET` | `/sync/operations/{operationId}` | 보류·미제공 |
 
 
 ## 8. 공유 범위

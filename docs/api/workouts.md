@@ -92,7 +92,7 @@ path: quarterId. 본문은 위 WorkoutPayload 원형이며 userId/matchId/quarte
 
 ### 오류와 앱 대응
 
-미마감은 409 QUARTER_NOT_ENDED. 다른 파일은 409 WORKOUT_ALREADY_EXISTS. 유효하지 않은 숫자·날짜·배열은 422. [공통 오류](common.md#errors)도 적용한다.
+미마감은 409 QUARTER_NOT_ENDED. 다른 파일은 409 WORKOUT_ALREADY_EXISTS. 유효하지 않은 숫자·날짜·배열은 422. P10 확정 전 서버 요청 본문 제한은 기본 8 MiB이며 `KIIKICK_WORKOUT_MAX_UPLOAD_BYTES` 설정으로 조정할 수 있다. 제한 초과는 413 PAYLOAD_TOO_LARGE. [공통 오류](common.md#errors)도 적용한다.
 
 <a id="work-02"></a>
 ## WORK-02 · 저장 운동 기본값 조회
@@ -137,6 +137,12 @@ path: quarterId.
 1. 저장 요약만 읽고 전체 GPS·심박을 재계산하지 않는다. 원본 미수신이면 data=null이다.
 2. PROCESSING/PARTIAL/FAILED도 200으로 현재 상태를 반환한다. PROCESSING에는 Retry-After를 제공하고 PARTIAL은 부족 데이터/정책을 표시한다. FAILED는 사용자 재계산 명령 또는 서버 복구 대상으로 안내한다.
 3. calculation_parameters와 원본 해시는 내부 관리 정보다. 지표 null을 0으로 바꾸지 않는다.
+
+### 기본 계산 워커
+
+워커는 기본 5초 간격으로 커밋된 PROCESSING 행을 최대 20건 조회한다. 프로세스가 중단돼도 다음 실행이 미완료 행을 다시 처리한다. 결과를 게시할 때 현재 작업 ID와 원본 해시를 검사하고 같은 트랜잭션에서 경기 버전을 올린다. 유효하지 않은 저장 원본은 FAILED로 기록하고, 트랜잭션 실패는 PROCESSING 상태에서 다음 폴링에 재시도한다.
+
+워커는 원본 총거리·칼로리와 계산 가능한 심박·이동 지표를 저장한다. 모든 지표를 계산할 수 있으면 READY, 누락 지표가 있으면 PARTIAL로 게시한다. Edwards TRIMP는 계산 작업에 개인 기준 최대심박수 스냅샷이 있어야 산출한다. 요약 시간은 휴식 포함 경과 시간이며, 평균속력은 원본 총거리와 이 시간으로 계산한다. GPS 기반 이동 지표는 [계산 계약](../dbdiagram/quarter-summary.md)의 품질·이벤트 기준을 따른다. 워커는 `KIIKICK_WORKOUT_SUMMARY_WORKER_ENABLED`로 끄거나 `KIIKICK_WORKOUT_SUMMARY_POLL_MS`로 조회 주기를 조정할 수 있다.
 
 ### 성공 응답 예시
 
@@ -310,7 +316,7 @@ path: quarterId. 본문: hrMaxReferenceBpm(필수, 유한한 양수).
 
 ### 오류와 앱 대응
 
-원본 미수신은 409 WORKOUT_REQUIRED, 기준값 오류는 422. [공통 오류](common.md#errors)도 적용한다.
+원본 미수신은 409 WORKOUT_REQUIRED, 진행 중인 다른 요청은 409 CALCULATION_IN_PROGRESS, 기준값 오류는 422. [공통 오류](common.md#errors)도 적용한다.
 
 <a id="work-07"></a>
 ## WORK-07 · 운동 요약 재계산 요청
@@ -340,4 +346,4 @@ path: quarterId. 본문 없음.
 
 ## 계산 기준
 
-[쿼터 요약 계산 계약](../dbdiagram/quarter-summary.md)을 따른다. TRIMP는 Edwards 하나만 제공한다. GPS·심박 원본은 모두 보존하며 Zone별 체류 시간은 중간 계산으로만 사용한다. 최고/평균 속력은 m/s다. 고강도 심박 기준, 가속·감속 임계값, 방향전환 기준, 누락 보간은 아직 P08에서 정해야 한다.
+[쿼터 요약 계산 계약](../dbdiagram/quarter-summary.md)을 따른다. TRIMP는 Edwards 하나만 제공한다. GPS·심박 원본은 모두 보존하며 Zone별 체류 시간은 중간 계산으로만 사용한다. 최고/평균 속력은 m/s다. GPS·심박 유효 구간, 보간 및 이벤트 임계값은 쿼터 요약 계산 계약을 따른다.

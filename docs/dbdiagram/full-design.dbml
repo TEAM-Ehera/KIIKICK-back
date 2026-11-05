@@ -22,6 +22,68 @@ Table "auth_identities" {
   }
 }
 
+Table "email_credentials" {
+  "user_id" BINARY(16) [pk, not null]
+  "email" VARCHAR(320) [not null]
+  "normalized_email" VARCHAR(320) [not null]
+  "password_hash" VARCHAR(100) [not null]
+  "email_verified_at" DATETIME(6) [not null]
+  "password_changed_at" DATETIME(6) [not null]
+  "created_at" DATETIME(6) [not null]
+  "updated_at" DATETIME(6) [not null]
+
+  Indexes {
+    normalized_email [unique, name: "uk_email_credentials_normalized"]
+  }
+}
+
+Table "email_verification_flows" {
+  "id" BINARY(16) [pk, not null]
+  "normalized_email" VARCHAR(320) [not null]
+  "purpose" VARCHAR(32) [not null]
+  "code_hash" CHAR(64)
+  "failed_attempts" INT [not null]
+  "code_expires_at" DATETIME(6) [not null]
+  "last_sent_at" DATETIME(6) [not null]
+  "verified_at" DATETIME(6)
+  "invalidated_at" DATETIME(6)
+  "action_token_hash" CHAR(64)
+  "action_token_expires_at" DATETIME(6)
+  "action_token_consumed_at" DATETIME(6)
+  "created_at" DATETIME(6) [not null]
+  "updated_at" DATETIME(6) [not null]
+
+  Indexes {
+    action_token_hash [unique, name: "uk_email_flow_action_token"]
+    (normalized_email, purpose, created_at) [name: "idx_email_flow_latest"]
+    code_expires_at [name: "idx_email_flow_code_expiry"]
+    action_token_expires_at [name: "idx_email_flow_action_expiry"]
+  }
+}
+
+Table "auth_rate_limit_keys" {
+  "rate_action" VARCHAR(64) [not null]
+  "limit_type" VARCHAR(16) [not null]
+  "key_value" VARCHAR(320) [not null]
+  "created_at" DATETIME(6) [not null]
+
+  Indexes {
+    (rate_action, limit_type, key_value) [pk]
+  }
+}
+
+Table "auth_rate_limit_events" {
+  "id" BINARY(16) [pk, not null]
+  "rate_action" VARCHAR(64) [not null]
+  "limit_type" VARCHAR(16) [not null]
+  "key_value" VARCHAR(320) [not null]
+  "occurred_at" DATETIME(6) [not null]
+
+  Indexes {
+    (rate_action, limit_type, key_value, occurred_at) [name: "idx_auth_rate_limit_window"]
+  }
+}
+
 Table "user_consents" {
   "id" BINARY(16) [pk, not null]
   "user_id" BINARY(16) [not null]
@@ -130,6 +192,10 @@ Table "quarter_summaries" {
   "valid_gps_duration_seconds" DOUBLE
   "calculated_at" DATETIME(6)
   "updated_at" DATETIME(6) [not null]
+
+  Indexes {
+    (calculation_status, updated_at, quarter_id) [name: "idx_summary_pending"]
+  }
 }
 
 Table "friend_pairs" {
@@ -295,6 +361,10 @@ Table "heart_rate_samples" {
 
 Ref "fk_01_auth_identities":"users"."id" <? "auth_identities"."user_id" [update: restrict, delete: restrict]
 
+Ref "fk_email_credentials_user":"users"."id" - "email_credentials"."user_id" [update: restrict, delete: restrict]
+
+Ref "fk_auth_rate_limit_events_key":"auth_rate_limit_keys".("rate_action", "limit_type", "key_value") <? "auth_rate_limit_events".("rate_action", "limit_type", "key_value") [update: restrict, delete: restrict]
+
 Ref "fk_02_user_consents":"users"."id" <? "user_consents"."user_id" [update: restrict, delete: restrict]
 
 Ref "fk_03_venues":"users"."id" <? "venues"."owner_id" [update: restrict, delete: restrict]
@@ -348,6 +418,10 @@ Ref "fk_workout_payloads_quarter":"quarters"."id" <? "workout_payloads"."quarter
 TableGroup authentication {
   users
   auth_identities
+  email_credentials
+  email_verification_flows
+  auth_rate_limit_keys
+  auth_rate_limit_events
   auth_sessions
   user_consents
   devices

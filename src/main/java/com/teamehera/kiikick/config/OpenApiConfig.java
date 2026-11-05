@@ -2,6 +2,9 @@ package com.teamehera.kiikick.config;
 
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.info.Info;
+import io.swagger.v3.oas.models.Components;
+import io.swagger.v3.oas.models.security.SecurityRequirement;
+import io.swagger.v3.oas.models.security.SecurityScheme;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -15,6 +18,14 @@ public class OpenApiConfig {
     @Bean
     public OpenAPI kiikickOpenApi() {
         return new OpenAPI()
+                .components(new Components().addSecuritySchemes(
+                        "bearerAuth",
+                        new SecurityScheme()
+                                .type(SecurityScheme.Type.HTTP)
+                                .scheme("bearer")
+                                .bearerFormat("JWT")
+                ))
+                .addSecurityItem(new SecurityRequirement().addList("bearerAuth"))
                 .info(new Info()
                         .title("KIIKICK Backend API")
                         .version("v1")
@@ -23,7 +34,7 @@ public class OpenApiConfig {
 
                                 WorkoutPayload의 날짜 숫자는 2001-01-01T00:00:00Z 기준 초 단위 Apple epoch입니다.
                                 서버는 날짜를 UTC로 변환하여 저장합니다.
-                                현재 개발 단계에서는 인증 없이 URL의 userId로 운동 소유자를 지정합니다.
+                                공개 Auth API를 제외한 API는 Bearer Access Token 인증이 필요합니다.
                                 """));
     }
 }

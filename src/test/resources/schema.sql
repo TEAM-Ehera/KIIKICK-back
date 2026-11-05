@@ -135,6 +135,8 @@ CREATE TABLE quarter_summaries (
     FOREIGN KEY (quarter_id, workout_payload_id)
         REFERENCES workout_payloads(quarter_id, id)
 );
+CREATE INDEX idx_summary_pending ON quarter_summaries(calculation_status, updated_at, quarter_id);
+
 
 CREATE TABLE auth_identities (
     id BINARY(16) PRIMARY KEY,
@@ -145,6 +147,70 @@ CREATE TABLE auth_identities (
     CONSTRAINT uk_identity_provider_subject UNIQUE (provider, subject),
     FOREIGN KEY (user_id) REFERENCES users(id)
 );
+
+CREATE TABLE email_credentials (
+    user_id BINARY(16) PRIMARY KEY,
+    email VARCHAR(320) NOT NULL,
+    normalized_email VARCHAR(320) NOT NULL,
+    password_hash VARCHAR(100) NOT NULL,
+    email_verified_at TIMESTAMP(6) NOT NULL,
+    password_changed_at TIMESTAMP(6) NOT NULL,
+    created_at TIMESTAMP(6) NOT NULL,
+    updated_at TIMESTAMP(6) NOT NULL,
+    CONSTRAINT uk_email_credentials_normalized UNIQUE (normalized_email),
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE TABLE email_verification_flows (
+    id BINARY(16) PRIMARY KEY,
+    normalized_email VARCHAR(320) NOT NULL,
+    purpose VARCHAR(32) NOT NULL,
+    code_hash CHAR(64),
+    failed_attempts INT NOT NULL,
+    code_expires_at TIMESTAMP(6) NOT NULL,
+    last_sent_at TIMESTAMP(6) NOT NULL,
+    verified_at TIMESTAMP(6),
+    invalidated_at TIMESTAMP(6),
+    action_token_hash CHAR(64),
+    action_token_expires_at TIMESTAMP(6),
+    action_token_consumed_at TIMESTAMP(6),
+    created_at TIMESTAMP(6) NOT NULL,
+    updated_at TIMESTAMP(6) NOT NULL,
+    CONSTRAINT uk_email_flow_action_token UNIQUE (action_token_hash),
+    CONSTRAINT ck_email_flow_failed_attempts
+        CHECK (failed_attempts BETWEEN 0 AND 5),
+    CONSTRAINT ck_email_flow_action_token_state CHECK (
+        (action_token_hash IS NULL AND action_token_expires_at IS NULL)
+        OR (action_token_hash IS NOT NULL AND action_token_expires_at IS NOT NULL
+            AND verified_at IS NOT NULL)
+    )
+);
+CREATE INDEX idx_email_flow_latest
+    ON email_verification_flows(normalized_email, purpose, created_at);
+CREATE INDEX idx_email_flow_code_expiry
+    ON email_verification_flows(code_expires_at);
+CREATE INDEX idx_email_flow_action_expiry
+    ON email_verification_flows(action_token_expires_at);
+
+CREATE TABLE auth_rate_limit_keys (
+    rate_action VARCHAR(64) NOT NULL,
+    limit_type VARCHAR(16) NOT NULL,
+    key_value VARCHAR(320) NOT NULL,
+    created_at TIMESTAMP(6) NOT NULL,
+    PRIMARY KEY (rate_action, limit_type, key_value)
+);
+
+CREATE TABLE auth_rate_limit_events (
+    id BINARY(16) PRIMARY KEY,
+    rate_action VARCHAR(64) NOT NULL,
+    limit_type VARCHAR(16) NOT NULL,
+    key_value VARCHAR(320) NOT NULL,
+    occurred_at TIMESTAMP(6) NOT NULL,
+    FOREIGN KEY (rate_action, limit_type, key_value)
+        REFERENCES auth_rate_limit_keys(rate_action, limit_type, key_value)
+);
+CREATE INDEX idx_auth_rate_limit_window
+    ON auth_rate_limit_events(rate_action, limit_type, key_value, occurred_at);
 
 CREATE TABLE user_consents (
     id BINARY(16) PRIMARY KEY,

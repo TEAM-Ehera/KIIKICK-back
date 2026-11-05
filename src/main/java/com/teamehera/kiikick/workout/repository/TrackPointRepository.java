@@ -67,6 +67,17 @@ public class TrackPointRepository {
         );
     }
 
+    public List<StoredTrackPoint> findPageBySampleSeq(UUID workoutPayloadId, int afterSampleSeq, int limit) {
+        return jdbcTemplate.query(
+                """
+                SELECT * FROM track_points
+                WHERE workout_payload_id = ? AND sample_seq > ?
+                ORDER BY sample_seq ASC LIMIT ?
+                """,
+                rowMapper, uuidToBytes(workoutPayloadId), afterSampleSeq, limit
+        );
+    }
+
     public List<StoredTrackPoint> findAllForCalculation(UUID workoutPayloadId) {
         return jdbcTemplate.query(
                 """

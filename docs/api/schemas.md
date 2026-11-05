@@ -2,7 +2,7 @@
 
 [전체 API 목차](../api-spec.md) · [공통 규칙](common.md)
 
-v0.4. 표의 모든 키는 응답에 포함한다. nullable 값은 null이며 부모 객체가 null이면 하위 필드는 없다. 목록 메타와 오류 봉투는 공통 규칙을 따른다. DB snake_case와 JSON camelCase를 대응한다. PIVOT과 정책 enum 예시는 확정 목록을 뜻하지 않는다.
+v0.5. 표의 모든 키는 응답에 포함한다. nullable 값은 null이며 부모 객체가 null이면 하위 필드는 없다. 목록 메타와 오류 봉투는 공통 규칙을 따른다. DB snake_case와 JSON camelCase를 대응한다. PIVOT과 정책 enum 예시는 확정 목록을 뜻하지 않는다.
 
 <a id="userself"></a>
 ## UserSelf
@@ -36,10 +36,29 @@ v0.4. 표의 모든 키는 응답에 포함한다. nullable 값은 null이며 �
 | `sessionId` | UUID | O | 불가 | — | 로그아웃 대상 세션 ID |
 | `accessToken` | string | O | 불가 | — | 서버 인증에 사용하는 비밀값. 로그 금지 |
 | `refreshToken` | string | O | 불가 | — | 갱신 시 회전하는 비밀값. 로그 금지 |
-| `expiresAt` | timestamp | O | 불가 | — | access token 만료 시각. 예시의 수명은 확정값 아님 |
+| `expiresAt` | timestamp | O | 불가 | — | 15분 유효한 access token의 만료 시각 |
 | `user` | UserSelf | O | 불가 | — | 본인 계정·온보딩 정보 |
 
 중첩 타입: [응답 필드 사전 · UserSelf](schemas.md#userself)
+
+
+<a id="emailverification"></a>
+## EmailVerification
+
+| 필드 | 타입 | 필수 | null | 기본값 / 예시 | 설명 |
+| --- | --- | :---: | :---: | --- | --- |
+| `verificationId` | UUID | O | 불가 | — | 발송·재발송·검증 흐름 식별자 |
+| `expiresAt` | timestamp | O | 불가 | — | 3분 유효한 인증번호의 만료 시각 |
+| `resendAvailableAt` | timestamp | O | 불가 | — | 동일 이메일 재발송 가능 시각 |
+
+
+<a id="registrationauthorization"></a>
+## RegistrationAuthorization
+
+| 필드 | 타입 | 필수 | null | 기본값 / 예시 | 설명 |
+| --- | --- | :---: | :---: | --- | --- |
+| `registrationToken` | string | O | 불가 | — | SIGN_UP 목적의 10분 유효 일회용 비밀값. 로그 금지 |
+| `expiresAt` | timestamp | O | 불가 | — | registrationToken 만료 시각 |
 
 
 <a id="consent"></a>
@@ -197,7 +216,7 @@ v0.4. 표의 모든 키는 응답에 포함한다. nullable 값은 null이며 �
 | calculationStatus | enum | 필수 | PROCESSING/PARTIAL/READY/FAILED |
 | calculationVersion | string | 필수 | 계산 알고리즘 버전 |
 | metricStatus | object | 필수 | 각 지표 키 → {status,reason}. READY/MISSING_INPUT/INSUFFICIENT_DATA/FAILED |
-| durationSeconds | number | nullable | 계산에 사용한 실제 운동 시간; 초 |
+| durationSeconds | number | nullable | 운동 시작~종료 경과 시간, 휴식 포함; 초 |
 | maxSpeedMps | number | nullable | 유효 최고속도; m/s |
 | totalDistanceM | number | nullable | 누적 거리; m |
 | totalCaloriesKcal | number | nullable | 활동 칼로리; kcal |
@@ -270,10 +289,10 @@ calculation_job_id, calculation_parameters와 source_payload_hash는 내부 작�
 | --- | --- | --- | --- |
 | match | Match | 필수 | 본인 완료 경기 |
 | quarterCount | integer | 필수 | 완료 쿼터 개수 |
-| goals | integer | nullable | 모든 쿼터 stats가 있으면 합계, 누락 있으면 null |
+| goals | integer | nullable | 모든 완료 쿼터 stats가 있으면 합계, 누락 있으면 null. 모든 값이 0이면 0 |
 | assists | integer | nullable | 동일 규칙 |
 | missingStatsQuarterIds | UUID[] | 필수 | 직접 입력 기록 누락 쿼터 |
-| summaryAvailability | object | 필수 | {ready,partial,processing,failed,missing} 쿼터 수. 경기 상태와 독립 |
+| summaryAvailability | object | 필수 | {ready,partial,processing,failed,missing} 완료 쿼터 수. 각 값은 0 이상이며 요약 행이 없으면 missing |
 
 <a id="analyticsmeta"></a>
 ## AnalyticsMeta
@@ -346,19 +365,6 @@ calculation_job_id, calculation_parameters와 source_payload_hash는 내부 작�
 | friend | Summary | 필수 | 친구의 허용 분석. 원본 데이터 제외 |
 | metric | string | 필수 | 비교 지표 |
 | delta | number | nullable | 두 값 유효할 때 차이 |
-
-<a id="home"></a>
-## Home
-
-| 필드 | 타입 | 필수 / null | 의미 |
-| --- | --- | --- | --- |
-| activeMatches | Match[] | 필수 | 본인 진행 경기 최대 5개 |
-| readyMatches | Match[] | 필수 | 본인 준비 경기 최대 5개 |
-| recentMatches | Match[] | 필수 | 본인 최근 완료 경기 |
-| recentQuarterResults | QuarterResult[] | 필수 | 최근 완료 쿼터와 저장 요약. 원본 배열 제외 |
-| unreadNotificationCount | integer | 필수 | 본인 알림 수 |
-| emptyReason | string | nullable | NO_MATCHES/NO_COMPLETED_QUARTERS 또는 null |
-| updatedAt | timestamp | 필수 | 응답 구성 시각 |
 
 <a id="operationresult"></a>
 ## OperationResult

@@ -2,8 +2,21 @@ package com.teamehera.kiikick.repository;
 
 import com.teamehera.kiikick.auth.domain.AuthIdentity;
 import com.teamehera.kiikick.auth.domain.AuthSession;
+import com.teamehera.kiikick.auth.domain.EmailCredential;
+import com.teamehera.kiikick.auth.domain.EmailVerificationFlow;
 import com.teamehera.kiikick.auth.repository.AuthIdentityRepository;
 import com.teamehera.kiikick.auth.repository.AuthSessionRepository;
+import com.teamehera.kiikick.auth.repository.EmailCredentialRepository;
+import com.teamehera.kiikick.auth.repository.EmailSendRateLimitRepository;
+import com.teamehera.kiikick.auth.repository.EmailVerificationFlowRepository;
+import com.teamehera.kiikick.auth.email.VerificationEmailSender;
+import com.teamehera.kiikick.auth.service.EmailVerificationRequestResult;
+import com.teamehera.kiikick.auth.service.EmailVerificationService;
+import com.teamehera.kiikick.auth.service.EmailVerificationSuccessResult;
+import com.teamehera.kiikick.auth.service.VerificationSecretGenerator;
+import com.teamehera.kiikick.auth.security.AuthHashEncoder;
+import com.teamehera.kiikick.auth.service.SignupResult;
+import com.teamehera.kiikick.auth.service.SignupService;
 import com.teamehera.kiikick.friend.domain.FriendPair;
 import com.teamehera.kiikick.friend.domain.UserBlock;
 import com.teamehera.kiikick.friend.repository.FriendPairRepository;
@@ -33,10 +46,14 @@ import com.teamehera.kiikick.workout.domain.HeartRateSample;
 import com.teamehera.kiikick.workout.domain.QuarterSummary;
 import com.teamehera.kiikick.workout.domain.TrackPoint;
 import com.teamehera.kiikick.workout.domain.WorkoutPayload;
+import com.teamehera.kiikick.workout.dto.HeartRateSampleRequest;
+import com.teamehera.kiikick.workout.dto.TrackPointRequest;
+import com.teamehera.kiikick.workout.dto.WorkoutPayloadCreateRequest;
 import com.teamehera.kiikick.workout.repository.HeartRateSampleRepository;
 import com.teamehera.kiikick.workout.repository.QuarterSummaryRepository;
 import com.teamehera.kiikick.workout.repository.TrackPointRepository;
 import com.teamehera.kiikick.workout.repository.WorkoutPayloadRepository;
+import com.teamehera.kiikick.workout.service.WorkoutPayloadService;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
@@ -45,6 +62,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -52,6 +70,7 @@ import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -61,10 +80,15 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.when;
 
 @SpringBootTest(properties = {
         "spring.sql.init.mode=never",
-        "spring.jpa.hibernate.ddl-auto=none"
+        "spring.jpa.hibernate.ddl-auto=none",
+        "kiikick.workout.summary-worker-enabled=false"
 })
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class MySqlRepositoryIntegrationTest {
@@ -77,12 +101,19 @@ class MySqlRepositoryIntegrationTest {
     @Autowired MatchRepository matches;
     @Autowired QuarterRepository quarters;
     @Autowired WorkoutPayloadRepository workouts;
+    @Autowired WorkoutPayloadService legacyWorkoutUploads;
     @Autowired TrackPointRepository trackPoints;
     @Autowired HeartRateSampleRepository heartRates;
     @Autowired QuarterSummaryRepository summaries;
     @Autowired QuarterPlayerStatsRepository stats;
     @Autowired QuarterPositionRepository positions;
     @Autowired AuthIdentityRepository identities;
+    @Autowired EmailCredentialRepository emailCredentials;
+    @Autowired EmailVerificationFlowRepository emailFlows;
+    @Autowired EmailSendRateLimitRepository emailSendRateLimits;
+    @Autowired EmailVerificationService emailVerificationService;
+    @Autowired AuthHashEncoder authHashEncoder;
+    @Autowired SignupService signupService;
     @Autowired UserConsentRepository consents;
     @Autowired AuthSessionRepository sessions;
     @Autowired DeviceRepository devices;
@@ -92,6 +123,9 @@ class MySqlRepositoryIntegrationTest {
     @Autowired NotificationRepository notifications;
     @Autowired IdempotencyRecordRepository idempotency;
     @Autowired SyncOperationRepository syncOperations;
+
+    @MockitoBean VerificationEmailSender verificationEmailSender;
+    @MockitoBean VerificationSecretGenerator verificationSecretGenerator;
 
     @BeforeAll
     void verifyIsolatedDatabaseBeforeAnyWrite() {
@@ -103,7 +137,35 @@ class MySqlRepositoryIntegrationTest {
                 """,
                 Integer.class
         );
-        assertEquals(20, tableCount);
+        assertEquals(27, tableCount);
+    }
+
+    @Test
+    @Transactional
+    void legacyUploadRemainsAvailableAfterMigration() {
+        UUID userId = UUID.randomUUID();
+        users.save(userId, "legacy-player");
+        var request = new WorkoutPayloadCreateRequest(
+                1000.0, 1060.0, 5.25, 12.5,
+                List.of(new TrackPointRequest(37.5, 127.0, 10.5, 1.25, -1.0, -1.0, 1000.0)),
+                List.of(new HeartRateSampleRequest(1000.0, 135.5))
+        );
+
+        UUID workoutId = legacyWorkoutUploads.create(userId, request).workoutPayloadId();
+        byte[] storedId = uuidToBytes(workoutId);
+
+        assertAll(
+                () -> assertEquals(1, jdbc.queryForObject(
+                        "SELECT COUNT(*) FROM workoutPayloads WHERE id = ? AND userId = ?",
+                        Integer.class, storedId, uuidToBytes(userId))),
+                () -> assertEquals(1, jdbc.queryForObject(
+                        "SELECT COUNT(*) FROM trackPoints WHERE workoutPayloadId = ? AND sampleSeq = 0",
+                        Integer.class, storedId)),
+                () -> assertEquals(1, jdbc.queryForObject(
+                        "SELECT COUNT(*) FROM heartRateSamples WHERE workoutPayloadId = ? AND sampleSeq = 0",
+                        Integer.class, storedId)),
+                () -> assertTrue(workouts.findById(workoutId).isEmpty())
+        );
     }
 
     @Test
@@ -178,7 +240,19 @@ class MySqlRepositoryIntegrationTest {
         LocalDateTime now = LocalDateTime.of(2026, 11, 3, 3, 0);
         UUID userId = UUID.randomUUID();
         users.save(userId, "인증사용자");
+        // 발송 한도는 REQUIRES_NEW로 커밋되므로 테스트 실행마다 독립된 식별자를 쓴다.
+        String email = userId + "@example.com";
         identities.save(new AuthIdentity(UUID.randomUUID(), userId, "APPLE", "sub", now));
+        emailCredentials.save(new EmailCredential(
+                userId, email, email, "$2a$12$hash",
+                now, now, now, now
+        ));
+        UUID flowId = UUID.randomUUID();
+        emailFlows.save(new EmailVerificationFlow(
+                flowId, email, "SIGN_UP", "a".repeat(64), 0,
+                now.plusMinutes(3), now, null, null,
+                null, null, null, now, now
+        ));
         consents.save(new UserConsent(UUID.randomUUID(), userId, "FRIEND_COMPARISON", "v1", true, now));
         UUID deviceId = UUID.randomUUID();
         devices.save(new Device(deviceId, userId, "IOS", "cipher", true, now, null));
@@ -193,6 +267,15 @@ class MySqlRepositoryIntegrationTest {
 
         assertAll(
                 () -> assertEquals(userId, identities.findByProviderAndSubject("APPLE", "sub").orElseThrow().userId()),
+                () -> assertEquals(userId, emailCredentials
+                        .findByNormalizedEmail(email).orElseThrow().userId()),
+                () -> assertEquals(1, emailFlows.verifyAndIssueActionToken(
+                        flowId, "a".repeat(64), "b".repeat(64),
+                        now.plusMinutes(10), now.plusMinutes(1)
+                )),
+                () -> assertTrue(emailSendRateLimits.tryAcquire(
+                        email, UUID.randomUUID().toString(), now
+                ).allowed()),
                 () -> assertTrue(consents.findLatest(userId, "FRIEND_COMPARISON").orElseThrow().granted()),
                 () -> assertEquals(1, sessions.rotateRefreshToken(sessionId, 0, "new", now.plusDays(2))),
                 () -> assertEquals(0, sessions.rotateRefreshToken(sessionId, 0, "stale", now.plusDays(3))),
@@ -200,6 +283,91 @@ class MySqlRepositoryIntegrationTest {
                         deletionId, "PENDING", "COMPLETED", now.plusHours(1), null
                 )),
                 () -> assertEquals(1, devices.revoke(deviceId, userId, now.plusMinutes(1)))
+        );
+    }
+
+    @Test
+    void p2_동시_이메일_발송은_5회까지만_허용한다() throws Exception {
+        LocalDateTime now = LocalDateTime.now().withNano(123_456_000);
+        String email = "mysql-concurrent-" + UUID.randomUUID() + "@example.com";
+        ExecutorService pool = Executors.newFixedThreadPool(8);
+        CountDownLatch ready = new CountDownLatch(8);
+        CountDownLatch start = new CountDownLatch(1);
+        List<Future<Boolean>> results = new java.util.ArrayList<>();
+        try {
+            for (int index = 0; index < 8; index++) {
+                String ipHash = "mysql-ip-" + index;
+                results.add(pool.submit(() -> {
+                    ready.countDown();
+                    start.await(5, TimeUnit.SECONDS);
+                    return emailSendRateLimits.tryAcquire(email, ipHash, now).allowed();
+                }));
+            }
+            assertTrue(ready.await(5, TimeUnit.SECONDS));
+            start.countDown();
+            int allowed = 0;
+            for (Future<Boolean> result : results) {
+                if (result.get(10, TimeUnit.SECONDS)) {
+                    allowed++;
+                }
+            }
+            assertEquals(5, allowed);
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
+    @Transactional
+    void p2_이메일_인증_서비스가_MySQL에서_발송과_검증을_처리한다() {
+        String email = "mysql-verification-" + UUID.randomUUID() + "@example.com";
+        when(verificationSecretGenerator.generateCode()).thenReturn("654321");
+        when(verificationSecretGenerator.generateActionToken())
+                .thenReturn("mysql-registration-token-256-bit-value");
+        doNothing().when(verificationEmailSender)
+                .sendSignUpCode(anyString(), anyString(), anyLong());
+
+        EmailVerificationRequestResult requested = emailVerificationService.requestCode(
+                email, "203.0.113.200"
+        );
+        EmailVerificationSuccessResult verified = emailVerificationService.verifyCode(
+                requested.verificationId(), "654321"
+        );
+
+        assertAll(
+                () -> assertEquals("mysql-registration-token-256-bit-value",
+                        verified.registrationToken()),
+                () -> assertTrue(emailFlows.findActiveByActionToken(
+                        authHashEncoder.hashActionToken(verified.registrationToken()),
+                        "SIGN_UP", verified.expiresAt().minusSeconds(1)
+                ).isPresent())
+        );
+    }
+
+    @Test
+    @Transactional
+    void p2_회원가입이_MySQL에서_사용자_Credential_세션을_원자적으로_생성한다() {
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
+        String email = "mysql-signup-" + UUID.randomUUID() + "@example.com";
+        String registrationToken = "mysql-signup-token-" + UUID.randomUUID();
+        emailFlows.save(new EmailVerificationFlow(
+                UUID.randomUUID(), email, "SIGN_UP", null, 0,
+                now.plusMinutes(3), now, now, null,
+                authHashEncoder.hashActionToken(registrationToken),
+                now.plusMinutes(10), null, now, now
+        ));
+
+        SignupResult result = signupService.signup(
+                registrationToken, "Mysql-valid-72!"
+        );
+
+        assertAll(
+                () -> assertEquals(result.userId(), emailCredentials
+                        .findByNormalizedEmail(email).orElseThrow().userId()),
+                () -> assertEquals(result.userId(), sessions
+                        .findActiveById(result.sessionId(), now).orElseThrow().userId()),
+                () -> assertTrue(result.accessToken().length() > 100),
+                () -> assertTrue(result.refreshToken().length() >= 43)
         );
     }
 

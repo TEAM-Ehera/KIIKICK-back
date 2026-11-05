@@ -1,81 +1,40 @@
-# watchOS·iPhone 명령 동기화
+# watchOS·iPhone 온라인 조작과 센서 파일 재전송
 
-[전체 API 목차](../api-spec.md) · [공통 규칙](common.md) · [응답 필드 사전](schemas.md) · [정책 결정](../decisions.md)
+[전체 API 목차](../api-spec.md) · [공통 규칙](common.md) · [운동 업로드](workouts.md) · [정책 결정](../decisions.md)
 
-계약 버전: **v0.4 · 2026-11-02 · 구현 전 설계**
+계약 결정: **2026-11-05 · #44 / P10 사용자 승인**
 
-요구사항 F10. 실제 측정 파일은 Watch → iPhone으로 전달되고 서버에는 WORK-01로 업로드한다. 이 문서의 명령 큐는 오프라인 경기/쿼터 조작까지 지원할 경우의 기술 초안이다. 지원 범위는 P10에서 정하며 센서 배열을 명령 배치에 넣지 않는다.
+## 현재 지원 범위
 
-## 명령 종류
+경기·쿼터 생성, 시작, 마감, 완료, 골·어시스트·포지션 변경은 온라인 일반 API로만 처리한다. 오프라인에서 이 명령을 성공한 것으로 표시하거나 명령 큐에 저장해 자동 반영하지 않는다. 서버 응답의 경기 version/ETag가 확정 상태의 기준이다.
 
-| type | payload | 일반 API 대응 |
-| --- | --- | --- |
-| START_MATCH | {} | GAME-01 |
-| START_QUARTER | {quarterId} | GAME-02 |
-| END_QUARTER | {quarterId} | GAME-08 |
-| SET_QUARTER_STATS | {quarterId,goals,assists} | GAME-14: 절대 합계 교체 |
-| SET_POSITION | {quarterId,positionCode} | GAME-10: 대표 하나 |
-| COMPLETE_QUARTER | {quarterId} | GAME-11 |
-| END_MATCH | {} | GAME-12: 즉시 종료 200 |
+이미 시작된 쿼터의 센서 기록과 파일 전송은 별개다. Watch → iPhone 전달 후 iPhone이 파일·서버 quarterId·고정 업로드 식별자를 영속 보관하고, 재연결 시 기존 WORK-01로 업로드한다. 서버에서 아직 생성·시작되지 않은 로컬 경기/쿼터를 서버 기록으로 나중에 생성하는 기능은 제공하지 않는다.
 
-## API 바로가기
+## iOS 처리 순서
 
-| ID | 기능 | Method | 경로 |
-| --- | --- | --- | --- |
-| [WATCH-01](#watch-01) | 오프라인 명령 배치 반영 | `POST` | `/sync/operations` |
-| [WATCH-02](#watch-02) | 명령 처리 결과 조회 | `GET` | `/sync/operations/{operationId}` |
+1. 온라인에서 서버 경기·쿼터 ID를 받고 시작 API의 성공을 확인한다. 네트워크가 없으면 새 경기·쿼터 시작과 상태 변경을 사용할 수 없음을 표시한다.
+2. 시작된 쿼터에서 연결이 끊기면 센서 파일과 ID 매핑을 보존한다. 기기의 센서 수집 중단과 서버의 쿼터 마감은 다른 상태다. 서버 완료 표시를 먼저 하지 않는다.
+3. 재연결 후 서버 상세와 ETag를 조회한다. 사용자의 마감 요청을 온라인 GAME-08로 처리하고, 서버 endedAt을 확인한 뒤 WORK-01을 보낸다. 서버 마감 시각은 재연결 후 요청 처리 시각이며 과거 로컬 종료 시각으로 소급하지 않는다. 센서 운동 시간은 파일 startDate/endDate로 구분한다.
+4. 응답 유실은 새 명령이 아니다. 전송한 URL·본문·Idempotency-Key·If-Match를 그대로 보관해 동일 요청을 재전송한다. 412는 반영되지 않은 요청이므로 최신 상태를 확인하고 사용자의 의도에 맞는 새 요청을 만든다. 다른 본문이나 If-Match로 같은 키를 재사용하지 않는다.
+5. 업로드 성공 응답을 확인할 때까지 파일을 보존한다. WORKOUT_ALREADY_EXISTS이면 기존 쿼터 원본과 매핑을 확인하며 다른 쿼터에 자동 재업로드하지 않는다. 401은 재인증 후 재시도, 413/422는 그대로 반복 전송하지 않고 파일·입력 조건을 확인한다.
+6. 골·어시스트·포지션 저장과 쿼터 완료는 각각 일반 API의 온라인 성공을 확인한다. 센서 파일은 쿼터/경기 완료 후에도 WORK-01 계약에 따라 지연 업로드할 수 있다.
+
+## 명령 큐를 보류한 이유
+
+현재 일반 API의 경기 version과 멱등성만으로 온라인 재시도를 처리할 수 있다. 오프라인 명령은 서버 시각과 로컬 시각, 서로 다른 기기의 순서, 부분 성공, 충돌 후 재실행을 별도로 합의해야 한다. 센서 파일 재전송에 필요하지 않은 명령 큐를 도입하지 않고 현재 범위를 명확히 한다.
 
 <a id="watch-01"></a>
-## WATCH-01 · 오프라인 명령 배치 반영
+## WATCH-01 · 오프라인 명령 배치 반영 — 보류
 
-| 항목 | 내용 |
-| --- | --- |
-| 요청 | `POST /api/v1/sync/operations` |
-| 권한 | SELF |
-| 성공 | 200 · OperationResult[] |
-
-### 입력과 헤더
-
-본문: deviceId(UUID, 필수), operations(필수 배열, 1~50 기술 초안). 각 원소는 operationId, matchId, expectedVersion(양의 정수), type, payload가 필수다.
-
-인증 헤더는 필수다. 변경 요청에는 Idempotency-Key가 필수다. If-Match는 사용하지 않는다.
-
-### 처리 규칙
-
-1. 본인 등록 기기만 허용한다. 외부 If-Match는 쓰지 않고 개별 작업 expectedVersion을 검사한다.
-2. 각 작업을 별도 트랜잭션으로 순서대로 처리한다. 한 경기 작업이 거절되면 같은 경기 후속 작업은 DEPENDENCY_FAILED, 다른 경기는 계속 처리한다.
-3. 동일 사용자·operationId·동일 요청은 기존 결과를 재생한다. 다른 요청은 OPERATION_ID_REUSED다. device가 달라져도 작업 ID를 유지한다.
-4. 200은 배치 응답 성공이다. 각 결과의 APPLIED/REJECTED와 httpStatus를 확인한다. expectedVersion 불일치는 개별 412다.
-5. 작업은 일반 API와 같은 소유·상태 검증을 따른다. 늦게 도착한 센서 파일의 허용과 마감 후 조작 명령의 허용은 별개다. 원본은 WORK-01로 업로드한다.
-
-### 오류와 앱 대응
-
-등록 기기/소유권 오류는 403 또는 404. 개별 OPERATION_ID_REUSED는 409, VERSION_CONFLICT는 412다. [공통 오류](common.md#errors)도 적용한다.
+초안 경로 `POST /api/v1/sync/operations`는 현재 제공 API가 아니다. iOS는 호출하지 않는다. 배치 크기, expectedVersion, APPLIED/REJECTED, DEPENDENCY_FAILED 등의 이전 초안은 활성 계약이 아니다.
 
 <a id="watch-02"></a>
-## WATCH-02 · 명령 처리 결과 조회
+## WATCH-02 · 명령 처리 결과 조회 — 보류
 
-| 항목 | 내용 |
-| --- | --- |
-| 요청 | `GET /api/v1/sync/operations/{operationId}` |
-| 권한 | SELF |
-| 성공 | 200 · OperationResult |
+초안 경로 `GET /api/v1/sync/operations/{operationId}`는 현재 제공 API가 아니다. 온라인 응답 유실 복구는 일반 API의 동일 멱등 요청 재전송을 사용한다.
 
-### 입력과 헤더
+## 저장 모델과 후속 작업
 
-path: operationId.
+기존 설계·마이그레이션의 sync_operations 테이블과 Repository는 예약 구조로 유지한다. 운영 데이터를 지우거나 테이블을 삭제하지 않는다. 현재 명령 처리 Controller·워커는 추가하지 않는다. 향후 지원을 결정하면 허용 명령, 시간 기준, 중복·순서·버전 충돌·부분 실패·재시도·iOS 상태 모델을 먼저 확정한 뒤 별도 구현 이슈로 나눈다.
 
-인증 헤더는 필수다. GET 요청에는 본문·멱등 키·If-Match를 보내지 않는다.
-
-### 처리 규칙
-
-1. 본인의 작업 결과만 조회한다. 미처리/존재하지 않는 작업은 404다.
-2. 응답 유실 시 새 operationId로 다시 만들지 않고 기존 ID로 조회 또는 재전송한다.
-
-### 오류와 앱 대응
-
-등록 기기/소유권 오류는 403 또는 404. 개별 OPERATION_ID_REUSED는 409, VERSION_CONFLICT는 412다. [공통 오류](common.md#errors)도 적용한다.
-
-## 저장 모델
-
-sync_operations는 요청의 matchId를 requested_match_id에 보존하고, 권한 있는 실제 경기만 match_id로 연결한다. 존재하지 않거나 비공개인 경기 작업의 거절 결과도 저장할 수 있다. result에는 개별 처리 결과를 저장한다. 쿼터 중심이어도 명령 큐의 동시 수정 범위는 부모 경기 version이다.
+이 결정은 P10의 시계 오차, 파일 상한, 재측정, 멱등 키 보존 기간 및 직접 서버 통신 정책을 확정하지 않는다.
