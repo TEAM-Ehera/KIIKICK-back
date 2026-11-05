@@ -8,3 +8,7 @@ spring:
   sql:
     init:
       mode: always
+
+kiikick:
+  workout:
+    summary-worker-enabled: false

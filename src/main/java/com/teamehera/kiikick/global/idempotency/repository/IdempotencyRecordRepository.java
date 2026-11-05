@@ -51,12 +51,24 @@ public class IdempotencyRecordRepository {
     public Optional<IdempotencyRecord> findByScope(
             UUID userId, String method, String canonicalPath, UUID idempotencyKey
     ) {
+        return findByScope(userId, method, canonicalPath, idempotencyKey, "");
+    }
+
+    public Optional<IdempotencyRecord> findByScopeForUpdate(
+            UUID userId, String method, String canonicalPath, UUID idempotencyKey
+    ) {
+        return findByScope(userId, method, canonicalPath, idempotencyKey, " FOR UPDATE");
+    }
+
+    private Optional<IdempotencyRecord> findByScope(
+            UUID userId, String method, String canonicalPath, UUID idempotencyKey, String lockClause
+    ) {
         return jdbcTemplate.query(
                 """
                 SELECT * FROM idempotency_records
                 WHERE user_id = ? AND method = ? AND canonical_path = ?
                   AND idempotency_key = ?
-                """,
+                """ + lockClause,
                 rowMapper, uuidToBytes(userId), method, canonicalPath,
                 uuidToBytes(idempotencyKey)
         ).stream().findFirst();

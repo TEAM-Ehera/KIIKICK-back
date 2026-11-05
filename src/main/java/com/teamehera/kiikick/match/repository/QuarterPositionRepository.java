@@ -3,11 +3,13 @@ package com.teamehera.kiikick.match.repository;
 import com.teamehera.kiikick.match.domain.QuarterPosition;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -18,6 +20,7 @@ import static com.teamehera.kiikick.global.jdbc.JdbcValueConverter.uuidToBytes;
 public class QuarterPositionRepository {
 
     private final JdbcTemplate jdbcTemplate;
+    private final NamedParameterJdbcTemplate namedJdbc;
     private final RowMapper<QuarterPosition> rowMapper = (rs, rowNum) ->
             new QuarterPosition(
                     bytesToUuid(rs.getBytes("quarter_id")),
@@ -27,6 +30,14 @@ public class QuarterPositionRepository {
 
     public QuarterPositionRepository(JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
+        this.namedJdbc = new NamedParameterJdbcTemplate(jdbcTemplate);
+    }
+
+    public List<QuarterPosition> findByQuarterIds(List<UUID> quarterIds) {
+        return namedJdbc.query(
+                "SELECT * FROM quarter_positions WHERE quarter_id IN (:quarterIds)",
+                Map.of("quarterIds", quarterIds.stream().map(id -> uuidToBytes(id)).toList()), rowMapper
+        );
     }
 
     public Optional<QuarterPosition> findByQuarterId(UUID quarterId) {
