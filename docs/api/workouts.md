@@ -138,6 +138,12 @@ path: quarterId.
 2. PROCESSING/PARTIAL/FAILED도 200으로 현재 상태를 반환한다. PROCESSING에는 Retry-After를 제공하고 PARTIAL은 부족 데이터/정책을 표시한다. FAILED는 사용자 재계산 명령 또는 서버 복구 대상으로 안내한다.
 3. calculation_parameters와 원본 해시는 내부 관리 정보다. 지표 null을 0으로 바꾸지 않는다.
 
+### 기본 계산 워커
+
+워커는 기본 5초 간격으로 커밋된 PROCESSING 행을 최대 20건 조회한다. 프로세스가 중단돼도 다음 실행이 미완료 행을 다시 처리한다. 결과를 게시할 때 현재 작업 ID와 원본 해시를 검사하고 같은 트랜잭션에서 경기 버전을 올린다. 유효하지 않은 저장 원본은 FAILED로 기록하고, 트랜잭션 실패는 PROCESSING 상태에서 다음 폴링에 재시도한다.
+
+기본 계산은 원본 총거리와 칼로리를 저장해 PARTIAL로 게시한다. 활동 시간과 평균속력은 P08의 휴식·일시정지 정책이 확정될 때까지 null이다. 워커는 `KIIKICK_WORKOUT_SUMMARY_WORKER_ENABLED`로 끄거나 `KIIKICK_WORKOUT_SUMMARY_POLL_MS`로 조회 주기를 조정할 수 있다.
+
 ### 성공 응답 예시
 
 ```json

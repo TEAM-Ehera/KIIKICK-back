@@ -8,10 +8,12 @@ import com.teamehera.kiikick.venue.domain.Venue;
 import com.teamehera.kiikick.venue.repository.VenueRepository;
 import com.teamehera.kiikick.workout.domain.HeartRateSample;
 import com.teamehera.kiikick.workout.domain.TrackPoint;
+import com.teamehera.kiikick.workout.domain.WorkoutPayload;
 import com.teamehera.kiikick.workout.repository.HeartRateSampleRepository;
 import com.teamehera.kiikick.workout.repository.QuarterSummaryRepository;
 import com.teamehera.kiikick.workout.repository.TrackPointRepository;
 import com.teamehera.kiikick.workout.repository.WorkoutPayloadRepository;
+import com.teamehera.kiikick.workout.service.QuarterSummaryCalculation;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -54,6 +56,7 @@ class MatchControllerTest {
     @Autowired QuarterPlayerStatsRepository stats;
     @Autowired WorkoutPayloadRepository workouts;
     @Autowired QuarterSummaryRepository summaries;
+    @Autowired QuarterSummaryCalculation summaryCalculation;
     @Autowired HeartRateSampleRepository heartRates;
     @MockitoSpyBean TrackPointRepository trackPoints;
 
@@ -714,6 +717,71 @@ class MatchControllerTest {
                 .andExpect(jsonPath("$.meta.pagination.hasNext").value(true))
                 .andReturn().getResponse();
         return json.readTree(first.getContentAsString()).at("/meta/pagination/nextCursor").asText();
+    }
+
+    @Test
+    void summaryRecoversProcessingRowsAndRejectsStalePublication() throws Exception {
+        String upload = completedQuarterUploadPath();
+        UUID quarterId = UUID.fromString(upload.split("/")[4]);
+        String summary = upload.replace("/workout-payloads", "/summary");
+        mvc.perform(get(summary).principal(actor::toString))
+                .andExpect(status().isOk()).andExpect(header().string("ETag", tag(8)))
+                .andExpect(jsonPath("$.data").value(nullValue()));
+        mvc.perform(get(summary).principal(other::toString)).andExpect(status().isNotFound());
+
+        mvc.perform(workoutUpload(upload, actor, UUID.randomUUID(), 8, WORKOUT)).andExpect(status().isCreated());
+        mvc.perform(get(summary).principal(actor::toString))
+                .andExpect(status().isOk()).andExpect(header().string("Retry-After", "5"))
+                .andExpect(jsonPath("$.data.calculationStatus").value("PROCESSING"))
+                .andExpect(jsonPath("$.data.totalDistanceM").value(nullValue()));
+        var stale = pendingSummary(quarterId);
+        var previous = stale.summary();
+        summaries.saveProcessing(quarterId, previous.workoutPayloadId(), previous.calculationVersion(),
+                "{}", "{}", previous.sourcePayloadHash(), previous.updatedAt());
+
+        summaryCalculation.process(stale);
+        mvc.perform(get(summary).principal(actor::toString))
+                .andExpect(status().isOk()).andExpect(header().string("ETag", tag(9)))
+                .andExpect(jsonPath("$.data.calculationStatus").value("PROCESSING"));
+
+        var current = pendingSummary(quarterId);
+        summaryCalculation.process(current);
+        summaryCalculation.process(current);
+        mvc.perform(get(summary).principal(actor::toString))
+                .andExpect(status().isOk()).andExpect(header().string("ETag", tag(10)))
+                .andExpect(header().doesNotExist("Retry-After"))
+                .andExpect(jsonPath("$.data.calculationStatus").value("PARTIAL"))
+                .andExpect(jsonPath("$.data.totalDistanceM").value(1500.0))
+                .andExpect(jsonPath("$.data.totalCaloriesKcal").value(100.0))
+                .andExpect(jsonPath("$.data.durationSeconds").value(nullValue()))
+                .andExpect(jsonPath("$.data.averageSpeedMps").value(nullValue()))
+                .andExpect(jsonPath("$.data.metricStatus.totalDistanceM.status").value("READY"))
+                .andExpect(jsonPath("$.data.metricStatus.averageSpeedMps.status").value("MISSING_INPUT"))
+                .andExpect(jsonPath("$.data.calculationJobId").doesNotExist())
+                .andExpect(jsonPath("$.data.sourcePayloadHash").doesNotExist());
+    }
+
+    @Test
+    void invalidStoredSourcePublishesFailureWithoutRemovingWorkout() throws Exception {
+        String upload = completedQuarterUploadPath();
+        UUID quarterId = UUID.fromString(upload.split("/")[4]);
+        UUID workoutId = UUID.randomUUID();
+        var time = LocalDateTime.of(2026, 11, 4, 0, 0);
+        workouts.save(new WorkoutPayload(workoutId, quarterId, actor, time, time.plusMinutes(1), 0, -1));
+        summaries.saveProcessing(quarterId, workoutId, "v1", "{}", "{}", "a".repeat(64), time);
+        summaryCalculation.process(pendingSummary(quarterId));
+
+        mvc.perform(get(upload.replace("/workout-payloads", "/summary")).principal(actor::toString))
+                .andExpect(status().isOk()).andExpect(header().string("ETag", tag(9)))
+                .andExpect(jsonPath("$.data.calculationStatus").value("FAILED"))
+                .andExpect(jsonPath("$.data.metricStatus.totalDistanceM.status").value("FAILED"))
+                .andExpect(jsonPath("$.data.totalDistanceM").value(nullValue()));
+        assertTrue(workouts.findById(workoutId).isPresent());
+    }
+
+    private QuarterSummaryRepository.PendingCalculation pendingSummary(UUID quarterId) {
+        return summaries.findProcessing(100).stream().filter(job -> job.summary().quarterId().equals(quarterId))
+                .findFirst().orElseThrow();
     }
 
     private String completedQuarterUploadPath() throws Exception {

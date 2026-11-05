@@ -74,6 +74,17 @@ public class QuarterWorkoutController {
         return ResponseEntity.ok().eTag(MatchMutation.etag(result.meta().matchVersion())).body(result);
     }
 
+    @GetMapping(PATH + "{quarterId}/summary")
+    public ResponseEntity<VersionedResponse<QuarterWorkoutQuery.Summary>> summary(
+            Principal principal, @PathVariable UUID quarterId) {
+        var result = query.summary(MatchController.actor(principal), quarterId);
+        var response = ResponseEntity.ok().eTag(MatchMutation.etag(result.meta().matchVersion()));
+        if (result.data() != null && "PROCESSING".equals(result.data().calculationStatus())) {
+            response.header(HttpHeaders.RETRY_AFTER, "5");
+        }
+        return response.body(result);
+    }
+
     @GetMapping(PATH + "{quarterId}/track-points")
     public ResponseEntity<QuarterWorkoutQuery.Page<QuarterWorkoutQuery.TrackSample>> trackPoints(
             Principal principal, @PathVariable UUID quarterId,
