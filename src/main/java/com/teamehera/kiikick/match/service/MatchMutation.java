@@ -4,6 +4,7 @@ import com.teamehera.kiikick.global.idempotency.domain.IdempotencyRecord;
 import com.teamehera.kiikick.global.idempotency.repository.IdempotencyRecordRepository;
 import com.teamehera.kiikick.match.domain.Match;
 import com.teamehera.kiikick.match.repository.MatchRepository;
+import com.teamehera.kiikick.user.repository.UserRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,16 +19,19 @@ import java.util.HexFormat;
 import java.util.UUID;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 @Service
 public class MatchMutation {
 
     private final MatchRepository matches;
     private final IdempotencyRecordRepository records;
+    private final UserRepository users;
 
-    public MatchMutation(MatchRepository matches, IdempotencyRecordRepository records) {
+    public MatchMutation(MatchRepository matches, IdempotencyRecordRepository records, UserRepository users) {
         this.matches = matches;
         this.records = records;
+        this.users = users;
     }
 
     public record Request(UUID actorUserId, UUID matchId, String method, String canonicalPath,
@@ -63,6 +67,36 @@ public class MatchMutation {
                             Consumer<Match> checkAccess, Function<Match, Response> change) {
         Match match = lockMatch(request);
         checkAccess.accept(match);
+        return executeOnce(request, expiresAt, () -> {
+            if (request.ifMatch() == null) {
+                throw new Rejected(428, "PRECONDITION_REQUIRED", null);
+            }
+            if (!etag(match.version()).equals(request.ifMatch())) {
+                throw new Rejected(412, "VERSION_CONFLICT", match.version());
+            }
+        }, () -> {
+            Response response = change.apply(match);
+            if (lockMatch(request).version() != Math.addExact(match.version(), 1)) {
+                throw new IllegalStateException("A successful mutation must increment the match version once");
+            }
+            return response;
+        });
+    }
+
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public Response create(Request request, LocalDateTime expiresAt, Supplier<Response> change) {
+        // The owner row serializes retries before a match row exists.
+        users.findByIdForUpdate(request.actorUserId())
+                .orElseThrow(() -> new Rejected(401, "UNAUTHENTICATED", null));
+        return executeOnce(request, expiresAt, () -> {
+            if (request.ifMatch() != null) {
+                throw new Rejected(400, "INVALID_REQUEST", null);
+            }
+        }, change);
+    }
+
+    private Response executeOnce(Request request, LocalDateTime expiresAt,
+                                 Runnable checkPreconditions, Supplier<Response> change) {
         if (request.key() == null) {
             throw new Rejected(400, "INVALID_REQUEST", null);
         }
@@ -81,21 +115,15 @@ public class MatchMutation {
             return new Response(saved.responseStatus(), saved.responseHeaders(), saved.responseBody());
         }
 
-        if (request.ifMatch() == null) {
-            throw new Rejected(428, "PRECONDITION_REQUIRED", null);
-        }
-        if (!etag(match.version()).equals(request.ifMatch())) {
-            throw new Rejected(412, "VERSION_CONFLICT", match.version());
-        }
+        checkPreconditions.run();
 
         UUID id = UUID.randomUUID();
         records.save(new IdempotencyRecord(id, request.actorUserId(), request.method(),
                 request.canonicalPath(), request.key(), hash, "PROCESSING",
                 null, null, null, LocalDateTime.now(ZoneOffset.UTC), expiresAt));
-        Response response = change.apply(match);
-        if (response.status() < 200 || response.status() >= 300
-                || lockMatch(request).version() != Math.addExact(match.version(), 1)) {
-            throw new IllegalStateException("A successful mutation must increment the match version once");
+        Response response = change.get();
+        if (response.status() < 200 || response.status() >= 300) {
+            throw new IllegalStateException("A mutation must return a successful response");
         }
         if (records.complete(id, hash, response.status(), response.headersJson(), response.bodyJson()) != 1) {
             throw new IllegalStateException("Could not store the mutation response");
