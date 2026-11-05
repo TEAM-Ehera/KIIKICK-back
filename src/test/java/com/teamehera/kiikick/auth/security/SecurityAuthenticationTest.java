@@ -127,6 +127,25 @@ class SecurityAuthenticationTest {
     }
 
     @Test
+    void exp가_없는_정상서명_토큰도_401이다() throws Exception {
+        String token = customToken(
+                Instant.now().minusSeconds(1),
+                null,
+                Map.of(
+                        AccessTokenService.USER_ID_CLAIM, UUID.randomUUID().toString(),
+                        AccessTokenService.SESSION_ID_CLAIM, UUID.randomUUID().toString()
+                )
+        );
+
+        mockMvc.perform(get("/api/v1/security-test")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code").value("UNAUTHENTICATED"));
+
+        verifyNoInteractions(authSessionRepository);
+    }
+
+    @Test
     void 만료된_토큰은_세션을_조회하지_않고_TOKEN_EXPIRED를_반환한다()
             throws Exception {
         String token = customToken(
@@ -207,9 +226,11 @@ class SecurityAuthenticationTest {
                 .issuer("kiikick-api-test")
                 .audience(List.of("kiikick-test"))
                 .issuedAt(issuedAt)
-                .expiresAt(expiresAt)
                 .claim(AccessTokenService.TOKEN_TYPE_CLAIM,
                         AccessTokenService.ACCESS_TOKEN_TYPE);
+        if (expiresAt != null) {
+            claims.expiresAt(expiresAt);
+        }
         extraClaims.forEach(claims::claim);
 
         return jwtEncoder.encode(JwtEncoderParameters.from(

@@ -17,6 +17,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtValidators;
+import org.springframework.security.oauth2.jwt.JwtTimestampValidator;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 import org.springframework.security.web.SecurityFilterChain;
@@ -87,6 +88,9 @@ public class SecurityConfig {
                 .build();
         OAuth2TokenValidator<Jwt> issuer = JwtValidators
                 .createDefaultWithIssuer(properties.issuer());
+        JwtTimestampValidator requiredExpiry = new JwtTimestampValidator();
+        // 기본 시간 검증은 exp 누락을 허용하므로 Access Token에서는 반드시 요구한다.
+        requiredExpiry.setAllowEmptyExpiryClaim(false);
         OAuth2TokenValidator<Jwt> audience = jwt ->
                 jwt.getAudience().contains(properties.audience())
                         ? OAuth2TokenValidatorResult.success()
@@ -101,7 +105,7 @@ public class SecurityConfig {
                                 "invalid_token", "Access Token이 아닙니다.", null
                         ));
         decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
-                issuer, audience, type
+                issuer, requiredExpiry, audience, type
         ));
         return decoder;
     }
