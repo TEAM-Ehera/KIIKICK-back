@@ -33,9 +33,9 @@ public class LoginController {
         User user = result.user();
         SignupUserResponse profile = new SignupUserResponse(user.id(), user.nickname(), user.avatarUrl(),
                 user.onboardingCompletedAt() == null ? "REQUIRED" : "COMPLETED",
-                result.comparisonConsent(), result.userCreatedAt());
+                result.comparisonConsent(), AuthApiResponseFactory.toSeoul(result.userCreatedAt()));
         LoginResponse response = new LoginResponse(result.sessionId(), result.accessToken(), result.refreshToken(),
-                result.expiresAt(), profile);
+                AuthApiResponseFactory.toSeoul(result.expiresAt()), profile);
         return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(responses.success(response));
     }
 }

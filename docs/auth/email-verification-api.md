@@ -1,8 +1,8 @@
 # 이메일 회원가입 인증 API
 
-날짜 응답은 ISO 8601 UTC `Z` 문자열이다. `expiresAt`, `resendAvailableAt`, 성공·오류의
-`meta.serverTime`을 클라이언트 기기 시간대로 변환해 표시한다. 기존 `+09:00` 응답에서
-형식만 UTC로 통일하며 코드 3분·재발송 60초·registrationToken 10분 정책은 유지한다.
+날짜 응답은 ISO 8601 Asia/Seoul `+09:00` 문자열이다. `expiresAt`, `resendAvailableAt`, 성공·오류의
+`meta.serverTime`도 같은 오프셋을 사용한다. 기존 서울 기준 응답 계약을 따르며
+코드 3분·재발송 60초·registrationToken 10분 정책은 유지한다.
 DB는 UTC DATETIME(6), JDBC 경계는 UTC LocalDateTime, Auth 서비스 시각은 Instant를 사용한다.
 
 ## 인증번호 발송·재발송

@@ -31,8 +31,7 @@
 
 ### P01 인증 상세
 
-- Auth(#61·#72·#73) 응답 날짜와 공통 성공·오류 메타는 UTC `Z`로 반환하고 클라이언트가
-  기기 시간대로 표시한다. Auth 내부 시각은 Instant를 우선하며 JDBC의 UTC LocalDateTime
+- Auth(#61·#72·#73) 응답 날짜와 공통 성공·오류 메타는 서울 `+09:00`으로 반환한다. Auth 내부 시각은 Instant를 우선하며 JDBC의 UTC LocalDateTime
   경계와 DATETIME(6)을 유지한다. 비Auth API와 일별 통계의 서울 기준은 이번 변경 대상이 아니다.
 
 - 인증은 이메일 소유 확인과 비밀번호를 사용한다. Apple·Google 등 소셜 로그인은 현재

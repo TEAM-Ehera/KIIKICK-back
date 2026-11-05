@@ -10,8 +10,8 @@ P01의 인증 방식은 이메일 인증과 비밀번호로 확정되었다. App
 
 ## API 바로가기
 
-Auth 날짜 응답과 성공·오류 메타는 ISO 8601 UTC `Z` 문자열이다. 클라이언트가 기기 시간대로
-변환해 표시한다. DB는 UTC DATETIME(6)을 유지하며 일별 통계의 서울 기준은 변경하지 않는다.
+Auth 날짜 응답과 성공·오류 메타는 ISO 8601 Asia/Seoul `+09:00` 문자열이다.
+기존 서울 기준 응답 계약을 따른다. DB는 UTC DATETIME(6)을 유지하며 일별 통계의 서울 기준은 변경하지 않는다.
 
 | ID | 기능 | Method | 경로 | 상태 |
 | --- | --- | --- | --- | --- |
@@ -48,10 +48,10 @@ Auth 날짜 응답과 성공·오류 메타는 ISO 8601 UTC `Z` 문자열이다.
 {
   "data": {
     "verificationId": "00000010-0000-4000-8000-000000000010",
-    "expiresAt": "2026-11-05T00:03:00Z",
-    "resendAvailableAt": "2026-11-05T00:01:00Z"
+    "expiresAt": "2026-11-05T09:03:00+09:00",
+    "resendAvailableAt": "2026-11-05T09:01:00+09:00"
   },
-  "meta": {"requestId":"req-example","serverTime":"2026-11-05T00:00:00Z"}
+  "meta": {"requestId":"req-example","serverTime":"2026-11-05T09:00:00+09:00"}
 }
 ```
 
@@ -85,9 +85,9 @@ Auth 날짜 응답과 성공·오류 메타는 ISO 8601 UTC `Z` 문자열이다.
 {
   "data": {
     "registrationToken": "opaque-registration-token",
-    "expiresAt": "2026-11-05T00:10:00Z"
+    "expiresAt": "2026-11-05T09:10:00+09:00"
   },
-  "meta": {"requestId":"req-example","serverTime":"2026-11-05T00:00:00Z"}
+  "meta": {"requestId":"req-example","serverTime":"2026-11-05T09:00:00+09:00"}
 }
 ```
 
@@ -148,7 +148,7 @@ Refresh Token은 최초 발급 기준 최대
 `user`를 포함한다. `user`는 `id`, `nickname`, `avatarUrl`, `onboardingStatus`,
 `comparisonConsent`, `createdAt`이며 기존 사용자 상태에서 파생한다.
 Access Token은 15분, Refresh Token은 최초 발급부터 최대 90일이며 DB에는 해시만 저장한다.
-날짜·시간은 ISO 8601 UTC `Z` 문자열이며 클라이언트가 기기 시간대로 표시한다.
+날짜·시간은 기존 합의에 따라 ISO 8601 서울 `+09:00` 오프셋 문자열이다.
 
 - 미등록 이메일과 잘못된 비밀번호는 동일한 `401 INVALID_CREDENTIALS`를 반환한다.
   미등록 이메일에도 BCrypt 검증과 실패 집계를 적용한다.
@@ -244,19 +244,19 @@ Content-Type: application/json
     "sessionId": "00000010-0000-4000-8000-000000000010",
     "accessToken": "example-access-token",
     "refreshToken": "example-refresh-token",
-    "expiresAt": "2026-11-02T01:25:00Z",
+    "expiresAt": "2026-11-02T10:25:00+09:00",
     "user": {
       "id": "00000001-0000-4000-8000-000000000001",
       "nickname": "준",
       "avatarUrl": null,
       "onboardingStatus": "COMPLETED",
       "comparisonConsent": true,
-      "createdAt": "2026-11-02T01:00:00Z"
+      "createdAt": "2026-11-02T10:00:00+09:00"
     }
   },
   "meta": {
     "requestId": "req-example",
-    "serverTime": "2026-11-02T01:10:00Z"
+    "serverTime": "2026-11-02T10:10:00+09:00"
   }
 }
 ```
@@ -283,7 +283,7 @@ Content-Type: application/json
   },
   "meta": {
     "requestId": "req-error-example",
-    "serverTime": "2026-11-02T01:10:00Z"
+    "serverTime": "2026-11-02T10:10:00+09:00"
   }
 }
 ```
@@ -380,7 +380,7 @@ X-Request-Id: req-example
   },
   "meta": {
     "requestId": "req-error-example",
-    "serverTime": "2026-11-02T01:10:00Z"
+    "serverTime": "2026-11-02T10:10:00+09:00"
   }
 }
 ```
@@ -457,11 +457,11 @@ Content-Type: application/json
     "avatarUrl": null,
     "onboardingStatus": "COMPLETED",
     "comparisonConsent": true,
-    "createdAt": "2026-11-02T01:00:00Z"
+    "createdAt": "2026-11-02T10:00:00+09:00"
   },
   "meta": {
     "requestId": "req-example",
-    "serverTime": "2026-11-02T01:10:00Z"
+    "serverTime": "2026-11-02T10:10:00+09:00"
   }
 }
 ```
@@ -562,11 +562,11 @@ Content-Type: application/json
     "avatarUrl": null,
     "onboardingStatus": "COMPLETED",
     "comparisonConsent": true,
-    "createdAt": "2026-11-02T01:00:00Z"
+    "createdAt": "2026-11-02T10:00:00+09:00"
   },
   "meta": {
     "requestId": "req-example",
-    "serverTime": "2026-11-02T01:10:00Z"
+    "serverTime": "2026-11-02T10:10:00+09:00"
   }
 }
 ```
@@ -595,7 +595,7 @@ Content-Type: application/json
   },
   "meta": {
     "requestId": "req-error-example",
-    "serverTime": "2026-11-02T01:10:00Z"
+    "serverTime": "2026-11-02T10:10:00+09:00"
   }
 }
 ```
@@ -698,11 +698,11 @@ Content-Type: application/json
     "avatarUrl": null,
     "onboardingStatus": "COMPLETED",
     "comparisonConsent": true,
-    "createdAt": "2026-11-02T01:00:00Z"
+    "createdAt": "2026-11-02T10:00:00+09:00"
   },
   "meta": {
     "requestId": "req-example",
-    "serverTime": "2026-11-02T01:10:00Z"
+    "serverTime": "2026-11-02T10:10:00+09:00"
   }
 }
 ```
@@ -732,7 +732,7 @@ Content-Type: application/json
   },
   "meta": {
     "requestId": "req-error-example",
-    "serverTime": "2026-11-02T01:10:00Z"
+    "serverTime": "2026-11-02T10:10:00+09:00"
   }
 }
 ```
@@ -807,12 +807,12 @@ Content-Type: application/json
       "purpose": "FRIEND_COMPARISON",
       "policyVersion": "2026-11-01",
       "granted": true,
-      "recordedAt": "2026-11-02T01:00:00Z"
+      "recordedAt": "2026-11-02T10:00:00+09:00"
     }
   ],
   "meta": {
     "requestId": "req-example",
-    "serverTime": "2026-11-02T01:10:00Z"
+    "serverTime": "2026-11-02T10:10:00+09:00"
   }
 }
 ```
@@ -913,11 +913,11 @@ Content-Type: application/json
     "purpose": "FRIEND_COMPARISON",
     "policyVersion": "2026-11-01",
     "granted": false,
-    "recordedAt": "2026-11-02T01:00:00Z"
+    "recordedAt": "2026-11-02T10:00:00+09:00"
   },
   "meta": {
     "requestId": "req-example",
-    "serverTime": "2026-11-02T01:10:00Z"
+    "serverTime": "2026-11-02T10:10:00+09:00"
   }
 }
 ```
@@ -946,7 +946,7 @@ Content-Type: application/json
   },
   "meta": {
     "requestId": "req-error-example",
-    "serverTime": "2026-11-02T01:10:00Z"
+    "serverTime": "2026-11-02T10:10:00+09:00"
   }
 }
 ```
@@ -1022,12 +1022,12 @@ Retry-After: 3
   "data": {
     "id": "00000014-0000-4000-8000-000000000014",
     "status": "PENDING",
-    "requestedAt": "2026-11-02T01:00:00Z",
+    "requestedAt": "2026-11-02T10:00:00+09:00",
     "completedAt": null
   },
   "meta": {
     "requestId": "req-example",
-    "serverTime": "2026-11-02T01:10:00Z"
+    "serverTime": "2026-11-02T10:10:00+09:00"
   }
 }
 ```
@@ -1055,7 +1055,7 @@ Retry-After: 3
   },
   "meta": {
     "requestId": "req-error-example",
-    "serverTime": "2026-11-02T01:10:00Z"
+    "serverTime": "2026-11-02T10:10:00+09:00"
   }
 }
 ```
@@ -1131,12 +1131,12 @@ Content-Type: application/json
   "data": {
     "id": "00000014-0000-4000-8000-000000000014",
     "status": "PENDING",
-    "requestedAt": "2026-11-02T01:00:00Z",
+    "requestedAt": "2026-11-02T10:00:00+09:00",
     "completedAt": null
   },
   "meta": {
     "requestId": "req-example",
-    "serverTime": "2026-11-02T01:10:00Z"
+    "serverTime": "2026-11-02T10:10:00+09:00"
   }
 }
 ```
@@ -1163,7 +1163,7 @@ Content-Type: application/json
   },
   "meta": {
     "requestId": "req-error-example",
-    "serverTime": "2026-11-02T01:10:00Z"
+    "serverTime": "2026-11-02T10:10:00+09:00"
   }
 }
 ```
