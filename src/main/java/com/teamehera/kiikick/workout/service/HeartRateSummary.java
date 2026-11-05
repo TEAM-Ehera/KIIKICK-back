@@ -4,12 +4,14 @@ import com.teamehera.kiikick.workout.domain.StoredHeartRateSample;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
 final class HeartRateSummary {
     static final int MIN_BPM = 30;
     static final int MAX_BPM = 250;
     static final int MAX_GAP_SECONDS = 10;
+    static final double HIGH_INTENSITY_HR_RATIO = 0.8;
     private static final double[] ZONE_BOUNDARIES = {0.5, 0.6, 0.7, 0.8, 0.9, 1.0};
 
     private HeartRateSummary() {}
@@ -36,10 +38,15 @@ final class HeartRateSummary {
 
     private record Sample(LocalDateTime timestamp, Double bpm) {}
 
-    record Result(Double averageBpm, Double maxBpm, Double validSeconds, Double trimp, Double referenceBpm) {}
+    record TimeRange(LocalDateTime start, LocalDateTime end) {}
+
+    record Result(Double averageBpm, Double maxBpm, Double validSeconds, Double trimp, Double referenceBpm,
+                  List<TimeRange> validRanges, List<TimeRange> highIntensityRanges) {}
 
     private static final class Totals {
         private final Double referenceBpm;
+        private final List<TimeRange> validRanges = new ArrayList<>();
+        private final List<TimeRange> highIntensityRanges = new ArrayList<>();
         private Double maxBpm;
         private double seconds;
         private double bpmSeconds;
@@ -65,10 +72,32 @@ final class HeartRateSummary {
             }
             double elapsed = interval.toNanos() / 1_000_000_000.0;
             double start = previous.bpm();
+            validRanges.add(new TimeRange(previous.timestamp(), current.timestamp()));
             seconds += elapsed;
             bpmSeconds += elapsed * (start + end) / 2;
             if (referenceBpm != null) {
                 accumulateZones(Math.min(start, end), Math.max(start, end), elapsed);
+                addHighIntensityRange(previous.timestamp(), current.timestamp(), start, end, interval.toNanos());
+
+            }
+        }
+
+        private void addHighIntensityRange(LocalDateTime from, LocalDateTime to, double start, double end,
+                                           long nanos) {
+            double threshold = referenceBpm * HIGH_INTENSITY_HR_RATIO;
+            if (Math.max(start, end) < threshold) {
+                return;
+            }
+            if (Math.min(start, end) < threshold) {
+                var crossing = from.plusNanos(Math.round(nanos * (threshold - start) / (end - start)));
+                if (start < threshold) {
+                    from = crossing;
+                } else {
+                    to = crossing;
+                }
+            }
+            if (from.isBefore(to)) {
+                highIntensityRanges.add(new TimeRange(from, to));
             }
         }
 
@@ -97,7 +126,8 @@ final class HeartRateSummary {
 
         private Result result() {
             return new Result(seconds > 0 ? bpmSeconds / seconds : null, maxBpm,
-                    seconds > 0 ? seconds : null, eligibleSeconds > 0 ? weightedSeconds / 60 : null, referenceBpm);
+                    seconds > 0 ? seconds : null, eligibleSeconds > 0 ? weightedSeconds / 60 : null, referenceBpm,
+                    List.copyOf(validRanges), List.copyOf(highIntensityRanges));
         }
     }
 }
