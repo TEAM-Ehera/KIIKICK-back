@@ -61,6 +61,17 @@ public class HeartRateSampleRepository {
         );
     }
 
+    public List<StoredHeartRateSample> findPageBySampleSeq(UUID workoutPayloadId, int afterSampleSeq, int limit) {
+        return jdbcTemplate.query(
+                """
+                SELECT * FROM heart_rate_samples
+                WHERE workout_payload_id = ? AND sample_seq > ?
+                ORDER BY sample_seq ASC LIMIT ?
+                """,
+                rowMapper, uuidToBytes(workoutPayloadId), afterSampleSeq, limit
+        );
+    }
+
     public List<StoredHeartRateSample> findAllForCalculation(UUID workoutPayloadId) {
         return jdbcTemplate.query(
                 """

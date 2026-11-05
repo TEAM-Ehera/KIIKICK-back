@@ -5,6 +5,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -63,22 +65,27 @@ public class MatchRepository {
     }
 
     public List<Match> findPageByOwnerId(UUID ownerId, String status, int limit) {
-        if (status == null) {
-            return jdbcTemplate.query(
-                    """
-                    SELECT * FROM matches WHERE owner_id = ?
-                    ORDER BY created_at DESC, id DESC LIMIT ?
-                    """,
-                    rowMapper, uuidToBytes(ownerId), limit
-            );
+        return findPageByOwnerId(ownerId, status, null, null, limit);
+    }
+
+    public List<Match> findPageByOwnerId(UUID ownerId, String status, LocalDateTime beforeTime,
+                                       UUID beforeId, int limit) {
+        var sql = new StringBuilder("SELECT * FROM matches WHERE owner_id = ?");
+        var args = new ArrayList<Object>();
+        args.add(uuidToBytes(ownerId));
+        if (status != null) {
+            sql.append(" AND status = ?");
+            args.add(status);
         }
-        return jdbcTemplate.query(
-                """
-                SELECT * FROM matches WHERE owner_id = ? AND status = ?
-                ORDER BY created_at DESC, id DESC LIMIT ?
-                """,
-                rowMapper, uuidToBytes(ownerId), status, limit
-        );
+        if (beforeTime != null) {
+            sql.append(" AND (created_at < ? OR (created_at = ? AND id < ?))");
+            args.add(beforeTime);
+            args.add(beforeTime);
+            args.add(uuidToBytes(beforeId));
+        }
+        sql.append(" ORDER BY created_at DESC, id DESC LIMIT ?");
+        args.add(limit);
+        return jdbcTemplate.query(sql.toString(), rowMapper, args.toArray());
     }
 
     public int updateSettings(Match match, long expectedVersion) {
@@ -94,6 +101,16 @@ public class MatchRepository {
                 uuidToBytes(match.venueId()), match.title(), match.venueNameSnapshot(),
                 match.venueAddressSnapshot(), match.scheduledAt(),
                 uuidToBytes(match.id()), uuidToBytes(match.ownerId()), expectedVersion
+        );
+    }
+
+    public int incrementVersion(UUID id, UUID ownerId, long expectedVersion) {
+        return jdbcTemplate.update(
+                """
+                UPDATE matches SET version = version + 1, updated_at = CURRENT_TIMESTAMP(6)
+                WHERE id = ? AND owner_id = ? AND version = ?
+                """,
+                uuidToBytes(id), uuidToBytes(ownerId), expectedVersion
         );
     }
 
@@ -119,5 +136,15 @@ public class MatchRepository {
         return jdbcTemplate.query(
                 sql, rowMapper, uuidToBytes(id), uuidToBytes(ownerId)
         ).stream().findFirst();
+    }
+
+    public void detachVenue(UUID venueId) {
+        jdbcTemplate.update(
+                """
+                UPDATE matches SET venue_id = NULL, version = version + 1, updated_at = CURRENT_TIMESTAMP(6)
+                WHERE venue_id = ?
+                """,
+                uuidToBytes(venueId)
+        );
     }
 }
