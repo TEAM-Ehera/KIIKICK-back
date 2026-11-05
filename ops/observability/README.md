@@ -1,6 +1,6 @@
 # KIIKICK 운영 관측과 CI
 
-현재 서버는 Spring Boot를 `kiikick.service`로 실행하고 Nginx와 MySQL을 별도 서비스로 운영한다. 첫 수집 대상은 Nginx의 구조화된 요청 지표다. URL·쿼리 문자열·클라이언트 IP·요청 본문 없이 요청 수, 5xx 비율, 응답 시간과 요청 ID를 확인할 수 있다. 원인 조사에는 서버의 애플리케이션과 MySQL 로그를 함께 본다.
+개발 서버는 Spring Boot를 `kiikick-dev` Docker 컨테이너로 실행한다. Nginx가 로컬 8080으로 프록시하고 애플리케이션은 RDS MySQL에 연결한다. 첫 수집 대상은 Nginx의 구조화된 요청 지표다. URL·쿼리 문자열·클라이언트 IP·요청 본문 없이 요청 수, 5xx 비율, 응답 시간과 요청 ID를 확인할 수 있다. 원인 조사에는 서버의 애플리케이션과 MySQL 로그를 함께 본다.
 
 ## Jenkins
 
@@ -39,3 +39,9 @@ docker compose logs --since 15m --tail 100
 ```
 
 장애 재현 기록에는 감지 시간, 증상, 확인한 로그, 복구 조치, 정상 응답 확인 시간을 남긴다. 로그 원문을 Discord에 공유할 때는 토큰, 요청 본문, 위치·심박 등 개인 데이터를 제거한다.
+
+### 개발 서버 자동 배포
+
+개발 서버의 내부 Jenkins는 `127.0.0.1:8090`에서 실행한다. SSH 로컬 포트 포워딩으로 접속한다. `kiikick-develop`은 공개 저장소의 `develop`만 체크아웃하는 Pipeline from SCM 잡이며, Jenkins가 약 2분 간격으로 변경을 확인한다. JDK 21 에이전트에서 테스트와 JAR 보관을 완료한 뒤 같은 서버의 배포 도우미를 실행한다.
+
+배포 도우미 [install-dev-jar.sh](../deploy/install-dev-jar.sh)는 관리자가 `/usr/local/sbin/kiikick-install-dev-container`에 root 소유로 설치한다. Jenkins 계정에는 이 도우미의 sudo 실행만 허용한다. 관리자는 [Dockerfile](../deploy/Dockerfile)을 `/usr/local/share/kiikick/dev.Dockerfile`에 설치한다. 도우미는 JAR의 SHA-256을 검증하고 커밋 SHA로 태그된 이미지를 빌드한다. 새 컨테이너는 기존 환경 파일을 사용하고 로컬 8080에 바인딩한다. 헬스체크가 실패하면 직전 컨테이너를 복원하고 빌드를 실패로 표시한다. 첫 Docker 전환에서 실패하면 기존 systemd 앱 서비스를 재시작한다. DB 스키마 변경은 배포 전에 별도 이행 절차로 적용한다.

@@ -22,7 +22,7 @@
 | 인증·온보딩·마이페이지 | 로그인·프로필·동의·탈퇴 | 본인 사용자 |
 | 경기 세팅 | 장소 재사용, 개인 경기 묶음 생성, 쿼터 시간 설정 | matches, quarters, venues |
 | 쿼터 진행 | 시작·마감, 골·어시스트 합계 입력, 포지션 하나 입력, 완료 | 본인 쿼터 |
-| 홈 | 준비/진행 경기, 최근 완료 경기와 쿼터 요약 | 본인 기록만 |
+| 홈 | 준비/진행 경기, 최근 완료 경기와 쿼터 요약 | iOS에서 본인 경기·결과 API를 조합 |
 | 쿼터 결과 | 골·어시스트·포지션·운동 지표·경로·심박 그래프 | quarter_id |
 | 경기 결과 | 소속 쿼터 목록과 개인 합계 | 쿼터 원본 및 저장 요약 |
 | 친구 | 검색·요청·수락·해제·차단, 공개 프로필 | 개인 기록 소유권과 분리 |
@@ -98,7 +98,7 @@ flowchart TD
 | F02 | 알림·기기 | [notifications](api/notifications.md) | notifications, devices |
 | F03 | 장소·개인 경기·쿼터 설정 | [setup](api/setup.md) | venues, matches, quarters |
 | F04 | 쿼터 진행·골·어시스트·포지션 | [gameplay](api/gameplay.md) | quarters, quarter_player_stats, quarter_positions |
-| F05 | 홈 | [home](api/home.md) | matches, quarters, quarter_summaries |
+| F05 | 홈 | [iOS 홈 화면 연동](api/home.md) | matches, quarters, quarter_summaries |
 | F06 | 친구 | [friends](api/friends.md) | friend_pairs, user_blocks |
 | F07 | 개인 경기·쿼터 결과 | [results](api/results.md) | quarters, quarter_player_stats, quarter_positions, quarter_summaries |
 | F08 | 개인 분석·비교 | [analytics](api/analytics.md) | quarter_player_stats, quarter_positions, quarter_summaries |

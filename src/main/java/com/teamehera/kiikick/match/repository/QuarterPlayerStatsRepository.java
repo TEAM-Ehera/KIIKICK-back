@@ -3,9 +3,12 @@ package com.teamehera.kiikick.match.repository;
 import com.teamehera.kiikick.match.domain.QuarterPlayerStats;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -16,6 +19,7 @@ import static com.teamehera.kiikick.global.jdbc.JdbcValueConverter.uuidToBytes;
 public class QuarterPlayerStatsRepository {
 
     private final JdbcTemplate jdbcTemplate;
+    private final NamedParameterJdbcTemplate namedJdbc;
     private final RowMapper<QuarterPlayerStats> rowMapper = (rs, rowNum) ->
             new QuarterPlayerStats(
                     bytesToUuid(rs.getBytes("quarter_id")), rs.getInt("goals"),
@@ -24,6 +28,14 @@ public class QuarterPlayerStatsRepository {
 
     public QuarterPlayerStatsRepository(JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
+        this.namedJdbc = new NamedParameterJdbcTemplate(jdbcTemplate);
+    }
+
+    public List<QuarterPlayerStats> findByQuarterIds(List<UUID> quarterIds) {
+        return namedJdbc.query(
+                "SELECT * FROM quarter_player_stats WHERE quarter_id IN (:quarterIds)",
+                Map.of("quarterIds", quarterIds.stream().map(id -> uuidToBytes(id)).toList()), rowMapper
+        );
     }
 
     public Optional<QuarterPlayerStats> findByQuarterId(UUID quarterId) {

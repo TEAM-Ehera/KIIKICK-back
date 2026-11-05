@@ -219,7 +219,7 @@ Auth 응답의 날짜는 ISO 8601 Asia/Seoul `+09:00` 문자열이다. `UserSelf
 | calculationStatus | enum | 필수 | PROCESSING/PARTIAL/READY/FAILED |
 | calculationVersion | string | 필수 | 계산 알고리즘 버전 |
 | metricStatus | object | 필수 | 각 지표 키 → {status,reason}. READY/MISSING_INPUT/INSUFFICIENT_DATA/FAILED |
-| durationSeconds | number | nullable | 계산에 사용한 실제 운동 시간; 초 |
+| durationSeconds | number | nullable | 운동 시작~종료 경과 시간, 휴식 포함; 초 |
 | maxSpeedMps | number | nullable | 유효 최고속도; m/s |
 | totalDistanceM | number | nullable | 누적 거리; m |
 | totalCaloriesKcal | number | nullable | 활동 칼로리; kcal |
@@ -292,10 +292,10 @@ calculation_job_id, calculation_parameters와 source_payload_hash는 내부 작�
 | --- | --- | --- | --- |
 | match | Match | 필수 | 본인 완료 경기 |
 | quarterCount | integer | 필수 | 완료 쿼터 개수 |
-| goals | integer | nullable | 모든 쿼터 stats가 있으면 합계, 누락 있으면 null |
+| goals | integer | nullable | 모든 완료 쿼터 stats가 있으면 합계, 누락 있으면 null. 모든 값이 0이면 0 |
 | assists | integer | nullable | 동일 규칙 |
 | missingStatsQuarterIds | UUID[] | 필수 | 직접 입력 기록 누락 쿼터 |
-| summaryAvailability | object | 필수 | {ready,partial,processing,failed,missing} 쿼터 수. 경기 상태와 독립 |
+| summaryAvailability | object | 필수 | {ready,partial,processing,failed,missing} 완료 쿼터 수. 각 값은 0 이상이며 요약 행이 없으면 missing |
 
 <a id="analyticsmeta"></a>
 ## AnalyticsMeta
@@ -368,19 +368,6 @@ calculation_job_id, calculation_parameters와 source_payload_hash는 내부 작�
 | friend | Summary | 필수 | 친구의 허용 분석. 원본 데이터 제외 |
 | metric | string | 필수 | 비교 지표 |
 | delta | number | nullable | 두 값 유효할 때 차이 |
-
-<a id="home"></a>
-## Home
-
-| 필드 | 타입 | 필수 / null | 의미 |
-| --- | --- | --- | --- |
-| activeMatches | Match[] | 필수 | 본인 진행 경기 최대 5개 |
-| readyMatches | Match[] | 필수 | 본인 준비 경기 최대 5개 |
-| recentMatches | Match[] | 필수 | 본인 최근 완료 경기 |
-| recentQuarterResults | QuarterResult[] | 필수 | 최근 완료 쿼터와 저장 요약. 원본 배열 제외 |
-| unreadNotificationCount | integer | 필수 | 본인 알림 수 |
-| emptyReason | string | nullable | NO_MATCHES/NO_COMPLETED_QUARTERS 또는 null |
-| updatedAt | timestamp | 필수 | 응답 구성 시각 |
 
 <a id="operationresult"></a>
 ## OperationResult

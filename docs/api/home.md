@@ -1,39 +1,14 @@
-# 홈
+# iOS 홈 화면 연동
 
-[전체 API 목차](../api-spec.md) · [공통 규칙](common.md) · [응답 필드 사전](schemas.md) · [정책 결정](../decisions.md)
+iOS가 본인 경기 목록과 저장된 쿼터 결과를 조합해 홈 화면을 구성한다.
 
-계약 버전: **v0.4 · 2026-11-02 · 구현 전 설계**
+| 홈 화면 영역 | 사용하는 API | iOS 처리 |
+| --- | --- | --- |
+| 진행 중·준비 완료 경기 | [SET-06 내 경기 목록](setup.md#set-06) | `status=IN_PROGRESS`와 `status=READY`로 조회하고 화면 표시 순서에 맞춰 정렬한다. |
+| 최근 완료 경기 | [SET-06 내 경기 목록](setup.md#set-06) | `status=COMPLETED`로 조회하고 종료 시각으로 정렬한다. |
+| 최근 완료 쿼터 | [RESULT-03 경기 내 쿼터별 결과](results.md#result-03) | 홈에 표시할 경기의 완료 쿼터를 모아 종료 시각순으로 표시한다. 운동 지연 수신과 계산 상태는 결과 응답을 따른다. |
+| 미읽음 알림 수 | [NOTI-02 읽지 않은 알림 수](notifications.md#noti-02) | 알림 기능 연동 시 배지에 표시한다. |
 
-요구사항 F05. 본인 경기 묶음과 최근 쿼터 결과를 한 번에 표시한다. 친구의 원본 기록을 포함하지 않는다.
+경기 목록의 커서 순서는 생성 시각 기준이다. iOS에서 종료 시각 등으로 재정렬한 결과는 조회한 페이지 범위에 해당한다. 전체 경기의 최신 쿼터가 필요한 경우 조회 범위와 비용을 iOS 연동에서 정한다.
 
-## API 바로가기
-
-| ID | 기능 | Method | 경로 |
-| --- | --- | --- | --- |
-| [HOME-01](#home-01) | 홈 요약 조회 | `GET` | `/home` |
-
-<a id="home-01"></a>
-## HOME-01 · 홈 요약 조회
-
-| 항목 | 내용 |
-| --- | --- |
-| 요청 | `GET /api/v1/home` |
-| 권한 | SELF |
-| 성공 | 200 · Home |
-
-### 입력과 헤더
-
-query: recentLimit(기본 3, 1~10 기술 초안).
-
-인증 헤더는 필수다. GET 요청에는 본문·멱등 키·If-Match를 보내지 않는다.
-
-### 처리 규칙
-
-1. activeMatches는 IN_PROGRESS 중 startedAt/id 내림차순 최대 5개, readyMatches는 scheduledAt/id 오름차순 최대 5개이며 예정 시각 null은 뒤에 둔다.
-2. recentMatches는 COMPLETED 중 endedAt/id 내림차순 recentLimit개다. recentQuarterResults는 COMPLETED 쿼터를 endedAt/id 내림차순 recentLimit개 반환한다.
-3. 최근 쿼터의 저장된 기록·요약만 읽는다. 운동이 늦게 도착하면 null 또는 계산 상태를 표시하며 홈 요청이 원본 재계산을 시작하지 않는다.
-4. 경기 자체가 없으면 NO_MATCHES, 경기는 있으나 완료 쿼터가 없으면 NO_COMPLETED_QUARTERS, 그 외 emptyReason=null이다. 배열별 cursor는 없고 더 보기는 목록 API를 사용한다.
-
-### 오류와 앱 대응
-
-본인 인증과 공통 조회 오류만 적용한다. [공통 오류](common.md#errors)도 적용한다.
+경기가 없을 때와 완료 쿼터가 없을 때의 빈 화면은 iOS에서 구분한다.

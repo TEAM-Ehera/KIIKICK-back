@@ -34,3 +34,5 @@ kiikick:
       ip-secret: test-ip-address-hmac-secret-32-bytes-minimum
       sender-address: no-reply@kiikick.test
       sender-name: KIIKICK Test
+  workout:
+    summary-worker-enabled: false
