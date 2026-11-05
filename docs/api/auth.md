@@ -15,7 +15,7 @@ P01의 인증 방식은 이메일 인증과 비밀번호로 확정되었다. App
 | [AUTH-01A](#auth-01a) | 이메일 인증번호 발송·재발송 | `POST` | `/auth/email-verifications` | 구현 (#61) |
 | [AUTH-01B](#auth-01b) | 이메일 인증번호 검증 | `POST` | `/auth/email-verifications/{verificationId}/verify` | 구현 (#61) |
 | [AUTH-01C](#auth-01c) | 이메일 회원가입 완료 | `POST` | `/auth/signup` | 구현 (#72) |
-| [AUTH-01](#auth-01) | 이메일·비밀번호 로그인 | `POST` | `/auth/login` | 예정 (#73) |
+| [AUTH-01](#auth-01) | 이메일·비밀번호 로그인 | `POST` | `/auth/login` | 구현 (#73) |
 | [AUTH-02](#auth-02) | 로그인 세션 갱신 | `POST` | `/auth/refresh` | 예정 (#62) |
 | [AUTH-03](#auth-03) | 로그아웃 | `POST` | `/auth/logout` | 예정 (#63) |
 | [AUTH-04](#auth-04) | 내 프로필 조회 | `GET` | `/users/me` | 예정 (#65) |
@@ -132,12 +132,32 @@ Refresh Token은 최초 발급 기준 최대
 전체 JSON 예시는 [회원가입 구현 계약](../auth/signup-api.md)을 따른다.
 
 <a id="auth-01"></a>
-## AUTH-01 · 이메일·비밀번호 로그인 (예정 · #73)
+## AUTH-01 · 이메일·비밀번호 로그인 (구현 · #73)
 
-목표 경로는 `POST /api/v1/auth/login`이다. 정규화 이메일과 BCrypt 비밀번호를 검증해
-Session을 발급하며 미등록 이메일과 비밀번호 불일치는 동일한 `INVALID_CREDENTIALS`로
-처리한다. 계정·IP 제한과 CAPTCHA를 적용한다. **현재 Controller가 없어 호출할 수 없으며,
-요청·응답의 최종 세부 계약은 #73 구현 시 이 문서와 함께 확정한다.**
+`POST /api/v1/auth/login`은 공개 API다. 가입과 동일한 이메일 정규화와 원문 BCrypt 검증을 사용한다.
+
+```json
+{"email":"user@example.com","password":"Original-Case-73!"}
+```
+
+성공은 `200 OK`, `Cache-Control: no-store`와 `{data,meta}`다.
+`data`는 회원가입과 동일한 Session 구조인 `sessionId`, `accessToken`, `refreshToken`, `expiresAt`,
+`user`를 포함한다. `user`는 `id`, `nickname`, `avatarUrl`, `onboardingStatus`,
+`comparisonConsent`, `createdAt`이며 기존 사용자 상태에서 파생한다.
+Access Token은 15분, Refresh Token은 최초 발급부터 최대 90일이며 DB에는 해시만 저장한다.
+날짜·시간은 공통 규격에 따라 `+09:00` offset을 포함한다.
+
+- 미등록 이메일과 잘못된 비밀번호는 동일한 `401 INVALID_CREDENTIALS`를 반환한다.
+  미등록 이메일에도 BCrypt 검증과 실패 집계를 적용한다.
+- 계정별 최근 15분 실패 10회에 도달하면 `429 RATE_LIMITED`와 `Retry-After`를 반환한다.
+  제한은 열 번째 실패부터 15분이며, 제한 중 요청으로 연장되지 않는다. 정확히 만료되면 재시도할 수 있다.
+- 성공 시 해당 계정의 로그인 실패 이력만 초기화하며 이메일 발송 제한 이력과 다른 계정은 유지한다.
+- 계정별 행 잠금으로 실패 집계·제한 검사·성공 초기화를 직렬화한다.
+  세션 생성·JWT 발급·성공 초기화는 한 트랜잭션이며 실패 시 함께 롤백한다.
+- 저장소·JWT 발급 장애는 상세정보를 제외한 `503 AUTHENTICATION_UNAVAILABLE`로 반환한다.
+- CAPTCHA, 로그인 IP 제한, 점진적 지연은 MVP에 포함하지 않는다.
+- 로그인에는 차단 목록을 다시 적용하지 않는다. 비밀번호 설정·변경·재설정에 적용하는 정책이다.
+- 기존 Rate Limit 테이블을 로그인 전용 action으로 재사용하며 DB 스키마 변경은 없다.
 
 [이 문서 위로](#api-바로가기) · [전체 API 목차](../api-spec.md)
 

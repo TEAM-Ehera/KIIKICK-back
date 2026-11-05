@@ -30,6 +30,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -169,8 +170,10 @@ class SecurityAuthenticationTest {
 
     @Test
     void 공개_Auth_API는_토큰과_세션_조회가_필요하지_않다() throws Exception {
-        mockMvc.perform(get("/api/v1/auth/login"))
-                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/v1/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error.code").value("VALIDATION_FAILED"));
 
         verify(authSessionRepository, never()).findActiveById(any(), any());
     }

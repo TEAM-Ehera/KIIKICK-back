@@ -44,7 +44,7 @@
 
 | 순서 | 사용자가 하는 일 | 호출 | 보내는 값 / 보관할 값 |
 | --- | --- | --- | --- |
-| 1 | 로그인 | [AUTH-01](api/auth.md#auth-01) | 이메일·비밀번호 / accessToken. API는 #73에서 구현 예정 |
+| 1 | 로그인 | [AUTH-01](api/auth.md#auth-01) | 이메일·비밀번호 검증 / 15분 Access Token·90일 Refresh 세션 (#73 구현) |
 | 2 | 저장한 경기장 선택 | [GET /venues](api/setup.md#set-01) | 선택한 venueId |
 | 3 | 새 경기 묶음 생성 | [POST /matches](api/setup.md#set-07) | 제목·장소·예정 시각 / matchId와 ETag |
 | 4 | 쿼터 시간 설정 | [POST /matches/{matchId}/quarters](api/setup.md#set-17) | durationSeconds / quarterId와 새 ETag |
@@ -283,7 +283,7 @@ Authorization: Bearer <accessToken>
 | [AUTH-01A](api/auth.md#auth-01a) | 이메일 인증번호 발송·재발송 (구현) | `POST` | `/auth/email-verifications` | 202 |
 | [AUTH-01B](api/auth.md#auth-01b) | 이메일 인증번호 검증 (구현) | `POST` | `/auth/email-verifications/{verificationId}/verify` | 200 |
 | [AUTH-01C](api/auth.md#auth-01c) | 이메일 회원가입 완료 (구현) | `POST` | `/auth/signup` | 201 |
-| [AUTH-01](api/auth.md#auth-01) | 이메일·비밀번호 로그인 (예정 #73) | `POST` | `/auth/login` | 200 |
+| [AUTH-01](api/auth.md#auth-01) | 이메일·비밀번호 로그인 (구현 #73) | `POST` | `/auth/login` | 200 |
 | [AUTH-02](api/auth.md#auth-02) | 로그인 세션 갱신 (예정 #62) | `POST` | `/auth/refresh` | 200 |
 | [AUTH-03](api/auth.md#auth-03) | 로그아웃 (예정 #63) | `POST` | `/auth/logout` | 204 |
 | [AUTH-04](api/auth.md#auth-04) | 내 프로필 조회 (예정 #65) | `GET` | `/users/me` | 200 |
@@ -402,6 +402,7 @@ Authorization: Bearer <accessToken>
 [기능 명세](functional-spec.md) · [ERD](erd.md) · [응답 필드 사전](api/schemas.md) · [공통 규칙](api/common.md) · [정책 결정](decisions.md).
 
 v0.5는 구현된 이메일 인증번호 발송·검증과 회원가입 완료 API를 반영하고, 아직 구현되지
-않은 Auth API를 예정 상태로 구분했다. 그 밖의 API 경로·Method·필수 헤더와 운동 원본
+않은 Auth API를 예정 상태로 구분했다. 이후 #73에서 이메일·비밀번호 로그인과 계정별 실패 제한을 추가했다.
+그 밖의 API 경로·Method·필수 헤더와 운동 원본
 검증 규칙은 v0.4에서 변경하지 않았다. 운동 업로드 버전 검사와 샘플 경계 처리는 협의표의
 개선 제안이며, 합의 전 적용된 것으로 읽지 않는다.

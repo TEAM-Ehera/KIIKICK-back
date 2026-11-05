@@ -82,6 +82,16 @@ public class VerificationApiException extends RuntimeException {
         );
     }
 
+    public static VerificationApiException invalidCredentials() {
+        return new VerificationApiException(HttpStatus.UNAUTHORIZED, "INVALID_CREDENTIALS",
+                "이메일 또는 비밀번호가 올바르지 않습니다.", false, "NOT_SAVED", null, null);
+    }
+
+    public static VerificationApiException authenticationUnavailable() {
+        return new VerificationApiException(HttpStatus.SERVICE_UNAVAILABLE, "AUTHENTICATION_UNAVAILABLE",
+                "로그인할 수 없습니다. 잠시 후 다시 시도해주세요.", true, "NOT_SAVED", null, null);
+    }
+
     public HttpStatus status() {
         return status;
     }
