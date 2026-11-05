@@ -92,10 +92,10 @@ public class QuarterRepository {
         return number == null ? 1 : number;
     }
 
-    public boolean hasReadyQuarter(UUID matchId) {
+    public boolean hasQuarterInStatus(UUID matchId, String status) {
         return Boolean.TRUE.equals(jdbcTemplate.queryForObject(
-                "SELECT EXISTS (SELECT 1 FROM quarters WHERE match_id = ? AND status = 'READY')",
-                Boolean.class, uuidToBytes(matchId)
+                "SELECT EXISTS (SELECT 1 FROM quarters WHERE match_id = ? AND status = ?)",
+                Boolean.class, uuidToBytes(matchId), status
         ));
     }
 

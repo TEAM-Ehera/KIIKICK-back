@@ -377,6 +377,77 @@ class MatchControllerTest {
                 .andExpect(status().isConflict()).andExpect(jsonPath("$.error.code").value("INVALID_STATE"));
     }
 
+    @Test
+    void measuredQuarterRemainsActiveUntilCompletedAndMatchCanThenEnd() throws Exception {
+        String match = create(actor, "{}");
+        String first = addQuarter(match + "/quarters", 1);
+        String second = addQuarter(match + "/quarters", 2);
+        mvc.perform(transition(first, "start", actor, UUID.randomUUID(), 3)).andExpect(status().isConflict());
+        mvc.perform(transition(match, "ready", actor, UUID.randomUUID(), 3)).andExpect(status().isOk());
+        mvc.perform(transition(match, "start", actor, UUID.randomUUID(), 4)).andExpect(status().isOk());
+
+        mvc.perform(transition(first, "start", other, UUID.randomUUID(), 5)).andExpect(status().isNotFound());
+        mvc.perform(transition(first, "start", actor, UUID.randomUUID(), 5))
+                .andExpect(status().isOk()).andExpect(header().string("ETag", tag(6)))
+                .andExpect(jsonPath("$.data.status").value("IN_PROGRESS"))
+                .andExpect(jsonPath("$.data.startedAt").isNotEmpty());
+        mvc.perform(transition(first, "complete", actor, UUID.randomUUID(), 6))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.error.code").value("QUARTER_NOT_ENDED"));
+        mvc.perform(transition(first, "end", actor, UUID.randomUUID(), 6))
+                .andExpect(status().isOk()).andExpect(header().string("ETag", tag(7)))
+                .andExpect(jsonPath("$.data.status").value("IN_PROGRESS"))
+                .andExpect(jsonPath("$.data.endedAt").isNotEmpty());
+        mvc.perform(transition(second, "start", actor, UUID.randomUUID(), 7))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.error.code").value("ACTIVE_QUARTER_EXISTS"));
+        mvc.perform(transition(first, "end", actor, UUID.randomUUID(), 7))
+                .andExpect(status().isConflict());
+
+        UUID key = UUID.randomUUID();
+        var completed = mvc.perform(transition(first, "complete", actor, key, 7))
+                .andExpect(status().isOk()).andExpect(header().string("ETag", tag(8)))
+                .andExpect(jsonPath("$.data.status").value("COMPLETED"))
+                .andExpect(jsonPath("$.meta.matchVersion").value(8))
+                .andReturn().getResponse();
+        mvc.perform(transition(first, "complete", actor, key, 7))
+                .andExpect(status().isOk()).andExpect(content().string(completed.getContentAsString()));
+        mvc.perform(transition(match, "end", actor, UUID.randomUUID(), 8))
+                .andExpect(status().isConflict());
+        mvc.perform(transition(second, "start", actor, UUID.randomUUID(), 8)).andExpect(status().isOk());
+        mvc.perform(transition(second, "end", actor, UUID.randomUUID(), 9)).andExpect(status().isOk());
+        mvc.perform(transition(second, "complete", actor, UUID.randomUUID(), 10)).andExpect(status().isOk());
+        mvc.perform(transition(match, "end", actor, UUID.randomUUID(), 11))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.status").value("COMPLETED"));
+    }
+
+    @Test
+    void simultaneousQuarterStartsHaveOnlyOneWinner() throws Exception {
+        String match = create(actor, "{}");
+        String first = addQuarter(match + "/quarters", 1);
+        String second = addQuarter(match + "/quarters", 2);
+        mvc.perform(transition(match, "ready", actor, UUID.randomUUID(), 3)).andExpect(status().isOk());
+        mvc.perform(transition(match, "start", actor, UUID.randomUUID(), 4)).andExpect(status().isOk());
+
+        var ready = new CountDownLatch(2);
+        try (var pool = Executors.newFixedThreadPool(2)) {
+            var firstResult = pool.submit(() -> startConcurrently(first, ready));
+            var secondResult = pool.submit(() -> startConcurrently(second, ready));
+            int firstStatus = firstResult.get(10, TimeUnit.SECONDS);
+            int secondStatus = secondResult.get(10, TimeUnit.SECONDS);
+            assertEquals(java.util.Set.of(200, 412), java.util.Set.of(firstStatus, secondStatus));
+            String remaining = firstStatus == 200 ? second : first;
+            mvc.perform(transition(remaining, "start", actor, UUID.randomUUID(), 6))
+                    .andExpect(status().isConflict())
+                    .andExpect(jsonPath("$.error.code").value("ACTIVE_QUARTER_EXISTS"));
+        }
+    }
+
+    private int startConcurrently(String quarter, CountDownLatch ready) throws Exception {
+        ready.countDown();
+        assertTrue(ready.await(5, TimeUnit.SECONDS));
+        return mvc.perform(transition(quarter, "start", actor, UUID.randomUUID(), 5))
+                .andReturn().getResponse().getStatus();
+    }
+
     private static MockHttpServletRequestBuilder transition(String match, String action, UUID owner, UUID key,
                                                            long version) {
         return post(match + "/" + action).principal(owner::toString)

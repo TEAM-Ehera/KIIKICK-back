@@ -7,6 +7,7 @@ import com.teamehera.kiikick.match.service.MatchLifecycleService;
 import com.teamehera.kiikick.match.service.MatchMutation;
 import com.teamehera.kiikick.match.service.MatchSettingsService;
 import com.teamehera.kiikick.match.service.MatchOwnership;
+import com.teamehera.kiikick.match.service.QuarterLifecycleService;
 import com.teamehera.kiikick.match.service.QuarterSettingsService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
@@ -48,12 +49,13 @@ public class MatchController {
     private final MatchMutation mutation;
     private final MatchOwnership ownership;
     private final QuarterSettingsService quarters;
+    private final QuarterLifecycleService quarterLifecycle;
     private final ObjectMapper json;
     private final Duration retention;
 
     public MatchController(MatchListQuery list, MatchDetailQuery detail, MatchSettingsService settings,
                            MatchMutation mutation, MatchOwnership ownership, QuarterSettingsService quarters,
-                           MatchLifecycleService lifecycle, ObjectMapper json,
+                           MatchLifecycleService lifecycle, QuarterLifecycleService quarterLifecycle, ObjectMapper json,
                            @Value("${kiikick.match.idempotency-retention:P1D}") Duration retention) {
         this.list = list;
         this.detail = detail;
@@ -62,6 +64,7 @@ public class MatchController {
         this.mutation = mutation;
         this.ownership = ownership;
         this.quarters = quarters;
+        this.quarterLifecycle = quarterLifecycle;
         this.json = json;
         this.retention = retention;
     }
@@ -150,6 +153,24 @@ public class MatchController {
         return replay(mutation.execute(request, expiresAt(),
                 match -> ownership.requireQuarter(actor, matchId, quarterId),
                 match -> serializeQuarter(quarters.update(match, quarterId, duration(body)), 200, null)));
+    }
+
+    @PostMapping(QUARTER + "/{action:start|end|complete}")
+    public ResponseEntity<String> transitionQuarter(
+            Principal principal, @PathVariable UUID matchId, @PathVariable UUID quarterId,
+            @PathVariable String action,
+            @RequestHeader(value = "Idempotency-Key", required = false) String key,
+            @RequestHeader(value = HttpHeaders.IF_MATCH, required = false) String ifMatch,
+            @RequestBody(required = false) byte[] body) {
+        UUID actor = actor(principal);
+        if (body != null) {
+            throw new InvalidRequest();
+        }
+        var request = new MatchMutation.Request(actor, matchId, "POST",
+                quarterPath(matchId) + "/" + quarterId + "/" + action, key(key), ifMatch, null);
+        return replay(mutation.execute(request, expiresAt(),
+                match -> ownership.requireQuarter(actor, matchId, quarterId),
+                match -> serializeQuarter(quarterLifecycle.transition(match, quarterId, action), 200, null)));
     }
 
     @DeleteMapping(QUARTER)
