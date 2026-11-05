@@ -5,6 +5,8 @@ import com.teamehera.kiikick.match.service.MatchDetailQuery.DetailMeta;
 import com.teamehera.kiikick.match.service.MatchDetailQuery.VersionedResponse;
 import com.teamehera.kiikick.match.service.MatchMutation;
 import com.teamehera.kiikick.match.service.MatchOwnership;
+import com.teamehera.kiikick.match.service.QuarterWorkoutQuery;
+import com.teamehera.kiikick.match.service.QuarterWorkoutQuery.Workout;
 import com.teamehera.kiikick.workout.dto.WorkoutPayloadCreateRequest;
 import com.teamehera.kiikick.workout.service.QuarterWorkoutUpload;
 import jakarta.servlet.http.HttpServletRequest;
@@ -12,9 +14,11 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestParam;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
@@ -22,14 +26,11 @@ import java.io.IOException;
 import java.security.Principal;
 import java.time.Duration;
 import java.time.LocalDateTime;
-import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-
-import static com.teamehera.kiikick.match.api.MatchApiResponse.fromUtc;
 
 @MatchApiController
 public class QuarterWorkoutController {
@@ -45,24 +46,48 @@ public class QuarterWorkoutController {
     private final MatchOwnership ownership;
     private final MatchMutation mutation;
     private final QuarterWorkoutUpload upload;
+    private final QuarterWorkoutQuery query;
     private final ObjectMapper json;
     private final Duration retention;
     private final int maxBytes;
 
     public QuarterWorkoutController(QuarterRepository quarters, MatchOwnership ownership, MatchMutation mutation,
-                                    QuarterWorkoutUpload upload, ObjectMapper json,
+                                    QuarterWorkoutUpload upload, QuarterWorkoutQuery query, ObjectMapper json,
                                     @Value("${kiikick.match.idempotency-retention:P1D}") Duration retention,
                                     @Value("${kiikick.workout.max-upload-bytes:8388608}") int maxBytes) {
         this.quarters = quarters;
         this.ownership = ownership;
         this.mutation = mutation;
         this.upload = upload;
+        this.query = query;
         this.json = json;
         this.retention = retention;
         if (maxBytes < 1 || maxBytes == Integer.MAX_VALUE) {
             throw new IllegalArgumentException("kiikick.workout.max-upload-bytes must be positive and leave room for a sentinel byte");
         }
         this.maxBytes = maxBytes;
+    }
+
+    @GetMapping(PATH + "{quarterId}/workout")
+    public ResponseEntity<VersionedResponse<Workout>> workout(Principal principal, @PathVariable UUID quarterId) {
+        var result = query.workout(MatchController.actor(principal), quarterId);
+        return ResponseEntity.ok().eTag(MatchMutation.etag(result.meta().matchVersion())).body(result);
+    }
+
+    @GetMapping(PATH + "{quarterId}/track-points")
+    public ResponseEntity<QuarterWorkoutQuery.Page<QuarterWorkoutQuery.TrackSample>> trackPoints(
+            Principal principal, @PathVariable UUID quarterId,
+            @RequestParam(required = false) String cursor, @RequestParam(required = false) Integer limit) {
+        var result = query.trackPoints(MatchController.actor(principal), quarterId, cursor, limit);
+        return ResponseEntity.ok().eTag(MatchMutation.etag(result.meta().matchVersion())).body(result);
+    }
+
+    @GetMapping(PATH + "{quarterId}/heart-rate-samples")
+    public ResponseEntity<QuarterWorkoutQuery.Page<QuarterWorkoutQuery.HeartRate>> heartRateSamples(
+            Principal principal, @PathVariable UUID quarterId,
+            @RequestParam(required = false) String cursor, @RequestParam(required = false) Integer limit) {
+        var result = query.heartRateSamples(MatchController.actor(principal), quarterId, cursor, limit);
+        return ResponseEntity.ok().eTag(MatchMutation.etag(result.meta().matchVersion())).body(result);
     }
 
     @PostMapping(path = PATH + "{quarterId}/workout-payloads", consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -127,9 +152,7 @@ public class QuarterWorkoutController {
     }
 
     private MatchMutation.Response serialize(QuarterWorkoutUpload.Result result, String path) {
-        var workout = result.workout();
-        var data = new Workout(workout.id(), workout.quarterId(), fromUtc(workout.startDate()),
-                fromUtc(workout.endDate()), workout.totalCalories(), workout.totalDistance());
+        var data = Workout.from(result.workout());
         var meta = MatchApiResponse.Meta.create();
         var body = new VersionedResponse<>(data, new DetailMeta(meta.requestId(), meta.serverTime(), result.matchVersion()));
         String tag = MatchMutation.etag(result.matchVersion());
@@ -139,9 +162,6 @@ public class QuarterWorkoutController {
         return new MatchMutation.Response(result.created() ? 201 : 200,
                 json.writeValueAsString(headers), json.writeValueAsString(body));
     }
-
-    public record Workout(UUID id, UUID quarterId, OffsetDateTime startDate, OffsetDateTime endDate,
-                          double totalCalories, double totalDistance) {}
 
     static final class PayloadTooLarge extends RuntimeException {}
 }

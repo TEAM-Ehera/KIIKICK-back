@@ -6,6 +6,9 @@ import com.teamehera.kiikick.match.repository.QuarterRepository;
 import com.teamehera.kiikick.user.repository.UserRepository;
 import com.teamehera.kiikick.venue.domain.Venue;
 import com.teamehera.kiikick.venue.repository.VenueRepository;
+import com.teamehera.kiikick.workout.domain.HeartRateSample;
+import com.teamehera.kiikick.workout.domain.TrackPoint;
+import com.teamehera.kiikick.workout.repository.HeartRateSampleRepository;
 import com.teamehera.kiikick.workout.repository.QuarterSummaryRepository;
 import com.teamehera.kiikick.workout.repository.TrackPointRepository;
 import com.teamehera.kiikick.workout.repository.WorkoutPayloadRepository;
@@ -22,6 +25,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
@@ -50,6 +54,7 @@ class MatchControllerTest {
     @Autowired QuarterPlayerStatsRepository stats;
     @Autowired WorkoutPayloadRepository workouts;
     @Autowired QuarterSummaryRepository summaries;
+    @Autowired HeartRateSampleRepository heartRates;
     @MockitoSpyBean TrackPointRepository trackPoints;
 
     @DynamicPropertySource
@@ -641,6 +646,74 @@ class MatchControllerTest {
         var workout = workouts.findByQuarterId(quarterId).orElseThrow();
         assertEquals(1, trackPoints.findAllForCalculation(workout.id()).size());
         assertEquals(workout.id(), summaries.findByQuarterId(quarterId).orElseThrow().workoutPayloadId());
+    }
+
+    @Test
+    void workoutQueriesDistinguishMissingAndEmptyAndBindCursorsToTheSource() throws Exception {
+        String upload = completedQuarterUploadPath();
+        String quarter = upload.substring(0, upload.lastIndexOf('/'));
+        UUID quarterId = UUID.fromString(quarter.substring(quarter.lastIndexOf('/') + 1));
+        String trackPath = quarter + "/track-points";
+        String heartPath = quarter + "/heart-rate-samples";
+        for (String path : List.of(quarter + "/workout", trackPath, heartPath)) {
+            mvc.perform(get(path).principal(actor::toString)).andExpect(status().isNotFound());
+        }
+        String empty = """
+                {"startDate":815274000,"endDate":815274600,"totalCalories":100,"totalDistance":1500,
+                 "points":[],"heartRateSamples":[]}
+                """;
+        String location = mvc.perform(workoutUpload(upload, actor, UUID.randomUUID(), 8, empty))
+                .andExpect(status().isCreated()).andReturn().getResponse().getHeader("Location");
+        mvc.perform(get(location).principal(actor::toString))
+                .andExpect(status().isOk()).andExpect(header().string("ETag", tag(9)))
+                .andExpect(jsonPath("$.data.startDate").value(org.hamcrest.Matchers.endsWith("+09:00")))
+                .andExpect(jsonPath("$.data.points").doesNotExist())
+                .andExpect(jsonPath("$.data.heartRateSamples").doesNotExist());
+        for (String path : List.of(trackPath, heartPath)) {
+            mvc.perform(get(path).principal(actor::toString))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.data").isEmpty())
+                    .andExpect(jsonPath("$.meta.pagination.nextCursor").value(nullValue()));
+            mvc.perform(get(path).principal(other::toString)).andExpect(status().isNotFound());
+        }
+
+        var workout = workouts.findByQuarterId(quarterId).orElseThrow();
+        var timestamp = workout.startDate();
+        trackPoints.saveAll(List.of(
+                new TrackPoint(workout.id(), 2, 37, 127, 20, 5, -1, -1, timestamp),
+                new TrackPoint(workout.id(), 0, 37, 127, 20, 5, -1, -1, timestamp),
+                new TrackPoint(workout.id(), 1, 37, 127, 20, 5, -1, -1, timestamp)));
+        heartRates.saveAll(List.of(new HeartRateSample(workout.id(), 1, timestamp, 141),
+                new HeartRateSample(workout.id(), 0, timestamp, 140)));
+
+        String cursor = firstSampleCursor(trackPath);
+        mvc.perform(get(trackPath).principal(actor::toString).param("cursor", cursor).param("limit", "2"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.length()").value(2))
+                .andExpect(jsonPath("$.data[0].sampleSeq").value(1))
+                .andExpect(jsonPath("$.data[1].sampleSeq").value(2))
+                .andExpect(jsonPath("$.meta.pagination.hasNext").value(false));
+        mvc.perform(get(heartPath).principal(actor::toString).param("cursor", firstSampleCursor(heartPath)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data[0].bpm").value(141));
+        mvc.perform(get(heartPath).principal(actor::toString).param("cursor", cursor))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.error.code").value("INVALID_CURSOR"));
+        mvc.perform(get(trackPath).principal(actor::toString).param("cursor", "*"))
+                .andExpect(status().isBadRequest());
+        mvc.perform(get(trackPath).principal(actor::toString).param("limit", "101"))
+                .andExpect(status().isBadRequest());
+
+        summaries.saveProcessing(quarterId, workout.id(), "v1", "{}", "{}", "f".repeat(64), timestamp);
+        mvc.perform(get(trackPath).principal(actor::toString).param("cursor", cursor))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("CURSOR_SNAPSHOT_CHANGED"));
+    }
+
+    private String firstSampleCursor(String path) throws Exception {
+        var first = mvc.perform(get(path).principal(actor::toString).param("limit", "1"))
+                .andExpect(status().isOk()).andExpect(header().string("ETag", tag(9)))
+                .andExpect(jsonPath("$.data[0].sampleSeq").value(0))
+                .andExpect(jsonPath("$.data[0].timestamp").value(org.hamcrest.Matchers.endsWith("+09:00")))
+                .andExpect(jsonPath("$.meta.pagination.hasNext").value(true))
+                .andReturn().getResponse();
+        return json.readTree(first.getContentAsString()).at("/meta/pagination/nextCursor").asText();
     }
 
     private String completedQuarterUploadPath() throws Exception {
