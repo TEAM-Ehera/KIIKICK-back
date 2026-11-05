@@ -168,7 +168,7 @@ class MySqlRepositoryIntegrationTest {
                 """,
                 Integer.class
         );
-        assertEquals(27, tableCount);
+        assertEquals(28, tableCount);
     }
 
     @Test

@@ -329,3 +329,18 @@ CREATE TABLE sync_operations (
     FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE SET NULL,
     FOREIGN KEY (match_id) REFERENCES matches(id)
 );
+
+CREATE TABLE auth_refresh_token_history (
+    token_hash VARCHAR(64) NOT NULL,
+    session_id BINARY(16) NOT NULL,
+    generation BIGINT NOT NULL,
+    consumed_at TIMESTAMP(6) NOT NULL,
+    expires_at TIMESTAMP(6) NOT NULL,
+    PRIMARY KEY (token_hash),
+    CONSTRAINT uq_refresh_history_generation UNIQUE (session_id, generation),
+    CONSTRAINT fk_refresh_history_session FOREIGN KEY (session_id) REFERENCES auth_sessions(id),
+    CONSTRAINT chk_refresh_history_generation CHECK (generation >= 0),
+    CONSTRAINT chk_refresh_history_expiry CHECK (consumed_at < expires_at)
+);
+CREATE INDEX idx_refresh_history_expiry ON auth_refresh_token_history(expires_at);
+CREATE INDEX idx_auth_sessions_refresh_hash ON auth_sessions(refresh_token_hash);

@@ -26,6 +26,10 @@ public class RefreshTokenIssuer {
     }
 
     public IssuedRefreshToken issue() {
+        return issue(clock.instant().plus(ABSOLUTE_LIFETIME));
+    }
+
+    public IssuedRefreshToken issue(Instant absoluteExpiresAt) {
         byte[] tokenBytes = new byte[TOKEN_BYTES];
         secureRandom.nextBytes(tokenBytes);
         String token = Base64.getUrlEncoder().withoutPadding()
@@ -33,11 +37,11 @@ public class RefreshTokenIssuer {
         return new IssuedRefreshToken(
                 token,
                 sha256(token),
-                clock.instant().plus(ABSOLUTE_LIFETIME)
+                absoluteExpiresAt
         );
     }
 
-    private String sha256(String token) {
+    public String sha256(String token) {
         try {
             byte[] digest = MessageDigest.getInstance("SHA-256")
                     .digest(token.getBytes(StandardCharsets.UTF_8));

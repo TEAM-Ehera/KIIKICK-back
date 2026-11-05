@@ -92,6 +92,16 @@ public class VerificationApiException extends RuntimeException {
                 "로그인할 수 없습니다. 잠시 후 다시 시도해주세요.", true, "NOT_SAVED", null, null);
     }
 
+    public static VerificationApiException invalidRefreshToken(boolean revoked) {
+        return new VerificationApiException(HttpStatus.UNAUTHORIZED, "INVALID_REFRESH_TOKEN",
+                "만료·폐기·재사용된 토큰", false, revoked ? "SAVED" : "NOT_SAVED", null, null);
+    }
+
+    public static VerificationApiException refreshUnavailable() {
+        return new VerificationApiException(HttpStatus.SERVICE_UNAVAILABLE, "SERVICE_UNAVAILABLE",
+                "세션을 갱신할 수 없습니다. 잠시 후 다시 시도해주세요.", true, "NOT_SAVED", null, null);
+    }
+
     public HttpStatus status() {
         return status;
     }

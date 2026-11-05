@@ -19,7 +19,7 @@ Auth 날짜 응답과 성공·오류 메타는 ISO 8601 Asia/Seoul `+09:00` 문�
 | [AUTH-01B](#auth-01b) | 이메일 인증번호 검증 | `POST` | `/auth/email-verifications/{verificationId}/verify` | 구현 (#61) |
 | [AUTH-01C](#auth-01c) | 이메일 회원가입 완료 | `POST` | `/auth/signup` | 구현 (#72) |
 | [AUTH-01](#auth-01) | 이메일·비밀번호 로그인 | `POST` | `/auth/login` | 구현 (#73) |
-| [AUTH-02](#auth-02) | 로그인 세션 갱신 | `POST` | `/auth/refresh` | 예정 (#62) |
+| [AUTH-02](#auth-02) | 로그인 세션 갱신 | `POST` | `/auth/refresh` | 구현 (#62) |
 | [AUTH-03](#auth-03) | 로그아웃 | `POST` | `/auth/logout` | 예정 (#63) |
 | [AUTH-04](#auth-04) | 내 프로필 조회 | `GET` | `/users/me` | 예정 (#65) |
 | [AUTH-05](#auth-05) | 내 프로필 수정 | `PATCH` | `/users/me` | 예정 (#65) |
@@ -168,7 +168,7 @@ Access Token은 15분, Refresh Token은 최초 발급부터 최대 90일이며 D
 ---
 
 <a id="auth-02"></a>
-## AUTH-02 · 로그인 세션 갱신 (예정 · #62)
+## AUTH-02 · 로그인 세션 갱신 (구현 · #62)
 
 access token 만료 시 refresh token을 교환한다.
 
@@ -177,7 +177,7 @@ access token 만료 시 refresh token을 교환한다.
 | 요청 | `POST /api/v1/auth/refresh` |
 | 권한 | refresh token |
 | 성공 | **200** · [응답 필드 사전 · Session](schemas.md#session) |
-| 구현 상태 | 예정. 현재 Controller가 없어 호출할 수 없음 |
+| 구현 상태 | 구현. RefreshController → RefreshService → RefreshTransactionService |
 
 ### 요청 헤더
 
@@ -206,7 +206,13 @@ Query parameter: 없음.
 
 1. 성공하면 기존 refresh token을 원자적으로 폐기하고 새 토큰을 안전하게 저장한다.
 2. 최초 로그인 기준 90일 절대 만료, Rotation, 이전 토큰 재사용 탐지와 해당 세션 폐기는 확정 정책이다.
-3. 정상적인 동시 갱신·네트워크 재시도를 공격성 재사용과 구분하는 구체 방식은 #62 구현 전 결정한다. 클라이언트는 동시 갱신을 한 건으로 합친다.
+3. Grace Window는 사용하지 않는다. 소비된 토큰을 다시 제출하면 해당 세션을 폐기한다. 정상 동시 요청·응답 유실 후 재시도도 재사용으로 판단될 수 있으며 재로그인이 필요하다. iOS single-flight는 클라이언트 연동 사항이다.
+4. 세션 행 잠금 후 해시·세대를 다시 확인하고 소비 이력 저장·Rotation을 하나의 트랜잭션으로 처리한다. 재사용에 따른 폐기는 오류 응답 전에 커밋한다.
+5. 소비된 해시 이력은 세션 절대 만료까지 보존하고 만료 후 Spring 애플리케이션 내부 정리 작업으로 삭제한다. 원문은 저장하지 않는다.
+
+#62 추가 승인(2026-11-06): 앱 내부 `@EnableScheduling`을 사용하고 시작 1시간 후부터 이전 정리 완료 기준 1시간 간격으로 실행한다. `expires_at <= UTC 현재 시각`만 삭제하며 실패는 기록 후 다음 주기에 재시도한다. 여러 인스턴스의 중복 삭제는 멱등적이지만 DB 잠금·공용 커넥션 풀의 성능 경합까지 제거하는 것은 아니다. 별도 배치 시스템은 도입하지 않는다.
+
+6. DB는 UTC DATETIME(6), 내부 계산은 Instant, 응답은 Asia/Seoul +09:00을 유지한다. 세션 폐기 후 기존 Access Token은 최대 15분간 유효할 수 있다.
 
 ### 요청 예시
 

@@ -5,7 +5,7 @@
 | 목적 | MySQL SQL | DBML | 범위 |
 | --- | --- | --- | --- |
 | 현재 PR 구조 참고 | [current-pr.sql](current-pr.sql) | [current-pr.dbml](current-pr.dbml) | 4개 테이블, 3개 FK |
-| 쿼터 중심 개인 기록 설계 | [full-design.sql](full-design.sql) | [full-design.dbml](full-design.dbml) | 24개 테이블, 30개 FK |
+| 쿼터 중심 개인 기록 설계 | [full-design.sql](full-design.sql) | [full-design.dbml](full-design.dbml) | 25개 테이블, 31개 FK |
 
 ## 확정된 기록 방향
 

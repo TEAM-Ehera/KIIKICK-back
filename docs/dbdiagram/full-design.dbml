@@ -247,7 +247,25 @@ Table "auth_sessions" {
   "expires_at" DATETIME(6) [not null]
   "revoked_at" DATETIME(6)
   "created_at" DATETIME(6) [not null]
+  Indexes {
+    refresh_token_hash [name: "idx_auth_sessions_refresh_hash"]
+  }
 }
+
+Table "auth_refresh_token_history" {
+  "token_hash" VARCHAR(64) [pk, not null]
+  "session_id" BINARY(16) [not null]
+  "generation" BIGINT [not null]
+  "consumed_at" DATETIME(6) [not null]
+  "expires_at" DATETIME(6) [not null]
+  Indexes {
+    (session_id, generation) [unique, name: "uq_refresh_history_generation"]
+    expires_at [name: "idx_refresh_history_expiry"]
+  }
+  Note: 'generation >= 0; consumed_at < expires_at; UTC; 세션 절대 만료까지 보존'
+}
+
+Ref "fk_refresh_history_session": "auth_refresh_token_history"."session_id" > "auth_sessions"."id"
 
 Table "devices" {
   "id" BINARY(16) [pk, not null]

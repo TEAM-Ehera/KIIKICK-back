@@ -2,7 +2,7 @@
 
 **v0.4 · 2026-11-02 · 개인 기록 설계**
 
-기준 물리 정의는 [full-design.sql](dbdiagram/full-design.sql)과 [full-design.dbml](dbdiagram/full-design.dbml)이다. 컬럼 사전은 해당 SQL의 24개 테이블·30개 FK를 반영한다. 전체 ERD 이미지는 사용자가 제공한 dbdiagram 화면을 사용한다. 운영 DB나 현재 PR에 적용된 스키마라는 의미는 아니다.
+기준 물리 정의는 [full-design.sql](dbdiagram/full-design.sql)과 [full-design.dbml](dbdiagram/full-design.dbml)이다. 컬럼 사전은 해당 SQL의 25개 테이블·31개 FK를 반영한다. 전체 ERD 이미지는 사용자가 제공한 dbdiagram 화면을 사용한다. 운영 DB나 현재 PR에 적용된 스키마라는 의미는 아니다.
 
 ## 1. 모델 원칙
 
@@ -286,7 +286,7 @@
 
 ### auth_sessions
 
-로그인 세션·갱신 토큰 해시·회전 세대. 인증 방식에 따라 구현 확정.
+로그인 세션·갱신 토큰 해시·회전 세대. created_at은 최초 발급 시각, expires_at은 연장하지 않는 90일 절대 만료다.
 
 | 컬럼 | SQL 타입 | null | 키 |
 | --- | --- | --- | --- |
@@ -299,7 +299,24 @@
 | revoked_at | DATETIME(6) | NULL |  |
 | created_at | DATETIME(6) | NOT NULL |  |
 
-인덱스: `PRIMARY KEY (`id`)`.
+인덱스: PK(id), idx_auth_sessions_refresh_hash(refresh_token_hash).
+
+### auth_refresh_token_history (#62)
+
+| 컬럼 | SQL 타입 | null | 키 |
+| --- | --- | --- | --- |
+| token_hash | VARCHAR(64) | NOT NULL | PK, 소비된 SHA-256 해시 |
+| session_id | BINARY(16) | NOT NULL | FK → auth_sessions.id |
+| generation | BIGINT | NOT NULL | 세대, 0 이상 |
+| consumed_at | DATETIME(6) | NOT NULL | UTC 소비 시각 |
+| expires_at | DATETIME(6) | NOT NULL | 세션 절대 만료 |
+
+UNIQUE(session_id, generation), INDEX(expires_at), CHECK(consumed_at < expires_at).
+Grace 없이 재사용을 탐지하며 세션 절대 만료까지 보존한다. 만료 후 시간 단위로 정리한다.
+
+#62 추가 승인(2026-11-06): 앱 내부 `@EnableScheduling`을 사용하고 시작 1시간 후부터 이전 정리 완료 기준 1시간 간격으로 실행한다. `expires_at <= UTC 현재 시각`만 삭제하며 실패는 기록 후 다음 주기에 재시도한다. 여러 인스턴스의 중복 삭제는 멱등적이지만 DB 잠금·공용 커넥션 풀의 성능 경합까지 제거하는 것은 아니다. 별도 배치 시스템은 도입하지 않는다.
+
+원문·복호화 가능한 토큰은 저장하지 않는다. V003은 V002 이후 적용하며 기존 만료일을 변경하지 않는다.
 
 ### devices
 

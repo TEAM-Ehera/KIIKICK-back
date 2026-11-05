@@ -284,7 +284,7 @@ Authorization: Bearer <accessToken>
 | [AUTH-01B](api/auth.md#auth-01b) | 이메일 인증번호 검증 (구현) | `POST` | `/auth/email-verifications/{verificationId}/verify` | 200 |
 | [AUTH-01C](api/auth.md#auth-01c) | 이메일 회원가입 완료 (구현) | `POST` | `/auth/signup` | 201 |
 | [AUTH-01](api/auth.md#auth-01) | 이메일·비밀번호 로그인 (구현 #73) | `POST` | `/auth/login` | 200 |
-| [AUTH-02](api/auth.md#auth-02) | 로그인 세션 갱신 (예정 #62) | `POST` | `/auth/refresh` | 200 |
+| [AUTH-02](api/auth.md#auth-02) | 로그인 세션 갱신 (구현 #62) | `POST` | `/auth/refresh` | 200 |
 | [AUTH-03](api/auth.md#auth-03) | 로그아웃 (예정 #63) | `POST` | `/auth/logout` | 204 |
 | [AUTH-04](api/auth.md#auth-04) | 내 프로필 조회 (예정 #65) | `GET` | `/users/me` | 200 |
 | [AUTH-05](api/auth.md#auth-05) | 내 프로필 수정 (예정 #65) | `PATCH` | `/users/me` | 200 |
