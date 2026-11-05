@@ -19,11 +19,11 @@ public class OpenApiConfig {
                         .title("KIIKICK Backend API")
                         .version("v1")
                         .description("""
-                                KIIKICK 사용자 관리 및 Apple Watch 운동 기록 업로드 API입니다.
+                                KIIKICK 경기·쿼터 기록, 운동 업로드·결과·분석, 경기장, 친구, 알림 및 사용자 관리 API입니다.
 
                                 WorkoutPayload의 날짜 숫자는 2001-01-01T00:00:00Z 기준 초 단위 Apple epoch입니다.
                                 서버는 날짜를 UTC로 변환하여 저장합니다.
-                                현재 개발 단계에서는 인증 없이 URL의 userId로 운동 소유자를 지정합니다.
+                                기존 사용자 운동 업로드 경로는 URL의 userId를 사용합니다. 경기·쿼터 API는 요청의 사용자 Principal로 소유권을 확인합니다.
                                 """));
     }
 }
