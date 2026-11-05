@@ -23,6 +23,8 @@ class AuthenticationIntegrationTest extends AuthenticatedApiTest {
     @Autowired MockMvc mvc;
     @Autowired UserRepository users;
     @Autowired ObjectMapper json;
+    @Autowired com.teamehera.kiikick.auth.repository.AuthSessionRepository sessions;
+    @Autowired org.springframework.security.oauth2.jwt.JwtDecoder decoder;
     private final UUID actor = UUID.randomUUID();
     private final UUID other = UUID.randomUUID();
 
@@ -52,11 +54,15 @@ class AuthenticationIntegrationTest extends AuthenticatedApiTest {
     }
 
     @Test
-    void deletingUserInvalidatesTheirExistingAccessToken() throws Exception {
+    void deletionStopsSessionRefreshWhileShortLivedAccessTokenRemainsValid() throws Exception {
         String token = bearer(actor);
         mvc.perform(get("/api/v1/matches").header("Authorization", token)).andExpect(status().isOk());
+        UUID session = UUID.fromString(decoder.decode(token.substring(7)).getClaimAsString("sid"));
         users.softDelete(actor);
-        mvc.perform(get("/api/v1/matches").header("Authorization", token)).andExpect(status().isUnauthorized());
+        org.junit.jupiter.api.Assertions.assertTrue(sessions.findActiveById(session,
+                java.time.LocalDateTime.now(java.time.ZoneOffset.UTC)).isEmpty());
+        // P01의 15분 Stateless 정책: 삭제 전 Access Token은 만료까지 검증된다.
+        mvc.perform(get("/api/v1/matches").header("Authorization", token)).andExpect(status().isOk());
     }
 
     @Test

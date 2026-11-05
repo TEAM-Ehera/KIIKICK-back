@@ -36,7 +36,7 @@ v0.4. 표의 모든 키는 응답에 포함한다. nullable 값은 null이며 �
 | `sessionId` | UUID | O | 불가 | — | 로그아웃 대상 세션 ID |
 | `accessToken` | string | O | 불가 | — | 서버 인증에 사용하는 비밀값. 로그 금지 |
 | `refreshToken` | string | O | 불가 | — | 갱신 시 회전하는 비밀값. 로그 금지 |
-| `expiresAt` | timestamp | O | 불가 | — | access token 만료 시각. 예시의 수명은 확정값 아님 |
+| `expiresAt` | timestamp | O | 불가 | — | 발급 시점부터 15분인 access token 만료 시각 |
 | `user` | UserSelf | O | 불가 | — | 본인 계정·온보딩 정보 |
 
 중첩 타입: [응답 필드 사전 · UserSelf](schemas.md#userself)

@@ -1,6 +1,5 @@
 package com.teamehera.kiikick.auth.security;
 
-import com.teamehera.kiikick.auth.domain.AuthSession;
 import com.teamehera.kiikick.auth.repository.AuthSessionRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -21,18 +20,15 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.Instant;
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -58,11 +54,9 @@ class SecurityAuthenticationTest {
     private AuthSessionRepository authSessionRepository;
 
     @Test
-    void 활성_세션의_토큰은_인증_Principal을_제공한다() throws Exception {
+    void 유효한_JWT는_세션_조회_없이_인증_Principal을_제공한다() throws Exception {
         UUID userId = UUID.randomUUID();
         UUID sessionId = UUID.randomUUID();
-        when(authSessionRepository.findActiveById(eq(sessionId), any()))
-                .thenReturn(Optional.of(activeSession(sessionId, userId)));
 
         String token = accessTokenService.issue(userId, sessionId).token();
 
@@ -72,37 +66,20 @@ class SecurityAuthenticationTest {
                 .andExpect(jsonPath("$.userId").value(userId.toString()))
                 .andExpect(jsonPath("$.sessionId").value(sessionId.toString()));
 
-        verify(authSessionRepository).findActiveById(eq(sessionId), any());
+        verifyNoInteractions(authSessionRepository);
     }
 
     @Test
-    void 토큰이_유효해도_세션이_없거나_폐기되었으면_401이다() throws Exception {
+    void 세션이_폐기되어도_발급된_JWT는_만료_전까지_유효할_수_있다() throws Exception {
         UUID userId = UUID.randomUUID();
         UUID sessionId = UUID.randomUUID();
-        when(authSessionRepository.findActiveById(eq(sessionId), any()))
-                .thenReturn(Optional.empty());
 
         mockMvc.perform(get("/api/v1/security-test")
                         .header("Authorization", "Bearer "
                                 + accessTokenService.issue(userId, sessionId).token()))
-                .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.error.code").value("UNAUTHENTICATED"))
-                .andExpect(jsonPath("$.meta.requestId").exists())
-                .andExpect(jsonPath("$.meta.serverTime").exists());
-    }
+                .andExpect(status().isOk());
 
-    @Test
-    void 토큰_사용자와_세션_사용자가_다르면_401이다() throws Exception {
-        UUID tokenUserId = UUID.randomUUID();
-        UUID sessionId = UUID.randomUUID();
-        when(authSessionRepository.findActiveById(eq(sessionId), any()))
-                .thenReturn(Optional.of(activeSession(sessionId, UUID.randomUUID())));
-
-        mockMvc.perform(get("/api/v1/security-test")
-                        .header("Authorization", "Bearer "
-                                + accessTokenService.issue(tokenUserId, sessionId).token()))
-                .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.error.code").value("UNAUTHENTICATED"));
+        verifyNoInteractions(authSessionRepository);
     }
 
     @Test
@@ -119,6 +96,34 @@ class SecurityAuthenticationTest {
                 .andExpect(jsonPath("$.error.code").value("UNAUTHENTICATED"));
 
         verify(authSessionRepository, never()).findActiveById(any(), any());
+    }
+
+    @Test
+    void 사용자_ID가_없거나_필수_UUID_클레임이_잘못되면_401이다() throws Exception {
+        String missingUserId = customToken(
+                Instant.now().minusSeconds(1),
+                Instant.now().plusSeconds(300),
+                Map.of(AccessTokenService.SESSION_ID_CLAIM, UUID.randomUUID().toString())
+        );
+        String invalidSessionId = customToken(
+                Instant.now().minusSeconds(1),
+                Instant.now().plusSeconds(300),
+                Map.of(
+                        AccessTokenService.USER_ID_CLAIM, UUID.randomUUID().toString(),
+                        AccessTokenService.SESSION_ID_CLAIM, "invalid-uuid"
+                )
+        );
+
+        mockMvc.perform(get("/api/v1/security-test")
+                        .header("Authorization", "Bearer " + missingUserId))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code").value("UNAUTHENTICATED"));
+        mockMvc.perform(get("/api/v1/security-test")
+                        .header("Authorization", "Bearer " + invalidSessionId))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code").value("UNAUTHENTICATED"));
+
+        verifyNoInteractions(authSessionRepository);
     }
 
     @Test
@@ -168,15 +173,15 @@ class SecurityAuthenticationTest {
     }
 
     @Test
-    void 발급된_Access_Token의_수명은_4시간이다() {
+    void 발급된_Access_Token의_수명은_15분이다() {
         Instant before = Instant.now();
         IssuedAccessToken issued = accessTokenService.issue(
                 UUID.randomUUID(), UUID.randomUUID()
         );
 
         assertThat(issued.expiresAt())
-                .isBetween(before.plusSeconds(4 * 60 * 60),
-                        Instant.now().plusSeconds(4 * 60 * 60 + 1));
+                .isBetween(before.plusSeconds(15 * 60),
+                        Instant.now().plusSeconds(15 * 60 + 1));
     }
 
     @Test
@@ -214,17 +219,6 @@ class SecurityAuthenticationTest {
         verify(authSessionRepository, never()).findActiveById(any(), any());
     }
 
-    @Test
-    void sessionDatabaseFailureIsRetryable503NotInvalidCredentials() throws Exception {
-        when(authSessionRepository.findActiveById(any(), any()))
-                .thenThrow(new org.springframework.dao.DataAccessResourceFailureException("private-db-detail"));
-        String token = accessTokenService.issue(UUID.randomUUID(), UUID.randomUUID()).token();
-        mockMvc.perform(get("/api/v1/security-test").header("Authorization", "Bearer " + token))
-                .andExpect(status().isServiceUnavailable())
-                .andExpect(jsonPath("$.error.code").value("TEMPORARILY_UNAVAILABLE"))
-                .andExpect(jsonPath("$.error.retryable").value(true));
-    }
-
     private String customToken(
             Instant issuedAt,
             Instant expiresAt,
@@ -245,19 +239,6 @@ class SecurityAuthenticationTest {
                 JwsHeader.with(MacAlgorithm.HS256).type("JWT").build(),
                 claims.build()
         )).getTokenValue();
-    }
-
-    private AuthSession activeSession(UUID sessionId, UUID userId) {
-        return new AuthSession(
-                sessionId,
-                userId,
-                UUID.randomUUID(),
-                "refresh-token-hash",
-                0,
-                LocalDateTime.now().plusDays(1),
-                null,
-                LocalDateTime.now()
-        );
     }
 
     @RestController

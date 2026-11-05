@@ -24,12 +24,6 @@ public class AuthAuthenticationEntryPoint implements AuthenticationEntryPoint {
             HttpServletResponse response,
             AuthenticationException exception
     ) throws IOException, ServletException {
-        if (exception instanceof org.springframework.security.oauth2.core.OAuth2AuthenticationException oauth
-                && "temporarily_unavailable".equals(oauth.getError().getErrorCode())) {
-            errorWriter.write(request, response, HttpServletResponse.SC_SERVICE_UNAVAILABLE,
-                    "TEMPORARILY_UNAVAILABLE", "인증 상태를 지금 확인할 수 없습니다.");
-            return;
-        }
         boolean expired = isExpired(exception);
         errorWriter.write(
                 request, response,
