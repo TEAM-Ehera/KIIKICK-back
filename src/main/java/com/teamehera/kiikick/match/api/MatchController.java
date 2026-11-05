@@ -9,6 +9,7 @@ import com.teamehera.kiikick.match.service.MatchSettingsService;
 import com.teamehera.kiikick.match.service.MatchOwnership;
 import com.teamehera.kiikick.match.service.QuarterLifecycleService;
 import com.teamehera.kiikick.match.service.QuarterSettingsService;
+import com.teamehera.kiikick.match.service.QuarterStatsService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -18,10 +19,12 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 import java.security.Principal;
@@ -41,6 +44,7 @@ public class MatchController {
     static final String PATH = "/api/v1/matches";
     private static final String QUARTERS = "/{matchId}/quarters";
     private static final String QUARTER = QUARTERS + "/{quarterId}";
+    private static final String QUARTER_STATS = QUARTER + "/stats";
 
     private final MatchListQuery list;
     private final MatchDetailQuery detail;
@@ -50,12 +54,14 @@ public class MatchController {
     private final MatchOwnership ownership;
     private final QuarterSettingsService quarters;
     private final QuarterLifecycleService quarterLifecycle;
+    private final QuarterStatsService quarterStats;
     private final ObjectMapper json;
     private final Duration retention;
 
     public MatchController(MatchListQuery list, MatchDetailQuery detail, MatchSettingsService settings,
                            MatchMutation mutation, MatchOwnership ownership, QuarterSettingsService quarters,
-                           MatchLifecycleService lifecycle, QuarterLifecycleService quarterLifecycle, ObjectMapper json,
+                           MatchLifecycleService lifecycle, QuarterLifecycleService quarterLifecycle,
+                           QuarterStatsService quarterStats, ObjectMapper json,
                            @Value("${kiikick.match.idempotency-retention:P1D}") Duration retention) {
         this.list = list;
         this.detail = detail;
@@ -65,6 +71,7 @@ public class MatchController {
         this.ownership = ownership;
         this.quarters = quarters;
         this.quarterLifecycle = quarterLifecycle;
+        this.quarterStats = quarterStats;
         this.json = json;
         this.retention = retention;
     }
@@ -171,6 +178,41 @@ public class MatchController {
         return replay(mutation.execute(request, expiresAt(),
                 match -> ownership.requireQuarter(actor, matchId, quarterId),
                 match -> serializeQuarter(quarterLifecycle.transition(match, quarterId, action), 200, null)));
+    }
+
+    @GetMapping(QUARTER_STATS)
+    public ResponseEntity<MatchDetailQuery.VersionedResponse<QuarterStatsService.Stats>> getQuarterStats(
+            Principal principal, @PathVariable UUID matchId, @PathVariable UUID quarterId) {
+        var response = quarterStats.find(actor(principal), matchId, quarterId);
+        return ResponseEntity.ok().eTag(MatchMutation.etag(response.meta().matchVersion())).body(response);
+    }
+
+    @PutMapping(path = QUARTER_STATS, consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<String> replaceQuarterStats(
+            Principal principal, @PathVariable UUID matchId, @PathVariable UUID quarterId,
+            @RequestHeader(value = "Idempotency-Key", required = false) String key,
+            @RequestHeader(value = HttpHeaders.IF_MATCH, required = false) String ifMatch,
+            @RequestBody(required = false) byte[] body) {
+        UUID actor = actor(principal);
+        var request = new MatchMutation.Request(actor, matchId, "PUT",
+                quarterPath(matchId) + "/" + quarterId + "/stats", key(key), ifMatch, body);
+        return replay(mutation.execute(request, expiresAt(),
+                match -> ownership.requireQuarter(actor, matchId, quarterId), match -> {
+                    var input = MatchSettings.readBody(json, body);
+                    MatchSettings.checkObject(input, "body", Set.of("goals", "assists"));
+                    var invalidFields = List.of("goals", "assists").stream()
+                            .filter(field -> !isNonNegativeInteger(input.path(field))).toList();
+                    if (!invalidFields.isEmpty()) {
+                        throw new MatchSettings.InvalidSettings(invalidFields);
+                    }
+                    var response = quarterStats.replace(match, quarterId,
+                            input.path("goals").intValue(), input.path("assists").intValue());
+                    return serialize(response, response.meta().matchVersion(), 200, null);
+                }));
+    }
+
+    private static boolean isNonNegativeInteger(JsonNode value) {
+        return value.isIntegralNumber() && value.canConvertToInt() && value.intValue() >= 0;
     }
 
     @DeleteMapping(QUARTER)
