@@ -5,6 +5,7 @@ import com.teamehera.kiikick.match.service.MatchDetailQuery.DetailMeta;
 import com.teamehera.kiikick.match.service.MatchDetailQuery.VersionedResponse;
 import com.teamehera.kiikick.match.service.MatchMutation;
 import com.teamehera.kiikick.match.service.MatchOwnership;
+import com.teamehera.kiikick.match.service.MatchWorkoutSubmission;
 import com.teamehera.kiikick.match.service.QuarterWorkoutQuery;
 import com.teamehera.kiikick.match.service.QuarterWorkoutQuery.Workout;
 import com.teamehera.kiikick.workout.dto.WorkoutPayloadCreateRequest;
@@ -30,6 +31,7 @@ import java.security.Principal;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -52,6 +54,7 @@ public class QuarterWorkoutController {
     private final MatchMutation mutation;
     private final QuarterWorkoutUpload upload;
     private final QuarterWorkoutQuery query;
+    private final MatchWorkoutSubmission submission;
     private final QuarterSummaryCommands summaryCommands;
     private final ObjectMapper json;
     private final Duration retention;
@@ -59,7 +62,7 @@ public class QuarterWorkoutController {
 
     public QuarterWorkoutController(QuarterRepository quarters, MatchOwnership ownership, MatchMutation mutation,
                                     QuarterWorkoutUpload upload, QuarterWorkoutQuery query,
-                                    QuarterSummaryCommands summaryCommands, ObjectMapper json,
+                                    QuarterSummaryCommands summaryCommands, MatchWorkoutSubmission submission, ObjectMapper json,
                                     @Value("${kiikick.match.idempotency-retention:P1D}") Duration retention,
                                     @Value("${kiikick.workout.max-upload-bytes:8388608}") int maxBytes) {
         this.quarters = quarters;
@@ -67,6 +70,7 @@ public class QuarterWorkoutController {
         this.mutation = mutation;
         this.upload = upload;
         this.query = query;
+        this.submission = submission;
         this.summaryCommands = summaryCommands;
         this.json = json;
         this.retention = retention;
@@ -169,13 +173,7 @@ public class QuarterWorkoutController {
         var quarter = quarters.findByIdAndOwnerId(quarterId, actor)
                 .orElseThrow(MatchOwnership.ResourceNotFound::new);
         UUID requestKey = MatchController.key(key);
-        if (httpRequest.getContentLengthLong() > maxBytes) {
-            throw new PayloadTooLarge();
-        }
-        byte[] body = httpRequest.getInputStream().readNBytes(Math.addExact(maxBytes, 1));
-        if (body.length > maxBytes) {
-            throw new PayloadTooLarge();
-        }
+        byte[] body = readUpload(httpRequest);
         String path = PATH + quarterId;
         var request = new MatchMutation.Request(actor, quarter.matchId(), "POST",
                 path + "/workout-payloads", requestKey, ifMatch, body);
@@ -186,6 +184,78 @@ public class QuarterWorkoutController {
         return replay(result);
     }
 
+    @PostMapping(path = MatchController.PATH + "/{matchId}/workout-submissions",
+            consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<String> submit(
+            Principal principal, @PathVariable UUID matchId,
+            @RequestHeader(value = "Idempotency-Key", required = false) String key,
+            @RequestHeader(value = HttpHeaders.IF_MATCH, required = false) String ifMatch,
+            HttpServletRequest httpRequest) throws IOException {
+        UUID actor = MatchController.actor(principal);
+        ownership.requireMatch(actor, matchId);
+        UUID requestKey = MatchController.key(key);
+        byte[] body = readUpload(httpRequest);
+        String path = MatchController.PATH + "/" + matchId;
+        var request = new MatchMutation.Request(actor, matchId, "POST", path + "/workout-submissions",
+                requestKey, ifMatch, body);
+        return replay(mutation.execute(request, LocalDateTime.now(ZoneOffset.UTC).plus(retention),
+                match -> {}, match -> {
+                    var entries = parseSubmission(body);
+                    long version = submission.save(match, entries);
+                    var meta = MatchApiResponse.Meta.create();
+                    var response = new VersionedResponse<>(new SubmissionReceipt(matchId, entries.size()),
+                            new DetailMeta(meta.requestId(), meta.serverTime(), version));
+                    var headers = Map.of(HttpHeaders.LOCATION, path + "/result",
+                            HttpHeaders.RETRY_AFTER, SUMMARY_RETRY_SECONDS, HttpHeaders.ETAG, MatchMutation.etag(version));
+                    return new MatchMutation.Response(202, json.writeValueAsString(headers),
+                            json.writeValueAsString(response));
+                }));
+    }
+
+    private Map<UUID, MatchWorkoutSubmission.Entry> parseSubmission(byte[] body) {
+        var root = MatchSettings.readBody(json, body);
+        MatchSettings.checkObject(root, "body", Set.of("quarters"));
+        var quarters = root.path("quarters");
+        if (!quarters.isArray() || quarters.isEmpty()) {
+            throw new MatchSettings.InvalidSettings(List.of("quarters"));
+        }
+
+        Map<UUID, MatchWorkoutSubmission.Entry> entries = new HashMap<>();
+        int index = 0;
+        for (var item : quarters) {
+            String field = "quarters[" + index++ + "]";
+            MatchSettings.checkObject(item, field, Set.of("quarterId", "position", "workout"));
+            var id = item.path("quarterId");
+            if (!id.isTextual() || id.asText().length() != 36) {
+                throw new MatchSettings.InvalidSettings(List.of(field + ".quarterId"));
+            }
+            var quarterId = MatchSettings.uuid(id.asText(), field + ".quarterId");
+            if (entries.containsKey(quarterId)) {
+                throw new MatchSettings.InvalidSettings(List.of(field + ".quarterId"));
+            }
+            var position = item.path("position");
+            if (!position.isTextual()) {
+                throw new MatchSettings.InvalidSettings(List.of(field + ".position"));
+            }
+            entries.put(quarterId, new MatchWorkoutSubmission.Entry(
+                    position.asText(), parseWorkout(item.path("workout"), field + ".workout")));
+        }
+        return entries;
+    }
+
+    private record SubmissionReceipt(UUID matchId, int quarterCount) {}
+
+    private byte[] readUpload(HttpServletRequest httpRequest) throws IOException {
+        if (httpRequest.getContentLengthLong() > maxBytes) {
+            throw new PayloadTooLarge();
+        }
+        byte[] body = httpRequest.getInputStream().readNBytes(Math.addExact(maxBytes, 1));
+        if (body.length > maxBytes) {
+            throw new PayloadTooLarge();
+        }
+        return body;
+    }
+
     private ResponseEntity<String> replay(MatchMutation.Response result) {
         var response = ResponseEntity.status(result.status()).contentType(MediaType.APPLICATION_JSON);
         json.readTree(result.headersJson()).properties()
@@ -194,11 +264,15 @@ public class QuarterWorkoutController {
     }
 
     private WorkoutPayloadCreateRequest parse(byte[] body) {
-        var root = MatchSettings.readBody(json, body);
-        MatchSettings.checkObject(root, "body", PAYLOAD_FIELDS);
-        requireNumbers(root, TOTAL_FIELDS, "");
-        requireSamples(root.path("points"), POINT_FIELDS, "points");
-        requireSamples(root.path("heartRateSamples"), HEART_RATE_FIELDS, "heartRateSamples");
+        return parseWorkout(MatchSettings.readBody(json, body), "body");
+    }
+
+    private WorkoutPayloadCreateRequest parseWorkout(JsonNode root, String field) {
+        MatchSettings.checkObject(root, field, PAYLOAD_FIELDS);
+        String prefix = "body".equals(field) ? "" : field + ".";
+        requireNumbers(root, TOTAL_FIELDS, prefix);
+        requireSamples(root.path("points"), POINT_FIELDS, prefix + "points");
+        requireSamples(root.path("heartRateSamples"), HEART_RATE_FIELDS, prefix + "heartRateSamples");
         return json.treeToValue(root, WorkoutPayloadCreateRequest.class);
     }
 

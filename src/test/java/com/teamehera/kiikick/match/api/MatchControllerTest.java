@@ -605,6 +605,55 @@ class MatchControllerTest {
     }
 
     @Test
+    void matchWorkoutSubmissionRollsBackAllQuartersAndReplaysSuccessfulRetry() throws Exception {
+        String match = create(actor, "{}");
+        String first = addQuarter(match + "/quarters", 1);
+        String second = addQuarter(match + "/quarters", 2);
+        UUID firstId = UUID.fromString(first.substring(first.lastIndexOf('/') + 1));
+        UUID secondId = UUID.fromString(second.substring(second.lastIndexOf('/') + 1));
+
+        long version = 3;
+        mvc.perform(transition(match, "ready", actor, UUID.randomUUID(), version++)).andExpect(status().isOk());
+        mvc.perform(transition(match, "start", actor, UUID.randomUUID(), version++)).andExpect(status().isOk());
+        for (String quarter : java.util.List.of(first, second)) {
+            for (String action : java.util.List.of("start", "end", "complete")) {
+                mvc.perform(transition(quarter, action, actor, UUID.randomUUID(), version++)).andExpect(status().isOk());
+            }
+        }
+        mvc.perform(transition(match, "end", actor, UUID.randomUUID(), version++)).andExpect(status().isOk());
+
+        String path = match + "/workout-submissions";
+        String body = """
+                {"quarters":[
+                  {"quarterId":"%s","position":"TEST_FIRST","workout":%s},
+                  {"quarterId":"%s","position":"TEST_SECOND","workout":%s}
+                ]}
+                """.formatted(firstId, WORKOUT, secondId, WORKOUT);
+        UUID key = UUID.randomUUID();
+        mvc.perform(workoutUpload(path, actor, key, version, body.replace("TEST_SECOND", "UNKNOWN")))
+                .andExpect(status().isUnprocessableContent());
+        assertTrue(workouts.findByQuarterId(firstId).isEmpty());
+        assertTrue(summaries.findByQuarterId(firstId).isEmpty());
+        mvc.perform(get(first + "/position").principal(actor::toString))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data").value(nullValue()));
+
+        var accepted = mvc.perform(workoutUpload(path, actor, key, version, body))
+                .andExpect(status().isAccepted())
+                .andExpect(header().string("ETag", tag(version + 1)))
+                .andExpect(header().string("Location", match + "/result"))
+                .andExpect(jsonPath("$.data.quarterCount").value(2))
+                .andReturn().getResponse();
+        mvc.perform(workoutUpload(path, actor, key, version, body))
+                .andExpect(status().isAccepted()).andExpect(content().string(accepted.getContentAsString()));
+        mvc.perform(get(match + "/result/quarters").principal(actor::toString))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].position.positionCode").value("TEST_FIRST"))
+                .andExpect(jsonPath("$.data[1].position.positionCode").value("TEST_SECOND"))
+                .andExpect(jsonPath("$.data[0].summary.calculationStatus").value("PROCESSING"))
+                .andExpect(jsonPath("$.data[1].summary.calculationStatus").value("PROCESSING"));
+    }
+
+    @Test
     void workoutRejectsInvalidSamplesAndRollsBackWhenSampleWriteFails() throws Exception {
         String path = completedQuarterUploadPath();
         UUID quarterId = UUID.fromString(path.split("/")[4]);

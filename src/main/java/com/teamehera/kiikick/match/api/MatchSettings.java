@@ -25,7 +25,7 @@ public record MatchSettings(Field<String> title, Field<UUID> venueId,
     public static MatchSettings parse(ObjectMapper json, byte[] body) {
         JsonNode root = readBody(json, body);
         checkObject(root, "body", Set.of("title", "venueId", "venueSnapshot", "scheduledAt"));
-        var venueId = new Field<>(root.has("venueId"), uuid(text(root, "venueId", 36)));
+        var venueId = new Field<>(root.has("venueId"), uuid(text(root, "venueId", 36), "venueId"));
         var snapshot = new Field<>(root.has("venueSnapshot"), snapshot(root.get("venueSnapshot")));
         if (venueId.value() != null && snapshot.value() != null) {
             throw new InvalidSettings(List.of("venueId", "venueSnapshot"));
@@ -77,7 +77,7 @@ public record MatchSettings(Field<String> title, Field<UUID> venueId,
         return value.asText();
     }
 
-    private static UUID uuid(String value) {
+    static UUID uuid(String value, String field) {
         if (value == null) {
             return null;
         }
@@ -89,7 +89,7 @@ public record MatchSettings(Field<String> title, Field<UUID> venueId,
         } catch (IllegalArgumentException ignored) {
             // Report malformed and noncanonical UUIDs with the same error.
         }
-        throw new InvalidSettings(List.of("venueId"));
+        throw new InvalidSettings(List.of(field));
     }
 
     private static OffsetDateTime scheduledAt(String value) {

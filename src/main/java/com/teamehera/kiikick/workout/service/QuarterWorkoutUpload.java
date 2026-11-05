@@ -43,6 +43,12 @@ public class QuarterWorkoutUpload {
 
     // MatchMutation locks the parent across deduplication, sample inserts and publication of PROCESSING.
     public Result save(Match match, Quarter quarter, WorkoutPayloadCreateRequest request) {
+        var stored = store(match, quarter, request);
+        return new Result(stored.workout(), incrementVersion(match), stored.created());
+    }
+
+    // The caller owns the match lock and advances its version once for the entire mutation.
+    public StoredWorkout store(Match match, Quarter quarter, WorkoutPayloadCreateRequest request) {
         if (quarter.endedAt() == null) {
             throw new QuarterNotEnded();
         }
@@ -72,7 +78,7 @@ public class QuarterWorkoutUpload {
             if (existingHash.filter(hash::equals).isEmpty()) {
                 throw new WorkoutAlreadyExists();
             }
-            return new Result(existing.orElseThrow(), incrementVersion(match), false);
+            return new StoredWorkout(existing.orElseThrow(), false);
         }
 
         var workout = new WorkoutPayload(UUID.randomUUID(), quarter.id(), match.ownerId(), start, end,
@@ -81,7 +87,7 @@ public class QuarterWorkoutUpload {
         tracks.saveAll(WorkoutPayloadService.createTrackPoints(workout.id(), request.points()));
         heartRates.saveAll(WorkoutPayloadService.createHeartRateSamples(workout.id(), request.heartRateSamples()));
         summaries.saveProcessing(quarter.id(), workout.id(), "v1", "{}", "{}", hash, LocalDateTime.now(ZoneOffset.UTC));
-        return new Result(workout, incrementVersion(match), true);
+        return new StoredWorkout(workout, true);
     }
 
     private long incrementVersion(Match match) {
@@ -110,6 +116,8 @@ public class QuarterWorkoutUpload {
             throw new IllegalStateException("SHA-256 unavailable", exception);
         }
     }
+
+    public record StoredWorkout(WorkoutPayload workout, boolean created) {}
 
     public record Result(WorkoutPayload workout, long matchVersion, boolean created) {}
 
