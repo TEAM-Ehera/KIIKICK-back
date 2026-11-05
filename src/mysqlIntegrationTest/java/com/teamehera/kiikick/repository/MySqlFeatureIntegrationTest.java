@@ -32,6 +32,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 @AutoConfigureMockMvc
 class MySqlFeatureIntegrationTest {
     @Autowired JdbcTemplate jdbc;
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    com.teamehera.kiikick.auth.email.VerificationEmailSender emailSender;
     @Autowired MockMvc mvc;
     @Autowired ObjectMapper json;
     @Autowired UserRepository users;

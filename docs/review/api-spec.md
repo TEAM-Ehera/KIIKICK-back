@@ -46,7 +46,7 @@
 
 | 순서 | 사용자가 하는 일 | 호출 | 보내는 값 / 보관할 값 |
 | --- | --- | --- | --- |
-| 1 | 로그인 | AUTH-01 | 제공자 토큰 / accessToken. 인증 제공자는 미확정 |
+| 1 | 로그인 | AUTH-01 | 이메일·비밀번호 / accessToken. API는 #73 구현 예정 |
 | 2 | 저장한 경기장 선택 | GET /venues | 선택한 venueId |
 | 3 | 새 경기 묶음 생성 | POST /matches | 제목·장소·예정 시각 / matchId와 ETag |
 | 4 | 쿼터 시간 설정 | POST /matches/{matchId}/quarters | durationSeconds / quarterId와 새 ETag |
@@ -323,22 +323,25 @@ Authorization: Bearer <accessToken>
 ## 7. 전체 API 목록
 
 
-총 **66개 경로/Method 계약**이다. 명령 동기화는 지원 범위 검토 중인 기술 초안도 포함한다. 각 행의 성공 상태는 아래 상세 문서와 함께 읽는다.
+총 **70개 경로/Method 계약**이다. 구현 예정 인증 API 및 #44에서 보류한 명령 동기화 계약도 포함한다. 현재 구현 상태는 원본 API 목차를 따른다.
 
 ### 인증·온보딩·마이페이지
 
 | API ID | 기능 | Method | 경로 | 성공 |
 | --- | --- | --- | --- | --- |
-| AUTH-01 | 로그인·가입 토큰 교환 | `POST` | `/auth/exchange` | 200 |
-| AUTH-02 | 로그인 세션 갱신 | `POST` | `/auth/refresh` | 200 |
-| AUTH-03 | 로그아웃 | `POST` | `/auth/logout` | 204 |
-| AUTH-04 | 내 프로필 조회 | `GET` | `/users/me` | 200 |
-| AUTH-05 | 내 프로필 수정 | `PATCH` | `/users/me` | 200 |
-| AUTH-06 | 온보딩 완료 | `PUT` | `/users/me/onboarding` | 200 |
-| AUTH-07 | 현재 동의 목록 조회 | `GET` | `/users/me/consents` | 200 |
-| AUTH-08 | 동의 부여·철회 | `PUT` | `/users/me/consents/{purpose}` | 200 |
-| AUTH-09 | 회원 탈퇴 요청 | `POST` | `/users/me/deletion-requests` | 202 |
-| AUTH-10 | 탈퇴 처리 상태 조회 | `GET` | `/users/me/deletion-requests/{deletionId}` | 200 |
+| AUTH-01A | 이메일 인증번호 발송·재발송 (구현) | `POST` | `/auth/email-verifications` | 202 |
+| AUTH-01B | 이메일 인증번호 검증 (구현) | `POST` | `/auth/email-verifications/{verificationId}/verify` | 200 |
+| AUTH-01C | 이메일 회원가입 완료 (구현) | `POST` | `/auth/signup` | 201 |
+| AUTH-01 | 이메일·비밀번호 로그인 (예정 #73) | `POST` | `/auth/login` | 200 |
+| AUTH-02 | 로그인 세션 갱신 (예정 #62) | `POST` | `/auth/refresh` | 200 |
+| AUTH-03 | 로그아웃 (예정 #63) | `POST` | `/auth/logout` | 204 |
+| AUTH-04 | 내 프로필 조회 (예정 #65) | `GET` | `/users/me` | 200 |
+| AUTH-05 | 내 프로필 수정 (예정 #65) | `PATCH` | `/users/me` | 200 |
+| AUTH-06 | 온보딩 완료 (예정 #66) | `PUT` | `/users/me/onboarding` | 200 |
+| AUTH-07 | 현재 동의 목록 조회 (예정 #68) | `GET` | `/users/me/consents` | 200 |
+| AUTH-08 | 동의 부여·철회 (예정 #68) | `PUT` | `/users/me/consents/{purpose}` | 200 |
+| AUTH-09 | 회원 탈퇴 요청 (예정 #69) | `POST` | `/users/me/deletion-requests` | 202 |
+| AUTH-10 | 탈퇴 처리 상태 조회 (예정 #69) | `GET` | `/users/me/deletion-requests/{deletionId}` | 200 |
 
 ### 알림·기기
 

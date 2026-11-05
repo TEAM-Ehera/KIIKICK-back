@@ -21,6 +21,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 class AuthenticationIntegrationTest extends AuthenticatedApiTest {
     @Autowired MockMvc mvc;
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    com.teamehera.kiikick.auth.email.VerificationEmailSender emailSender;
     @Autowired UserRepository users;
     @Autowired ObjectMapper json;
     @Autowired com.teamehera.kiikick.auth.repository.AuthSessionRepository sessions;
@@ -37,6 +39,31 @@ class AuthenticationIntegrationTest extends AuthenticatedApiTest {
     void createUsers() {
         users.save(actor, "owner");
         users.save(other, "other");
+    }
+
+    @Test
+    void verifiedSignupTokenCanCreateMatchWithCorrectOwnerAndFifteenMinuteExpiry() throws Exception {
+        String email = UUID.randomUUID() + "@example.com";
+        var challenge = mvc.perform(post("/api/v1/auth/email-verifications")
+                        .contentType("application/json").content(json.writeValueAsString(java.util.Map.of("email", email))))
+                .andExpect(status().isAccepted()).andReturn().getResponse();
+        var code = org.mockito.ArgumentCaptor.forClass(String.class);
+        org.mockito.Mockito.verify(emailSender).sendSignUpCode(org.mockito.ArgumentMatchers.eq(email), code.capture(), org.mockito.ArgumentMatchers.eq(3L));
+        String verificationId = json.readTree(challenge.getContentAsString()).at("/data/verificationId").asText();
+        var verified = mvc.perform(post("/api/v1/auth/email-verifications/" + verificationId + "/verify")
+                        .contentType("application/json").content(json.writeValueAsString(java.util.Map.of("code", code.getValue()))))
+                .andExpect(status().isOk()).andReturn().getResponse();
+        String registration = json.readTree(verified.getContentAsString()).at("/data/registrationToken").asText();
+        var signup = mvc.perform(post("/api/v1/auth/signup").contentType("application/json")
+                        .content(json.writeValueAsString(java.util.Map.of("registrationToken", registration, "password", "Strong-local-pass!72"))))
+                .andExpect(status().isCreated()).andReturn().getResponse();
+        var body = json.readTree(signup.getContentAsString());
+        assertEquals(body.at("/meta/requestId").asText(), signup.getHeader("X-Request-Id"));
+        var jwt = decoder.decode(body.at("/data/accessToken").asText());
+        assertEquals(java.time.Duration.ofMinutes(15), java.time.Duration.between(jwt.getIssuedAt(), jwt.getExpiresAt()));
+        mvc.perform(post("/api/v1/matches").header("Authorization", "Bearer " + jwt.getTokenValue())
+                        .header("Idempotency-Key", UUID.randomUUID()).contentType("application/json").content("{}"))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.data.ownerId").value(body.at("/data/user/id").asText()));
     }
 
     @Test

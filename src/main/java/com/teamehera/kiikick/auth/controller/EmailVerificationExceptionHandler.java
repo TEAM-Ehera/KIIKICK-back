@@ -28,7 +28,11 @@ import java.util.UUID;
 @RestControllerAdvice(basePackages = "com.teamehera.kiikick.auth.controller")
 public class EmailVerificationExceptionHandler {
 
-    private static final Clock CLOCK = Clock.systemUTC();
+    private final Clock clock;
+
+    public EmailVerificationExceptionHandler(org.springframework.beans.factory.ObjectProvider<Clock> clocks) {
+        this.clock = clocks.getIfAvailable(Clock::systemUTC);
+    }
     private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
 
     @ExceptionHandler(VerificationApiException.class)
@@ -37,10 +41,9 @@ public class EmailVerificationExceptionHandler {
     ) {
         HttpHeaders headers = new HttpHeaders();
         if (exception.retryAt() != null) {
-            long seconds = Math.max(1, Duration.between(
-                    LocalDateTime.ofInstant(CLOCK.instant(), ZoneOffset.UTC),
-                    exception.retryAt()
-            ).toSeconds());
+            var wait = Duration.between(LocalDateTime.ofInstant(clock.instant(), ZoneOffset.UTC), exception.retryAt());
+            // 소수 초를 올림해 안내한 시각보다 이른 재시도로 다시 거절되지 않게 한다.
+            long seconds = Math.max(1, wait.getSeconds() + (wait.getNano() == 0 ? 0 : 1));
             headers.set(HttpHeaders.RETRY_AFTER, Long.toString(seconds));
         }
         return new ResponseEntity<>(body(
@@ -94,7 +97,7 @@ public class EmailVerificationExceptionHandler {
                 ),
                 new AuthApiMeta(
                         UUID.randomUUID(),
-                        OffsetDateTime.now(CLOCK.withZone(SEOUL))
+                        OffsetDateTime.now(clock.withZone(SEOUL))
                 )
         );
     }

@@ -2,9 +2,9 @@
 
 ## 범위와 재현 기준
 
-검토 시점의 저장소 PR 36개(종료·병합·열림 포함)를 목록과 현재 코드에 대조했다. 종료된 대체 구현은 역사·대체 관계를 확인하고, 실행 검증은 현재 JDBC/Spring Boot 통합 코드에 집중했다. 이전 PR 브랜치들을 수정·강제 푸시한 것이 아니라 별도 통합 브랜치에 수정 사항을 모았다. 운영 승인이나 모든 가능한 입력에 대한 무결함 보증을 뜻하지 않는다.
+검토 시점의 저장소 PR 38개(종료·병합·열림 포함)를 목록과 현재 코드에 대조했다. 종료된 대체 구현은 역사·대체 관계를 확인하고, 실행 검증은 현재 JDBC/Spring Boot 통합 코드에 집중했다. 이전 PR 브랜치들을 수정·강제 푸시한 것이 아니라 별도 통합 브랜치에 수정 사항을 모았다. 운영 승인이나 모든 가능한 입력에 대한 무결함 보증을 뜻하지 않는다.
 
-- 기반: `feat/#43-analytics`의 `838d31d`; 최신 develop, #34, #57/#67/#75, #77/#78을 순차 병합한 `f96b037` 위에서 수정.
+- 기반: `feat/#43-analytics`의 `838d31d`; develop, #34, #57/#67/#75, #77/#78을 순차 병합한 `f96b037` 위에서 수정. 마지막 원격 확인에서 추가된 #78의 `59a1fbe`(15분 Stateless 정책), #79/#80의 `d5dd382`까지 반영했다.
 - 기존 PR #35는 계산 시도 식별자 방식이 충돌하므로 의도적으로 병합 제외.
 - Java 21, 저장소 Spring Boot 4.1.2; 기본 H2와 별도 Docker MySQL 8.4.11 사용.
 - MySQL은 이번 작업 전용 `kiikick-review-mysql`·tmpfs·loopback 13379. 기존 컨테이너와 운영 DB는 변경하지 않음.
@@ -13,11 +13,10 @@
 
 | 우선순위 | 문제와 발생 조건 | 수정 | 검증 |
 | --- | --- | --- | --- |
-| P1 | #78 Principal이 record의 문자열로 노출되어 경기 API의 UUID 파싱이 실패 | AuthenticatedUser가 Principal을 구현하고 getName()으로 내부 UUID 제공 | 모든 기능 HTTP 테스트를 실제 서명 JWT+저장된 세션으로 전환 |
+| P1 | #78 Principal이 record의 문자열로 노출되어 경기 API의 UUID 파싱이 실패 | AuthenticatedUser가 Principal을 구현하고 getName()으로 내부 UUID 제공 | 모든 기능 HTTP 테스트를 실제 서명 JWT로 전환(최신 P01에 따라 매 요청 세션 조회는 없음) |
 | P1 | 유효한 토큰으로 구형 /user/{타인ID} CRUD·업로드 접근 가능, 전체 사용자 조회 및 가입 우회 생성 가능 | 자기 ID 경로만 허용, 기존 전체 목록/생성 차단 | 타인 조회·수정·삭제·업로드 403, 본인 조회 200, 타인 데이터 불변 |
-| P1 | 삭제된 사용자의 활성 세션이 인증에 계속 사용됨 | Access/Refresh 세션 조회에서 삭제되지 않은 users와 JOIN | 발급 토큰으로 조회 성공→softDelete→같은 토큰 401 |
+| P2 | 삭제된 사용자의 Refresh 세션을 조회할 수 있음 | 저장소의 활성 세션 조회에서 삭제되지 않은 users와 JOIN | 삭제 후 Refresh용 세션 조회는 비어 있음. Access Token은 최신 P01대로 만료까지 유효 |
 | P2 | exp 없는 서명 토큰 및 aud 누락을 명시적으로 처리하지 않음 | exp 필수·aud null-safe 검증 | 각각 401, DB 세션 조회하지 않음 |
-| P2 | 인증 DB 장애가 정상적인 JSON 오류로 처리되지 않음 | 인증 필터 실패 경로에 retryable 503 매핑 | 저장소 예외 주입 후 TEMPORARILY_UNAVAILABLE |
 | P2 | 신규 경기/결과/분석/경기장 성공 응답과 인증 오류의 X-Request-Id 누락·형식 불일치 | Envelope/Metadata 계약으로 중복 직렬화 없이 GET 헤더 생성, 쓰기·204 헤더 저장/재생, 인증 오류 공통 타입 사용 | 본문 ID=헤더, 204 재전송 ID 동일, 401 WWW-Authenticate 및 NOT_SAVED |
 | P2 | 예상하지 못한 서비스/DB 오류에서 공통 오류 계약과 저장 여부 표현이 깨짐 | scoped advice의 500/503 응답, 변경 실패 persistence=UNKNOWN, 식별자·예외 타입만 로그 | DB 예외 주입, retryable·UNKNOWN 확인, 원본 예외 메시지 비노출 |
 | P2 | 워커의 PROCESSING 조회가 5초마다 전체 요약 스캔+정렬 | V003 상태/시각/쿼터 인덱스, 최신 SQL/DBML/H2 동기화 | EXPLAIN의 ALL/filesort→idx_summary_pending ref, filesort 제거 |
@@ -63,10 +62,14 @@
 | [#75](https://github.com/TEAM-Ehera/KIIKICK-back/pull/75) | OPEN | 보이는 대상만 목록/미읽음/읽음, 첫 읽음, 토큰 암호화/폐기 회귀. P09 발송 미구현. |
 | [#76](https://github.com/TEAM-Ehera/KIIKICK-back/pull/76) | OPEN | 서울 [from,to), 빈 버킷, 가중 평균, 누락·비교 버전·양쪽 동의 검증. 문서 상태 보완. |
 | [#77](https://github.com/TEAM-Ehera/KIIKICK-back/pull/77) | OPEN · draft | HMAC/코드 교체·실패 누적·일회용 토큰·동시 발송 한도 확인. retryAt 경계 오류 수정. |
-| [#78](https://github.com/TEAM-Ehera/KIIKICK-back/pull/78) | OPEN · draft | Principal 연결, legacy 접근, 삭제 계정 세션, exp/aud 검증, 인증 장애 503와 공통 오류 보완. |
+| [#78](https://github.com/TEAM-Ehera/KIIKICK-back/pull/78) | OPEN · draft | 최신 15분 Stateless 정책 반영. Principal 연결, legacy 접근, exp/aud 검증, 공통 오류 보완. |
+
+| [#79](https://github.com/TEAM-Ehera/KIIKICK-back/pull/79) | OPEN | 인증번호/재발송/실패 누적·SMTP 롤백·rate limit 트랜잭션 검토. X-Request-Id와 Retry-After 올림 보완. |
+| [#80](https://github.com/TEAM-Ehera/KIIKICK-back/pull/80) | OPEN | 일회용 registrationToken 소비·회원/세션 원자성·BCrypt/차단 목록 검토. 오래된 4시간 계약을 15분으로 정리하고 가입 토큰으로 경기 생성까지 검증. |
 
 ## 설계·동시성·복잡도 판단
 
+- 최신 P01은 보호 API의 인증 과정에서 DB 세션을 조회하지 않는다. 로그아웃·탈퇴 직후에도 기존 Access Token이 최대 15분 유효한 것은 문서에 명시한 정책이며 즉시 폐기 보장으로 오해하면 안 된다.
 - 변경은 MatchMutation이 소유자/경기 잠금, 버전 전제조건, 도메인 변경과 멱등 응답 저장을 같은 트랜잭션으로 묶는다. 같은 사용자의 서로 다른 경기 쓰기도 직렬화되는 비용이 있다. 현재 경기장 삭제와 경기 수정의 잠금 순서 보장이 우선이며, 실제 병목 자료 없이 잠금을 분리하지 않았다.
 - 친구 변경은 사용자 두 행을 같은 순서로 잠근다. 검색은 바인딩 파라미터와 LIKE escape를 쓰며, 차단과 소유권을 응답 재생 시에도 다시 확인한다. Java UUID의 정렬 규칙을 사용하는 기존 pair 정규화는 데이터 재배치 없이 유지했다.
 - 조회 요약은 원본을 매번 계산하지 않는다. 경기 결과 페이지는 자식 테이블별 IN 조회를 사용하여 쿼터 수만큼 쿼리를 반복하지 않는다.
@@ -84,10 +87,11 @@
 | V003 전 | ALL | 없음 | Using where; Using filesort |
 | V003 후 | ref | idx_summary_pending | 없음 |
 
-- Java 21 기본 테스트 **127개 통과**, MySQL 통합 **9개 통과**. 실패·오류·건너뜀 0. 인증 필터를 끄지 않고 기능 테스트의 JWT를 검증한다.
+- Java 21 기본 테스트 **159개 통과**, MySQL 통합 **11개 통과**. 실패·오류·건너뜀 0. 인증 필터를 끄지 않고 기능 테스트의 JWT를 검증한다.
 - MySQL: 기존 create-tables.sql → V001 → V002 → V003 적용. 기존 업로드, 27개 테이블, FK/UUID/DATETIME(6)/JSON, 이메일 동시 한도와 실제 HTTP 경합 검증.
 - HTTP MySQL: 동일 키 동시 생성은 같은 자원/메타데이터를 재생, 같은 ETag 다른 키 수정은 200/412로 분리. 생성→쿼터→상태 전이→완료→지연 업로드→워커 중복 실행→결과 및 analytics 조회.
 - REQUIRES_NEW 발송 제한 테스트의 고정 식별자가 반복 실행 시 누적되던 문제를 실행별 고유 이메일/IP로 수정했다.
+- 최초 127/9개 검증 후 원격 #79/#80까지 반영하여 최종 전체 테스트를 재실행했다.
 - bootJar 패키징 및 git diff --check 통과. 실제 Jenkins, AWS 관측, APNs, iOS 기기는 이번 로컬 검증 범위가 아니다.
 
 ## 병합·출시 전에 남은 사항
@@ -95,7 +99,7 @@
 1. **#35는 현 상태로 함께 병합하지 않는다.** calculation_job_id를 제거하지만 V001은 해당 컬럼을 NOT NULL로 생성하고 #52~#55는 UUID 기반 작업 세대를 사용한다. 이 통합안은 UUID 방식을 유지한다. updated_at 방식의 별도 변경을 채택하려면 도메인·워커·DDL·테스트 전체를 함께 전환해야 한다. 기존 PR을 자동 종료하거나 원격 브랜치를 덮어쓰지 않았다.
 2. **P05 실제 positionCode 목록 미확정.** 기본 설정이 빈 목록이므로 저장 요청은 422다. 미입력 완료는 허용되지만 정상 포지션 저장을 출시하려면 코드 합의/설정이 필요하다.
 3. **P10/P11 잔여 정책.** #44는 온라인 조작만 확정했다. 센서 시계 오차·파일 크기·재측정·키 만료 후 정리/재사용·원본 보존과 삭제 기준은 아직 모두 확정되지 않았다. expires_at 저장만 있고 자동 정리/재사용은 구현하지 않았다.
-4. **인증/동의 API의 실제 제품 흐름.** #78의 토큰 검증 및 저장소 연결은 검증했지만 이메일 발송→가입→로그인→갱신·동의 UI까지 전체 API가 이 PR에 구현된 것은 아니다. 구형 가입 우회 경로를 계속 사용하는 클라이언트는 전용 인증 API로 이행해야 한다.
+4. **인증/동의 API의 실제 제품 흐름.** #78의 토큰 검증 및 저장소 연결은 검증했지만 이메일 코드 요청→검증→가입→발급 JWT로 경기 생성은 HTTP 통합 테스트를 추가했다. 실제 SMTP 외부 발송은 mock으로 대체했으며 로그인·갱신·동의 UI까지 전체 흐름을 구현한 것은 아니다. 구형 가입 우회 경로를 계속 사용하는 클라이언트는 전용 인증 API로 이행해야 한다.
 5. **P09 알림 생성·발송.** 목록/읽음/기기 관리와 암호화만 구현되어 있으며 실제 알림 발생·APNs 전달·보존은 별도다.
 6. **통합 PR 특성.** 최신 develop을 포함하되 미병합 기능 PR을 한 브랜치에 모은 통합 검증안이다. 원격 develop에 직접 반영하거나 배포하지 않는다. 선행 PR을 개별 병합할 경우 이 PR의 diff가 줄어들도록 base/merge 순서를 관리한다.
 
@@ -104,3 +108,5 @@
 - [Spring Security JWT 검증과 사용자 정의 validator](https://docs.spring.io/spring-security/reference/servlet/oauth2/resource-server/jwt.html)
 - [Spring Security Principal 이름 선택 구현](https://github.com/spring-projects/spring-security/blob/main/core/src/main/java/org/springframework/security/authentication/AbstractAuthenticationToken.java)
 - [MySQL 8.4 ORDER BY와 복합 인덱스](https://dev.mysql.com/doc/refman/8.4/en/order-by-optimization.html)
+
+최종 검증은 커밋을 임시 디렉터리에 내보내 수행한다. 공유 작업 폴더에서 병행 중인 경기 일괄 업로드 변경은 이 리뷰 커밋에 포함하지 않는다.
