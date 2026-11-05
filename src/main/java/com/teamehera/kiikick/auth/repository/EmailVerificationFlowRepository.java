@@ -10,7 +10,6 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static com.teamehera.kiikick.global.jdbc.JdbcValueConverter.bytesToUuid;
-import static com.teamehera.kiikick.global.jdbc.JdbcValueConverter.nullableDateTime;
 import static com.teamehera.kiikick.global.jdbc.JdbcValueConverter.uuidToBytes;
 
 @Repository
@@ -24,15 +23,16 @@ public class EmailVerificationFlowRepository {
                     bytesToUuid(rs.getBytes("id")), rs.getString("normalized_email"),
                     rs.getString("purpose"), rs.getString("code_hash"),
                     rs.getInt("failed_attempts"),
-                    rs.getTimestamp("code_expires_at").toLocalDateTime(),
-                    rs.getTimestamp("last_sent_at").toLocalDateTime(),
-                    nullableDateTime(rs, "verified_at"),
-                    nullableDateTime(rs, "invalidated_at"),
+                    // DATETIME은 시간대 변환 없이 UTC LocalDateTime 값 그대로 읽는다.
+                    rs.getObject("code_expires_at", LocalDateTime.class),
+                    rs.getObject("last_sent_at", LocalDateTime.class),
+                    rs.getObject("verified_at", LocalDateTime.class),
+                    rs.getObject("invalidated_at", LocalDateTime.class),
                     rs.getString("action_token_hash"),
-                    nullableDateTime(rs, "action_token_expires_at"),
-                    nullableDateTime(rs, "action_token_consumed_at"),
-                    rs.getTimestamp("created_at").toLocalDateTime(),
-                    rs.getTimestamp("updated_at").toLocalDateTime()
+                    rs.getObject("action_token_expires_at", LocalDateTime.class),
+                    rs.getObject("action_token_consumed_at", LocalDateTime.class),
+                    rs.getObject("created_at", LocalDateTime.class),
+                    rs.getObject("updated_at", LocalDateTime.class)
             );
 
     public EmailVerificationFlowRepository(JdbcTemplate jdbcTemplate) {
@@ -68,11 +68,11 @@ public class EmailVerificationFlowRepository {
     public Optional<EmailVerificationFlow> findLatestForUpdate(
             String normalizedEmail, String purpose
     ) {
+        // 인증 상태와 무관하게 마지막 발송을 조회하고, 시각이 같으면 기본키로 순서를 고정한다.
         return jdbcTemplate.query(
                 selectColumns() + """
                 WHERE normalized_email = ? AND purpose = ?
-                  AND verified_at IS NULL AND invalidated_at IS NULL
-                ORDER BY created_at DESC
+                ORDER BY last_sent_at DESC, created_at DESC, id DESC
                 LIMIT 1
                 FOR UPDATE
                 """,

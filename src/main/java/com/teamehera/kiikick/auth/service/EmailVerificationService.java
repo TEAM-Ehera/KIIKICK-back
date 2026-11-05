@@ -135,6 +135,17 @@ public class EmailVerificationService {
         EmailVerificationFlow latest = flowRepository
                 .findLatestForUpdate(normalizedEmail, PURPOSE)
                 .orElse(null);
+        if (latest != null) {
+            // 인증 완료 여부와 무관하게 마지막 발송부터 60초가 지나야 다시 발송한다.
+            LocalDateTime resendAt = latest.lastSentAt().plus(RESEND_COOLDOWN);
+            if (now.isBefore(resendAt)) {
+                throw VerificationApiException.rateLimited(resendAt);
+            }
+            if (latest.verifiedAt() != null || latest.invalidatedAt() != null) {
+                // 기존 registrationToken 상태를 보존하고 별도의 인증 Flow를 생성한다.
+                latest = null;
+            }
+        }
         if (latest != null && !now.isBefore(latest.codeExpiresAt())) {
             flowRepository.invalidate(latest.id(), now);
             latest = null;
@@ -143,10 +154,6 @@ public class EmailVerificationService {
             throw VerificationApiException.attemptsExceeded(latest.codeExpiresAt());
         }
         if (latest != null) {
-            LocalDateTime resendAt = latest.lastSentAt().plus(RESEND_COOLDOWN);
-            if (now.isBefore(resendAt)) {
-                throw VerificationApiException.rateLimited(resendAt);
-            }
             String codeHash = hashEncoder.hashEmailCode(latest.id(), code);
             LocalDateTime expiresAt = now.plus(CODE_LIFETIME);
             if (flowRepository.resend(latest.id(), codeHash, expiresAt, now) != 1) {
