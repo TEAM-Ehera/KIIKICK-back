@@ -2,7 +2,7 @@
 
 > **개발 참고용 원본 명세** — 이 문서의 전체 API 목록에서 기능별 상세 계약으로 이동합니다. 팀 설명에는 [검토용 공유본](review/api-spec.md)을 사용할 수 있습니다. 병합 자체가 미합의 항목의 승인을 의미하지는 않습니다.
 
-**v0.4 · 2026-11-02 · iOS 협의용 읽기 편집본**
+**v0.5 · 2026-11-05 · iOS 협의용 읽기 편집본**
 서비스 시간대: **Asia/Seoul** · 기준 경로: **/api/v1** · 전송: HTTPS / JSON
 
 사용자가 자기 경기의 쿼터를 기록하고 결과를 확인하는 API다. **쿼터가 기록 단위이고, 경기는 쿼터를 묶는 날짜·장소 정보**다. 이 문서는 목표 계약이며 현재 iOS·서버가 모두 이대로 구현됐다는 의미는 아니다.
@@ -44,7 +44,7 @@
 
 | 순서 | 사용자가 하는 일 | 호출 | 보내는 값 / 보관할 값 |
 | --- | --- | --- | --- |
-| 1 | 로그인 | [AUTH-01](api/auth.md#auth-01) | 제공자 토큰 / accessToken. 인증 제공자는 미확정 |
+| 1 | 로그인 | [AUTH-01](api/auth.md#auth-01) | 이메일·비밀번호 / accessToken. API는 #73에서 구현 예정 |
 | 2 | 저장한 경기장 선택 | [GET /venues](api/setup.md#set-01) | 선택한 venueId |
 | 3 | 새 경기 묶음 생성 | [POST /matches](api/setup.md#set-07) | 제목·장소·예정 시각 / matchId와 ETag |
 | 4 | 쿼터 시간 설정 | [POST /matches/{matchId}/quarters](api/setup.md#set-17) | durationSeconds / quarterId와 새 ETag |
@@ -276,22 +276,25 @@ Authorization: Bearer <accessToken>
 ## 7. 전체 API 목록
 
 
-총 **66개 경로/Method 계약**이다. 명령 동기화는 지원 범위 검토 중인 기술 초안도 포함한다. 각 행의 성공 상태는 아래 상세 문서와 함께 읽는다.
+총 **70개 경로/Method 계약**이다. 구현 예정 계약과 명령 동기화의 보류 계약(#44)도 포함한다. 각 행의 구현 상태와 성공 응답은 아래 상세 문서와 함께 읽는다.
 
 ### [인증·온보딩·마이페이지](api/auth.md)
 
 | API ID | 기능 | Method | 경로 | 성공 |
 | --- | --- | --- | --- | --- |
-| [AUTH-01](api/auth.md#auth-01) | 로그인·가입 토큰 교환 | `POST` | `/auth/exchange` | 200 |
-| [AUTH-02](api/auth.md#auth-02) | 로그인 세션 갱신 | `POST` | `/auth/refresh` | 200 |
-| [AUTH-03](api/auth.md#auth-03) | 로그아웃 | `POST` | `/auth/logout` | 204 |
-| [AUTH-04](api/auth.md#auth-04) | 내 프로필 조회 | `GET` | `/users/me` | 200 |
-| [AUTH-05](api/auth.md#auth-05) | 내 프로필 수정 | `PATCH` | `/users/me` | 200 |
-| [AUTH-06](api/auth.md#auth-06) | 온보딩 완료 | `PUT` | `/users/me/onboarding` | 200 |
-| [AUTH-07](api/auth.md#auth-07) | 현재 동의 목록 조회 | `GET` | `/users/me/consents` | 200 |
-| [AUTH-08](api/auth.md#auth-08) | 동의 부여·철회 | `PUT` | `/users/me/consents/{purpose}` | 200 |
-| [AUTH-09](api/auth.md#auth-09) | 회원 탈퇴 요청 | `POST` | `/users/me/deletion-requests` | 202 |
-| [AUTH-10](api/auth.md#auth-10) | 탈퇴 처리 상태 조회 | `GET` | `/users/me/deletion-requests/{deletionId}` | 200 |
+| [AUTH-01A](api/auth.md#auth-01a) | 이메일 인증번호 발송·재발송 (구현) | `POST` | `/auth/email-verifications` | 202 |
+| [AUTH-01B](api/auth.md#auth-01b) | 이메일 인증번호 검증 (구현) | `POST` | `/auth/email-verifications/{verificationId}/verify` | 200 |
+| [AUTH-01C](api/auth.md#auth-01c) | 이메일 회원가입 완료 (구현) | `POST` | `/auth/signup` | 201 |
+| [AUTH-01](api/auth.md#auth-01) | 이메일·비밀번호 로그인 (예정 #73) | `POST` | `/auth/login` | 200 |
+| [AUTH-02](api/auth.md#auth-02) | 로그인 세션 갱신 (예정 #62) | `POST` | `/auth/refresh` | 200 |
+| [AUTH-03](api/auth.md#auth-03) | 로그아웃 (예정 #63) | `POST` | `/auth/logout` | 204 |
+| [AUTH-04](api/auth.md#auth-04) | 내 프로필 조회 (예정 #65) | `GET` | `/users/me` | 200 |
+| [AUTH-05](api/auth.md#auth-05) | 내 프로필 수정 (예정 #65) | `PATCH` | `/users/me` | 200 |
+| [AUTH-06](api/auth.md#auth-06) | 온보딩 완료 (예정 #66) | `PUT` | `/users/me/onboarding` | 200 |
+| [AUTH-07](api/auth.md#auth-07) | 현재 동의 목록 조회 (예정 #68) | `GET` | `/users/me/consents` | 200 |
+| [AUTH-08](api/auth.md#auth-08) | 동의 부여·철회 (예정 #68) | `PUT` | `/users/me/consents/{purpose}` | 200 |
+| [AUTH-09](api/auth.md#auth-09) | 회원 탈퇴 요청 (예정 #69) | `POST` | `/users/me/deletion-requests` | 202 |
+| [AUTH-10](api/auth.md#auth-10) | 탈퇴 처리 상태 조회 (예정 #69) | `GET` | `/users/me/deletion-requests/{deletionId}` | 200 |
 
 ### [알림·기기](api/notifications.md)
 
@@ -394,4 +397,7 @@ Authorization: Bearer <accessToken>
 
 [기능 명세](functional-spec.md) · [ERD](erd.md) · [응답 필드 사전](api/schemas.md) · [공통 규칙](api/common.md) · [정책 결정](decisions.md).
 
-이번 v0.4는 읽는 순서·예시·협의 항목을 정리하고 서울 시간대 입출력을 반영했다. API 경로·Method·필수 헤더와 운동 원본 검증 규칙은 v0.3 초안에서 임의로 변경하지 않았다. 운동 업로드 버전 검사와 샘플 경계 처리는 협의표의 개선 제안이며, 합의 전 적용된 것으로 읽지 않는다. 서버 코드·실제 DB·iOS 구현은 이번 문서 편집으로 바뀌지 않는다.
+v0.5는 구현된 이메일 인증번호 발송·검증과 회원가입 완료 API를 반영하고, 아직 구현되지
+않은 Auth API를 예정 상태로 구분했다. 그 밖의 API 경로·Method·필수 헤더와 운동 원본
+검증 규칙은 v0.4에서 변경하지 않았다. 운동 업로드 버전 검사와 샘플 경계 처리는 협의표의
+개선 제안이며, 합의 전 적용된 것으로 읽지 않는다.

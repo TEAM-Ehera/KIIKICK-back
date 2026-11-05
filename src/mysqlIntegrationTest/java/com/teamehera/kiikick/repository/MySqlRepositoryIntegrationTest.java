@@ -9,6 +9,14 @@ import com.teamehera.kiikick.auth.repository.AuthSessionRepository;
 import com.teamehera.kiikick.auth.repository.EmailCredentialRepository;
 import com.teamehera.kiikick.auth.repository.EmailSendRateLimitRepository;
 import com.teamehera.kiikick.auth.repository.EmailVerificationFlowRepository;
+import com.teamehera.kiikick.auth.email.VerificationEmailSender;
+import com.teamehera.kiikick.auth.service.EmailVerificationRequestResult;
+import com.teamehera.kiikick.auth.service.EmailVerificationService;
+import com.teamehera.kiikick.auth.service.EmailVerificationSuccessResult;
+import com.teamehera.kiikick.auth.service.VerificationSecretGenerator;
+import com.teamehera.kiikick.auth.security.AuthHashEncoder;
+import com.teamehera.kiikick.auth.service.SignupResult;
+import com.teamehera.kiikick.auth.service.SignupService;
 import com.teamehera.kiikick.friend.domain.FriendPair;
 import com.teamehera.kiikick.friend.domain.UserBlock;
 import com.teamehera.kiikick.friend.repository.FriendPairRepository;
@@ -54,6 +62,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -71,6 +80,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.when;
 
 @SpringBootTest(properties = {
         "spring.sql.init.mode=never",
@@ -98,6 +111,9 @@ class MySqlRepositoryIntegrationTest {
     @Autowired EmailCredentialRepository emailCredentials;
     @Autowired EmailVerificationFlowRepository emailFlows;
     @Autowired EmailSendRateLimitRepository emailSendRateLimits;
+    @Autowired EmailVerificationService emailVerificationService;
+    @Autowired AuthHashEncoder authHashEncoder;
+    @Autowired SignupService signupService;
     @Autowired UserConsentRepository consents;
     @Autowired AuthSessionRepository sessions;
     @Autowired DeviceRepository devices;
@@ -107,6 +123,9 @@ class MySqlRepositoryIntegrationTest {
     @Autowired NotificationRepository notifications;
     @Autowired IdempotencyRecordRepository idempotency;
     @Autowired SyncOperationRepository syncOperations;
+
+    @MockitoBean VerificationEmailSender verificationEmailSender;
+    @MockitoBean VerificationSecretGenerator verificationSecretGenerator;
 
     @BeforeAll
     void verifyIsolatedDatabaseBeforeAnyWrite() {
@@ -296,6 +315,60 @@ class MySqlRepositoryIntegrationTest {
         } finally {
             pool.shutdownNow();
         }
+    }
+
+    @Test
+    @Transactional
+    void p2_이메일_인증_서비스가_MySQL에서_발송과_검증을_처리한다() {
+        String email = "mysql-verification-" + UUID.randomUUID() + "@example.com";
+        when(verificationSecretGenerator.generateCode()).thenReturn("654321");
+        when(verificationSecretGenerator.generateActionToken())
+                .thenReturn("mysql-registration-token-256-bit-value");
+        doNothing().when(verificationEmailSender)
+                .sendSignUpCode(anyString(), anyString(), anyLong());
+
+        EmailVerificationRequestResult requested = emailVerificationService.requestCode(
+                email, "203.0.113.200"
+        );
+        EmailVerificationSuccessResult verified = emailVerificationService.verifyCode(
+                requested.verificationId(), "654321"
+        );
+
+        assertAll(
+                () -> assertEquals("mysql-registration-token-256-bit-value",
+                        verified.registrationToken()),
+                () -> assertTrue(emailFlows.findActiveByActionToken(
+                        authHashEncoder.hashActionToken(verified.registrationToken()),
+                        "SIGN_UP", verified.expiresAt().minusSeconds(1)
+                ).isPresent())
+        );
+    }
+
+    @Test
+    @Transactional
+    void p2_회원가입이_MySQL에서_사용자_Credential_세션을_원자적으로_생성한다() {
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
+        String email = "mysql-signup-" + UUID.randomUUID() + "@example.com";
+        String registrationToken = "mysql-signup-token-" + UUID.randomUUID();
+        emailFlows.save(new EmailVerificationFlow(
+                UUID.randomUUID(), email, "SIGN_UP", null, 0,
+                now.plusMinutes(3), now, now, null,
+                authHashEncoder.hashActionToken(registrationToken),
+                now.plusMinutes(10), null, now, now
+        ));
+
+        SignupResult result = signupService.signup(
+                registrationToken, "Mysql-valid-72!"
+        );
+
+        assertAll(
+                () -> assertEquals(result.userId(), emailCredentials
+                        .findByNormalizedEmail(email).orElseThrow().userId()),
+                () -> assertEquals(result.userId(), sessions
+                        .findActiveById(result.sessionId(), now).orElseThrow().userId()),
+                () -> assertTrue(result.accessToken().length() > 100),
+                () -> assertTrue(result.refreshToken().length() >= 43)
+        );
     }
 
     @Test

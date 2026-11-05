@@ -2,7 +2,7 @@
 
 [전체 API 목차](../api-spec.md) · [공통 규칙](common.md)
 
-v0.4. 표의 모든 키는 응답에 포함한다. nullable 값은 null이며 부모 객체가 null이면 하위 필드는 없다. 목록 메타와 오류 봉투는 공통 규칙을 따른다. DB snake_case와 JSON camelCase를 대응한다. PIVOT과 정책 enum 예시는 확정 목록을 뜻하지 않는다.
+v0.5. 표의 모든 키는 응답에 포함한다. nullable 값은 null이며 부모 객체가 null이면 하위 필드는 없다. 목록 메타와 오류 봉투는 공통 규칙을 따른다. DB snake_case와 JSON camelCase를 대응한다. PIVOT과 정책 enum 예시는 확정 목록을 뜻하지 않는다.
 
 <a id="userself"></a>
 ## UserSelf
@@ -36,10 +36,29 @@ v0.4. 표의 모든 키는 응답에 포함한다. nullable 값은 null이며 �
 | `sessionId` | UUID | O | 불가 | — | 로그아웃 대상 세션 ID |
 | `accessToken` | string | O | 불가 | — | 서버 인증에 사용하는 비밀값. 로그 금지 |
 | `refreshToken` | string | O | 불가 | — | 갱신 시 회전하는 비밀값. 로그 금지 |
-| `expiresAt` | timestamp | O | 불가 | — | 발급 시점부터 15분인 access token 만료 시각 |
+| `expiresAt` | timestamp | O | 불가 | — | 15분 유효한 access token의 만료 시각 |
 | `user` | UserSelf | O | 불가 | — | 본인 계정·온보딩 정보 |
 
 중첩 타입: [응답 필드 사전 · UserSelf](schemas.md#userself)
+
+
+<a id="emailverification"></a>
+## EmailVerification
+
+| 필드 | 타입 | 필수 | null | 기본값 / 예시 | 설명 |
+| --- | --- | :---: | :---: | --- | --- |
+| `verificationId` | UUID | O | 불가 | — | 발송·재발송·검증 흐름 식별자 |
+| `expiresAt` | timestamp | O | 불가 | — | 3분 유효한 인증번호의 만료 시각 |
+| `resendAvailableAt` | timestamp | O | 불가 | — | 동일 이메일 재발송 가능 시각 |
+
+
+<a id="registrationauthorization"></a>
+## RegistrationAuthorization
+
+| 필드 | 타입 | 필수 | null | 기본값 / 예시 | 설명 |
+| --- | --- | :---: | :---: | --- | --- |
+| `registrationToken` | string | O | 불가 | — | SIGN_UP 목적의 10분 유효 일회용 비밀값. 로그 금지 |
+| `expiresAt` | timestamp | O | 불가 | — | registrationToken 만료 시각 |
 
 
 <a id="consent"></a>

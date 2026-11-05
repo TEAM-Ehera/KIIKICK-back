@@ -5,6 +5,19 @@ spring:
     password:
     driver-class-name: org.h2.Driver
 
+  mail:
+    host: localhost
+    port: 2525
+    username: test
+    password: test
+    properties:
+      mail:
+        smtp:
+          auth: false
+          starttls:
+            enable: false
+            required: false
+
   sql:
     init:
       mode: always
@@ -18,3 +31,8 @@ kiikick:
       issuer: kiikick-api-test
       audience: kiikick-test
       lifetime: 15m
+    verification:
+      email-code-secret: test-email-code-hmac-secret-32-bytes-minimum
+      ip-secret: test-ip-address-hmac-secret-32-bytes-minimum
+      sender-address: no-reply@kiikick.test
+      sender-name: KIIKICK Test

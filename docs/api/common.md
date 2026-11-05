@@ -91,6 +91,6 @@ persistence는 NOT_SAVED/SAVED/UNKNOWN이며 조회 오류에는 null이다. 네
 
 ## 인증 통합 및 기존 경로 제한 (2026-11-05)
 
-검증된 AuthenticatedUser는 Servlet Principal.getName()에 내부 사용자 UUID를 제공한다. 삭제된 사용자의 세션은 인증에 사용하지 않는다. 401에도 WWW-Authenticate: Bearer와 X-Request-Id를 반환하며, 변경 요청의 인증 실패는 persistence=NOT_SAVED다.
+검증된 AuthenticatedUser는 Servlet Principal.getName()에 내부 사용자 UUID를 제공한다. Access Token은 15분 Stateless 정책으로 세션 조회 없이 검증한다. 삭제된 사용자의 Refresh 세션 조회는 거절하지만 기존 Access Token은 만료까지 유효할 수 있다. 401에도 WWW-Authenticate: Bearer와 X-Request-Id를 반환하며, 변경 요청의 인증 실패는 persistence=NOT_SAVED다.
 
 기존 /api/v1/user/{userId} 및 그 아래 workout-payloads는 인증 사용자 자신의 ID에만 허용한다. 일반 사용자 전체 목록과 인증 절차를 거치지 않는 기존 사용자 생성 경로(/api/v1/users, /api/v1/user)는 403으로 차단한다. 공개 검색은 FRIEND-01, 가입은 인증 API의 검증 절차를 사용한다. 기존 업로드 경로의 완전 종료 일정은 별도 연동 항목이다.

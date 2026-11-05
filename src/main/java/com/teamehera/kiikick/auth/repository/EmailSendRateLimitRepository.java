@@ -7,6 +7,7 @@ import org.springframework.stereotype.Repository;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -44,15 +45,32 @@ public class EmailSendRateLimitRepository {
     public SendRateLimitDecision tryAcquire(
             String normalizedEmail, String ipHash, LocalDateTime now
     ) {
+        ensureKeys(normalizedEmail, ipHash, now);
+
+        return transactionTemplate.execute(status -> acquireWithLockedKeys(
+                normalizedEmail, ipHash, now
+        ));
+    }
+
+    public SendRateLimitDecision tryAcquireInCurrentTransaction(
+            String normalizedEmail, String ipHash, LocalDateTime now
+    ) {
+        if (!TransactionSynchronizationManager.isActualTransactionActive()) {
+            throw new IllegalStateException("An active transaction is required");
+        }
+        ensureKeys(normalizedEmail, ipHash, now);
+        // 호출자 트랜잭션이 끝날 때까지 잠금을 유지해 발송·재발송도 함께 직렬화한다.
+        return acquireWithLockedKeys(normalizedEmail, ipHash, now);
+    }
+
+    private void ensureKeys(
+            String normalizedEmail, String ipHash, LocalDateTime now
+    ) {
         // 키 생성과 판정을 분리해야 첫 동시 요청의 INSERT와 행 잠금이 교착되지 않는다.
         transactionTemplate.executeWithoutResult(status -> {
             ensureKey(EMAIL, normalizedEmail, now);
             ensureKey(IP, ipHash, now);
         });
-
-        return transactionTemplate.execute(status -> acquireWithLockedKeys(
-                normalizedEmail, ipHash, now
-        ));
     }
 
     private SendRateLimitDecision acquireWithLockedKeys(
