@@ -11,6 +11,12 @@ import com.teamehera.kiikick.match.service.QuarterWorkoutQuery.Workout;
 import com.teamehera.kiikick.workout.dto.WorkoutPayloadCreateRequest;
 import com.teamehera.kiikick.workout.service.QuarterSummaryCommands;
 import com.teamehera.kiikick.workout.service.QuarterWorkoutUpload;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.headers.Header;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
@@ -184,11 +190,38 @@ public class QuarterWorkoutController {
         return replay(result);
     }
 
+    @Operation(
+            summary = "완료 경기의 운동 기록과 포지션 일괄 제출",
+            description = "본인 경기의 모든 쿼터를 정확히 한 번씩 보내야 합니다. 하나라도 실패하면 전체가 롤백됩니다. "
+                    + "요청 크기 기본 상한은 8 MiB이며, 응답을 받지 못했다면 같은 헤더와 본문으로 재시도합니다.",
+            requestBody = @io.swagger.v3.oas.annotations.parameters.RequestBody(required = true,
+                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE,
+                            schema = @Schema(implementation = SubmissionBody.class))),
+            responses = {
+                    @ApiResponse(responseCode = "202", description = "저장 완료. 결과 경로에서 분석 진행 상태를 조회합니다.",
+                            headers = {
+                                    @Header(name = HttpHeaders.LOCATION, description = "경기 결과 조회 경로",
+                                            schema = @Schema(type = "string")),
+                                    @Header(name = HttpHeaders.ETAG, description = "새 경기 버전",
+                                            schema = @Schema(type = "string")),
+                                    @Header(name = HttpHeaders.RETRY_AFTER, description = "조회 대기 시간(초)",
+                                            schema = @Schema(type = "integer", example = SUMMARY_RETRY_SECONDS))
+                            },
+                            content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE,
+                                    schema = @Schema(implementation = SubmissionResponse.class))),
+                    @ApiResponse(responseCode = "409", description = "경기 상태, 멱등 키 또는 기존 원본과 충돌"),
+                    @ApiResponse(responseCode = "412", description = "경기 버전 불일치"),
+                    @ApiResponse(responseCode = "413", description = "요청 크기 초과"),
+                    @ApiResponse(responseCode = "422", description = "쿼터 목록, 포지션 또는 운동 데이터 검증 실패"),
+                    @ApiResponse(responseCode = "428", description = "If-Match 누락")
+            })
     @PostMapping(path = MatchController.PATH + "/{matchId}/workout-submissions",
             consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<String> submit(
             Principal principal, @PathVariable UUID matchId,
+            @Parameter(required = true, description = "재시도에 사용할 UUID 멱등 키", schema = @Schema(format = "uuid"))
             @RequestHeader(value = "Idempotency-Key", required = false) String key,
+            @Parameter(required = true, description = "최신 경기 ETag")
             @RequestHeader(value = HttpHeaders.IF_MATCH, required = false) String ifMatch,
             HttpServletRequest httpRequest) throws IOException {
         UUID actor = MatchController.actor(principal);
@@ -242,6 +275,17 @@ public class QuarterWorkoutController {
         }
         return entries;
     }
+
+    // The controller streams the request to enforce the size limit before parsing.
+    @Schema(requiredProperties = "quarters")
+    private record SubmissionBody(List<SubmissionQuarter> quarters) {}
+
+    @Schema(requiredProperties = {"quarterId", "position", "workout"})
+    private record SubmissionQuarter(UUID quarterId,
+                                     @Schema(description = "서버에 설정된 대표 포지션 코드") String position,
+                                     WorkoutPayloadCreateRequest workout) {}
+
+    private record SubmissionResponse(SubmissionReceipt data, DetailMeta meta) {}
 
     private record SubmissionReceipt(UUID matchId, int quarterCount) {}
 
