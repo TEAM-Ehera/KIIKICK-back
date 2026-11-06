@@ -32,10 +32,8 @@ public class EmailVerificationExceptionHandler {
     ) {
         HttpHeaders headers = new HttpHeaders();
         if (exception.retryAt() != null) {
-            long seconds = Math.max(1, Duration.between(
-                    CLOCK.instant(),
-                    exception.retryAt()
-            ).toSeconds());
+            Duration remaining = Duration.between(CLOCK.instant(), exception.retryAt());
+            long seconds = Math.max(1, remaining.getSeconds() + (remaining.getNano() == 0 ? 0 : 1));
             headers.set(HttpHeaders.RETRY_AFTER, Long.toString(seconds));
         }
         return new ResponseEntity<>(body(

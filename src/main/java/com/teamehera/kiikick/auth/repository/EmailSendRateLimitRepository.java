@@ -1,7 +1,6 @@
 package com.teamehera.kiikick.auth.repository;
 
 import com.teamehera.kiikick.auth.domain.SendRateLimitDecision;
-import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -45,8 +44,6 @@ public class EmailSendRateLimitRepository {
     public SendRateLimitDecision tryAcquire(
             String normalizedEmail, String ipHash, LocalDateTime now
     ) {
-        ensureKeys(normalizedEmail, ipHash, now);
-
         return transactionTemplate.execute(status -> acquireWithLockedKeys(
                 normalizedEmail, ipHash, now
         ));
@@ -58,27 +55,16 @@ public class EmailSendRateLimitRepository {
         if (!TransactionSynchronizationManager.isActualTransactionActive()) {
             throw new IllegalStateException("An active transaction is required");
         }
-        ensureKeys(normalizedEmail, ipHash, now);
         // 호출자 트랜잭션이 끝날 때까지 잠금을 유지해 발송·재발송도 함께 직렬화한다.
         return acquireWithLockedKeys(normalizedEmail, ipHash, now);
-    }
-
-    private void ensureKeys(
-            String normalizedEmail, String ipHash, LocalDateTime now
-    ) {
-        // 키 생성과 판정을 분리해야 첫 동시 요청의 INSERT와 행 잠금이 교착되지 않는다.
-        transactionTemplate.executeWithoutResult(status -> {
-            ensureKey(EMAIL, normalizedEmail, now);
-            ensureKey(IP, ipHash, now);
-        });
     }
 
     private SendRateLimitDecision acquireWithLockedKeys(
             String normalizedEmail, String ipHash, LocalDateTime now
     ) {
-        // 항상 이메일 다음 IP 순서로 잠가 서로 다른 동시 요청의 교착 가능성을 줄인다.
-        lockKey(EMAIL, normalizedEmail);
-        lockKey(IP, ipHash);
+        // UPSERT로 키를 생성하거나 배타 잠금을 획득한다. 이메일 → IP 순서를 유지한다.
+        ensureAndLockKey(EMAIL, normalizedEmail, now);
+        ensureAndLockKey(IP, ipHash, now);
 
         LocalDateTime emailCutoff = now.minus(EMAIL_WINDOW);
         LocalDateTime ipCutoff = now.minus(IP_WINDOW);
@@ -98,29 +84,15 @@ public class EmailSendRateLimitRepository {
         return new SendRateLimitDecision(true, emailCount + 1, ipCount + 1, null);
     }
 
-    private void ensureKey(String limitType, String keyValue, LocalDateTime now) {
-        try {
-            jdbcTemplate.update(
-                    """
-                    INSERT INTO auth_rate_limit_keys (
-                        rate_action, limit_type, key_value, created_at
-                    ) VALUES (?, ?, ?, ?)
-                    """,
-                    ACTION, limitType, keyValue, now
-            );
-        } catch (DuplicateKeyException ignored) {
-            // 이미 존재하는 키 행을 아래 SELECT FOR UPDATE에서 사용한다.
-        }
-    }
-
-    private void lockKey(String limitType, String keyValue) {
-        jdbcTemplate.queryForObject(
+    private void ensureAndLockKey(String limitType, String keyValue, LocalDateTime now) {
+        jdbcTemplate.update(
                 """
-                SELECT key_value FROM auth_rate_limit_keys
-                WHERE rate_action = ? AND limit_type = ? AND key_value = ?
-                FOR UPDATE
+                INSERT INTO auth_rate_limit_keys (
+                    rate_action, limit_type, key_value, created_at
+                ) VALUES (?, ?, ?, ?)
+                ON DUPLICATE KEY UPDATE created_at = auth_rate_limit_keys.created_at
                 """,
-                String.class, ACTION, limitType, keyValue
+                ACTION, limitType, keyValue, now
         );
     }
 
@@ -129,7 +101,7 @@ public class EmailSendRateLimitRepository {
                 """
                 SELECT COUNT(*) FROM auth_rate_limit_events
                 WHERE rate_action = ? AND limit_type = ? AND key_value = ?
-                  AND occurred_at >= ?
+                  AND occurred_at > ?
                 """,
                 Integer.class, ACTION, limitType, keyValue, cutoff
         );
@@ -159,7 +131,7 @@ public class EmailSendRateLimitRepository {
                 """
                 SELECT MIN(occurred_at) FROM auth_rate_limit_events
                 WHERE rate_action = ? AND limit_type = ? AND key_value = ?
-                  AND occurred_at >= ?
+                  AND occurred_at > ?
                 """,
                 LocalDateTime.class, ACTION, limitType, keyValue, cutoff
         );
