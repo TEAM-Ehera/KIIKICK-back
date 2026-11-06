@@ -119,6 +119,9 @@ class EmailAuthRepositoryTest {
         assertFalse(emailBlocked.allowed());
         assertEquals(5, emailBlocked.emailCount());
         assertEquals(now.plusHours(24), emailBlocked.retryAt());
+        assertTrue(rateLimits.tryAcquire(
+                "limited@example.com", "fresh-ip", emailBlocked.retryAt()
+        ).allowed());
 
         for (int index = 0; index < 3; index++) {
             assertTrue(rateLimits.tryAcquire(
@@ -131,6 +134,9 @@ class EmailAuthRepositoryTest {
         assertFalse(ipBlocked.allowed());
         assertEquals(3, ipBlocked.ipCount());
         assertEquals(now.plusMinutes(1), ipBlocked.retryAt());
+        assertTrue(rateLimits.tryAcquire(
+                "another@example.com", "shared-ip", ipBlocked.retryAt()
+        ).allowed());
     }
 
     @Test
