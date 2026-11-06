@@ -146,6 +146,70 @@ CREATE TABLE auth_identities (
     FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
+CREATE TABLE email_credentials (
+    user_id BINARY(16) PRIMARY KEY,
+    email VARCHAR(320) NOT NULL,
+    normalized_email VARCHAR(320) NOT NULL,
+    password_hash VARCHAR(100) NOT NULL,
+    email_verified_at TIMESTAMP(6) NOT NULL,
+    password_changed_at TIMESTAMP(6) NOT NULL,
+    created_at TIMESTAMP(6) NOT NULL,
+    updated_at TIMESTAMP(6) NOT NULL,
+    CONSTRAINT uk_email_credentials_normalized UNIQUE (normalized_email),
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE TABLE email_verification_flows (
+    id BINARY(16) PRIMARY KEY,
+    normalized_email VARCHAR(320) NOT NULL,
+    purpose VARCHAR(32) NOT NULL,
+    code_hash CHAR(64),
+    failed_attempts INT NOT NULL,
+    code_expires_at TIMESTAMP(6) NOT NULL,
+    last_sent_at TIMESTAMP(6) NOT NULL,
+    verified_at TIMESTAMP(6),
+    invalidated_at TIMESTAMP(6),
+    action_token_hash CHAR(64),
+    action_token_expires_at TIMESTAMP(6),
+    action_token_consumed_at TIMESTAMP(6),
+    created_at TIMESTAMP(6) NOT NULL,
+    updated_at TIMESTAMP(6) NOT NULL,
+    CONSTRAINT uk_email_flow_action_token UNIQUE (action_token_hash),
+    CONSTRAINT ck_email_flow_failed_attempts
+        CHECK (failed_attempts BETWEEN 0 AND 5),
+    CONSTRAINT ck_email_flow_action_token_state CHECK (
+        (action_token_hash IS NULL AND action_token_expires_at IS NULL)
+        OR (action_token_hash IS NOT NULL AND action_token_expires_at IS NOT NULL
+            AND verified_at IS NOT NULL)
+    )
+);
+CREATE INDEX idx_email_flow_latest
+    ON email_verification_flows(normalized_email, purpose, created_at);
+CREATE INDEX idx_email_flow_code_expiry
+    ON email_verification_flows(code_expires_at);
+CREATE INDEX idx_email_flow_action_expiry
+    ON email_verification_flows(action_token_expires_at);
+
+CREATE TABLE auth_rate_limit_keys (
+    rate_action VARCHAR(64) NOT NULL,
+    limit_type VARCHAR(16) NOT NULL,
+    key_value VARCHAR(320) NOT NULL,
+    created_at TIMESTAMP(6) NOT NULL,
+    PRIMARY KEY (rate_action, limit_type, key_value)
+);
+
+CREATE TABLE auth_rate_limit_events (
+    id BINARY(16) PRIMARY KEY,
+    rate_action VARCHAR(64) NOT NULL,
+    limit_type VARCHAR(16) NOT NULL,
+    key_value VARCHAR(320) NOT NULL,
+    occurred_at TIMESTAMP(6) NOT NULL,
+    FOREIGN KEY (rate_action, limit_type, key_value)
+        REFERENCES auth_rate_limit_keys(rate_action, limit_type, key_value)
+);
+CREATE INDEX idx_auth_rate_limit_window
+    ON auth_rate_limit_events(rate_action, limit_type, key_value, occurred_at);
+
 CREATE TABLE user_consents (
     id BINARY(16) PRIMARY KEY,
     user_id BINARY(16) NOT NULL,
@@ -265,3 +329,18 @@ CREATE TABLE sync_operations (
     FOREIGN KEY (device_id) REFERENCES devices(id) ON DELETE SET NULL,
     FOREIGN KEY (match_id) REFERENCES matches(id)
 );
+
+CREATE TABLE auth_refresh_token_history (
+    token_hash VARCHAR(64) NOT NULL,
+    session_id BINARY(16) NOT NULL,
+    generation BIGINT NOT NULL,
+    consumed_at TIMESTAMP(6) NOT NULL,
+    expires_at TIMESTAMP(6) NOT NULL,
+    PRIMARY KEY (token_hash),
+    CONSTRAINT uq_refresh_history_generation UNIQUE (session_id, generation),
+    CONSTRAINT fk_refresh_history_session FOREIGN KEY (session_id) REFERENCES auth_sessions(id),
+    CONSTRAINT chk_refresh_history_generation CHECK (generation >= 0),
+    CONSTRAINT chk_refresh_history_expiry CHECK (consumed_at < expires_at)
+);
+CREATE INDEX idx_refresh_history_expiry ON auth_refresh_token_history(expires_at);
+CREATE INDEX idx_auth_sessions_refresh_hash ON auth_sessions(refresh_token_hash);

@@ -109,6 +109,13 @@ class P2RepositoryTest {
         ));
 
         assertAll(
+                () -> assertTrue(sessionRepository
+                        .findActiveById(sessionId, now).isPresent()),
+                () -> assertTrue(sessionRepository
+                        .findActiveById(sessionId, now.plusDays(2)).isEmpty())
+        );
+
+        assertAll(
                 () -> assertEquals(1, deviceRepository.updateOwned(
                         new Device(deviceId, userId, "IOS", "new", true,
                                 now.plusMinutes(1), null)
@@ -127,6 +134,8 @@ class P2RepositoryTest {
                 () -> assertEquals(1, sessionRepository.revoke(sessionId, userId, now)),
                 () -> assertEquals(1, deviceRepository.revoke(deviceId, userId, now))
         );
+        assertTrue(sessionRepository
+                .findActiveById(sessionId, now.plusMinutes(1)).isEmpty());
     }
 
     @Test

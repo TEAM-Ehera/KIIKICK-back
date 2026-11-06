@@ -89,4 +89,11 @@ public class IdempotencyRecordRepository {
                 uuidToBytes(id), requestHash
         );
     }
+    public int deleteExpiredByScope(UUID userId, String method, String canonicalPath,
+                                    UUID key, java.time.LocalDateTime now) {
+        return jdbcTemplate.update("""
+                DELETE FROM idempotency_records
+                WHERE user_id=? AND method=? AND canonical_path=? AND idempotency_key=? AND expires_at<=?
+                """, uuidToBytes(userId), method, canonicalPath, uuidToBytes(key), now);
+    }
 }
