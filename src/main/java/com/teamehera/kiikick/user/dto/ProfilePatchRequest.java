@@ -1,14 +1,17 @@
 package com.teamehera.kiikick.user.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+
 import com.fasterxml.jackson.annotation.JsonCreator;
 import java.util.Map;
 import java.util.Set;
 
+@Schema(description = "최소 한 필드 필요. 누락은 유지, nickname null은 거부, avatarUrl null은 제거", additionalProperties = Schema.AdditionalPropertiesValue.FALSE, minProperties = 1)
 public record ProfilePatchRequest(
-        String nickname,
-        String avatarUrl,
-        boolean nicknamePresent,
-        boolean avatarPresent
+        @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED, nullable = false, minLength = 1, maxLength = 16, description = "기존 CRUD와 동일한 Java UTF-16 길이 최대 16자. 공백만 입력 불가, 중복 허용, 자동 trim 없음", example = "준킥") String nickname,
+        @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED, nullable = true, description = "누락은 기존 값 유지, null은 이미지 제거. 서버는 이 URL에 접속하지 않음", example = "https://example.com/avatar.png") String avatarUrl,
+        @Schema(hidden = true) boolean nicknamePresent,
+        @Schema(hidden = true) boolean avatarPresent
 ) {
     @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
     public static ProfilePatchRequest from(Map<String, Object> body) {

@@ -1,6 +1,8 @@
 package com.teamehera.kiikick.config;
 
 import io.swagger.v3.oas.models.OpenAPI;
+import org.springdoc.core.customizers.OpenApiCustomizer;
+import java.util.Set;
 import io.swagger.v3.oas.models.info.Info;
 import io.swagger.v3.oas.models.Components;
 import io.swagger.v3.oas.models.security.SecurityRequirement;
@@ -38,4 +40,31 @@ public class OpenApiConfig {
                                 기존 사용자 운동 업로드 경로는 URL의 userId를 사용합니다. 경기·쿼터 API는 요청의 사용자 Principal로 소유권을 확인합니다.
                                 """));
     }
+    @Bean
+    public OpenApiCustomizer authJsonResponseSchemas() {
+        var paths = Set.of("/api/v1/auth/email-verifications",
+                "/api/v1/auth/email-verifications/{verificationId}/verify",
+                "/api/v1/auth/signup", "/api/v1/auth/login", "/api/v1/auth/refresh",
+                "/api/v1/auth/logout", "/api/v1/users/me");
+        return api -> {
+            if (api.getPaths() == null) return;
+            api.getPaths().forEach((path, item) -> {
+                if (!paths.contains(path)) return;
+                item.readOperations().forEach(operation -> {
+                    if (operation.getResponses() == null) return;
+                    operation.getResponses().values().forEach(response -> {
+                        var content = response.getContent();
+                        if (content == null) return;
+                        var json = content.get("application/json");
+                        var inferred = content.get("*/*");
+                        if (json == null || inferred == null) return;
+                        // 런타임 produces는 바꾸지 않고 추론된 제네릭 스키마를 JSON 예시에 결합한다.
+                        if (json.getSchema() == null) json.setSchema(inferred.getSchema());
+                        if (json.getSchema() != null) content.remove("*/*");
+                    });
+                });
+            });
+        };
+    }
+
 }
