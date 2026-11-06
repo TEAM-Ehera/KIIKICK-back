@@ -42,6 +42,23 @@ set -a
 source "$env_file"
 set +a
 
+# Pass only application settings from the root-managed file to Docker.
+application_env=(
+    DB_HOST DB_PORT DB_NAME DB_USERNAME DB_PASSWORD
+    AUTH_ACCESS_TOKEN_SECRET_BASE64 AUTH_ACCESS_TOKEN_ISSUER AUTH_ACCESS_TOKEN_AUDIENCE
+    AUTH_EMAIL_CODE_HMAC_SECRET AUTH_IP_HMAC_SECRET
+    AUTH_MAIL_HOST AUTH_MAIL_PORT AUTH_MAIL_USERNAME AUTH_MAIL_PASSWORD
+    AUTH_MAIL_FROM AUTH_MAIL_SENDER_NAME AUTH_MAIL_SMTP_AUTH
+    AUTH_MAIL_STARTTLS_ENABLE AUTH_MAIL_STARTTLS_REQUIRED
+    AUTH_MAIL_CONNECTION_TIMEOUT_MS AUTH_MAIL_READ_TIMEOUT_MS AUTH_MAIL_WRITE_TIMEOUT_MS
+)
+docker_env=()
+for name in "${application_env[@]}"; do
+    if [[ ${!name+x} ]]; then
+        docker_env+=(--env "$name")
+    fi
+done
+
 if docker container inspect "$previous" >/dev/null 2>&1; then
     docker container rm "$previous"
 fi
@@ -57,7 +74,7 @@ fi
 
 if docker run --detach --name "$container" --restart unless-stopped \
         --publish 127.0.0.1:8080:8080 \
-        --env DB_HOST --env DB_PORT --env DB_NAME --env DB_USERNAME --env DB_PASSWORD "$image" && wait_for_health; then
+        "${docker_env[@]}" "$image" && wait_for_health; then
     systemctl disable kiikick.service
     printf 'Deployed Docker image %s (jar sha256 %s)\n' "$image" "$digest"
     exit 0
