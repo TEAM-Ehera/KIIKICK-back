@@ -3,6 +3,7 @@ package com.teamehera.kiikick.user.service;
 import com.teamehera.kiikick.auth.controller.AuthApiResponseFactory;
 import com.teamehera.kiikick.global.idempotency.repository.IdempotencyRecordRepository;
 import com.teamehera.kiikick.match.service.MatchMutation;
+import com.teamehera.kiikick.user.avatar.AvatarService;
 import com.teamehera.kiikick.user.dto.ProfilePatchRequest;
 import com.teamehera.kiikick.user.dto.UserSelfResponse;
 import com.teamehera.kiikick.user.repository.UserConsentRepository;
@@ -21,6 +22,7 @@ import java.util.UUID;
 public class MyProfileService {
     private static final String PATH = "/api/v1/users/me";
     private final UserRepository users;
+    private final AvatarService avatars;
     private final UserConsentRepository consents;
     private final MatchMutation mutation;
     private final IdempotencyRecordRepository records;
@@ -29,9 +31,10 @@ public class MyProfileService {
     private final Clock clock;
     private final Duration retention;
 
-    public MyProfileService(UserRepository users, UserConsentRepository consents, MatchMutation mutation,
+    public MyProfileService(UserRepository users, AvatarService avatars, UserConsentRepository consents, MatchMutation mutation,
             IdempotencyRecordRepository records, AuthApiResponseFactory responses, ObjectMapper json, Clock clock,
             @Value("${kiikick.match.idempotency-retention:P1D}") Duration retention) {
+        this.avatars = avatars;
         this.users = users; this.consents = consents; this.mutation = mutation; this.records = records;
         this.responses = responses; this.json = json; this.clock = clock; this.retention = retention;
     }
@@ -52,10 +55,14 @@ public class MyProfileService {
         return mutation.executeUnversioned(request, now.plus(retention),
                 () -> records.deleteExpiredByScope(actor, "PATCH", PATH, key, now), () -> {
                     var current = users.findById(actor).orElseThrow(MissingUser::new);
+                    if (patch.avatarPresent() && avatars.isManagedUrl(patch.avatarUrl())) {
+                        throw new ProfilePatchRequest.InvalidInput("avatarUrl");
+                    }
                     int updated = users.updateProfile(actor,
                             patch.nicknamePresent() ? patch.nickname() : current.nickname(),
                             patch.avatarPresent() ? patch.avatarUrl() : current.avatarUrl());
                     if (updated != 1) throw new MissingUser();
+                    if (patch.avatarPresent()) avatars.retireAfterCommit(actor, current.avatarUrl());
                     var response = responses.success(get(actor));
                     String headers = json.writeValueAsString(Map.of("X-Request-Id", response.meta().requestId(), "Cache-Control", "no-store"));
                     return new MatchMutation.Response(200, headers, json.writeValueAsString(response));

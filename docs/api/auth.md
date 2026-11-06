@@ -527,13 +527,13 @@ Query parameter: 없음.
 | 필드 | 타입 | 필수 | null | 기본값 / 예시 | 설명 |
 | --- | --- | :---: | :---: | --- | --- |
 | `nickname` | string | X | 불가 | — | 공백·null 거절. #65는 기존 CRUD와 동일한 최대 16자·중복 허용 적용(아래 정책 참고) |
-| `avatarUrl` | string | X | 허용 | — | 이미 등록된 이미지 URL. null은 이미지 제거 |
+| `avatarUrl` | string | X | 허용 | — | 기존 외부 이미지 URL. null은 이미지 제거. KIIKICK 이미지 도메인의 URL은 사진 업로드 API에서 발급 |
 
 중첩 필드의 필수 O는 부모 객체/배열을 제출했을 때 적용한다. PATCH의 누락·null 규칙은 [공통 계약](common.md)을 따른다.
 
 ### 처리 규칙
 
-1. 수정 필드가 최소 1개 필요하다. 이미지 업로드 API는 원문 확인 전 보류한다.
+1. 수정 필드가 최소 1개 필요하다. 새 프로필 사진은 [사진 업로드 API](#프로필-사진-업로드와-삭제)로 등록한다.
 2. id, comparisonConsent, onboardingStatus 등 읽기 전용 필드와 알 수 없는 필드는 422. `nickname: null`은 422, `avatarUrl: null`은 제거이며 생략한 필드는 유지한다. 서버는 제출한 avatarUrl에 접속하거나 이미지를 업로드하지 않는다.
 3. #65 승인 정책: 닉네임은 기존 `UserUpdateRequest`와 동일한 Java 문자열 길이(UTF-16 코드 단위) 최대 16자이고 중복을 허용한다. UNIQUE·중복 검사·자동 공백 제거를 추가하지 않는다. 이는 #65에 기존 정책을 적용한 결정이며 향후 P01/P07 정책 확정 시 재검토한다.
 4. 공통 멱등 트랜잭션의 사용자 행 잠금 안에서 현재 값 조회 → 제출 필드 병합 → 프로필 수정 → 응답 저장을 수행한다. 실패하면 프로필과 멱등 기록을 함께 롤백한다. 같은 키의 원문 본문/If-Match가 다르면 409이며 동일 요청은 최초 본문·meta·X-Request-Id를 재생한다. If-Match는 신규 요청에서 사용하지 않는다(제출하면 400).
@@ -626,6 +626,37 @@ Content-Type: application/json
 ---
 
 <a id="auth-06"></a>
+## 프로필 사진 업로드와 삭제
+
+| 요청 | 권한 | 요청 형식 | 성공 |
+| --- | --- | --- | --- |
+| `POST /api/v1/users/me/avatar` | Bearer 액세스 토큰 | `multipart/form-data`, `file` 파트 | 200, `data.avatarUrl` 및 `meta` |
+| `DELETE /api/v1/users/me/avatar` | Bearer 액세스 토큰 | 본문 없음 | 204 |
+
+- JPEG와 PNG를 받는다. 파일당 최대 5 MiB, 변당 최대 8192px, 최대 2500만 픽셀이다.
+- 서버는 긴 변이 최대 512px인 JPEG로 다시 인코딩하고 R2에 저장한 뒤 URL을 DB에 반영한다. 로그인 및 내 프로필과 친구 프로필 조회에서 URL을 읽을 수 있다.
+- 401은 인증 실패, 413은 업로드 크기 초과, 415는 요청 미디어 유형 오류, 422는 파일 누락 또는 이미지 검증 실패, 503은 저장소나 DB 사용 불가다.
+
+### Cloudflare 설정
+
+환경마다 아바타 전용 R2 버킷과 해당 버킷으로 범위를 제한한 Object Read & Write 자격 증명을 사용한다.
+프로필 사진은 URL을 아는 클라이언트가 가져올 수 있다. 운영 환경은 Cloudflare의 버킷 Custom Domain을 연결하고, 개발 환경에서는 `r2.dev` URL을 사용할 수 있다.
+쓰기 자격 증명은 API 서버 환경 변수에 저장한다. [Cloudflare R2 공개 버킷 설정](https://developers.cloudflare.com/r2/buckets/public-buckets/)
+
+| 환경 변수 | 값 |
+| --- | --- |
+| `AVATAR_R2_ENABLED` | 설정 완료 후 `true`. 기본값은 `false`이며 업로드는 503을 반환한다. |
+| `AVATAR_R2_ENDPOINT` | R2 S3 API의 HTTPS 주소. 예시 `https://<account-id>.r2.cloudflarestorage.com` |
+| `AVATAR_R2_BUCKET` | 아바타 버킷 이름 |
+| `AVATAR_R2_PUBLIC_BASE_URL` | 버킷의 공개 HTTPS 주소. 경로 없이 호스트까지 지정한다. |
+| `AVATAR_R2_ACCESS_KEY_ID` | R2 S3 액세스 키 ID |
+| `AVATAR_R2_SECRET_ACCESS_KEY` | R2 S3 시크릿 액세스 키 |
+
+리버스 프록시가 있으면 업로드 경로의 요청 제한을 6 MiB 이상으로 맞춘다.
+사진 교체와 삭제 시 DB 커밋 이후 이전 객체를 제거한다. 삭제 실패는 서버 로그에 기록되므로 R2 객체와 DB 참조를 대조한 뒤 남은 객체를 정리한다.
+계정 삭제 시 사진 객체 정리는 계정 삭제 작업에서 함께 처리해야 한다.
+
+
 ## AUTH-06 · 온보딩 완료 (예정 · #66)
 
 닉네임과 동의 내역을 제출하고 온보딩을 완료한다.

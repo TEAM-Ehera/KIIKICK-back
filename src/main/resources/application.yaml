@@ -2,6 +2,11 @@ spring:
   application:
     name: KIIKICK-back
 
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 6MB
+
   datasource:
     url: jdbc:mysql://${DB_HOST}:${DB_PORT:3306}/${DB_NAME:kiikick}?sslMode=REQUIRED&connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true&characterEncoding=UTF-8
     username: ${DB_USERNAME}
@@ -47,3 +52,12 @@ kiikick:
       ip-secret: ${AUTH_IP_HMAC_SECRET}
       sender-address: ${AUTH_MAIL_FROM}
       sender-name: ${AUTH_MAIL_SENDER_NAME:KIIKICK}
+
+
+kiikick-avatar:
+  enabled: ${AVATAR_R2_ENABLED:false}
+  endpoint: ${AVATAR_R2_ENDPOINT:}
+  bucket: ${AVATAR_R2_BUCKET:}
+  public-base-url: ${AVATAR_R2_PUBLIC_BASE_URL:}
+  access-key-id: ${AVATAR_R2_ACCESS_KEY_ID:}
+  secret-access-key: ${AVATAR_R2_SECRET_ACCESS_KEY:}

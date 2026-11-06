@@ -105,6 +105,17 @@ public class UserRepository {
         );
     }
 
+    public void updateAvatar(UUID id, String avatarUrl) {
+        jdbcTemplate.update(
+                """
+                UPDATE users
+                SET avatar_url = ?, updated_at = CURRENT_TIMESTAMP(6)
+                WHERE id = ? AND deleted_at IS NULL
+                """,
+                avatarUrl, uuidToBytes(id)
+        );
+    }
+
     public int updateProfile(UUID id, String nickname, String avatarUrl) {
         return jdbcTemplate.update(
                 """
