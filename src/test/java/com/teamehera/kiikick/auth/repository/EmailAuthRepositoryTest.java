@@ -5,6 +5,7 @@ import com.teamehera.kiikick.auth.domain.EmailVerificationFlow;
 import com.teamehera.kiikick.auth.domain.SendRateLimitDecision;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.boot.jdbc.test.autoconfigure.JdbcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -27,7 +28,8 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-@JdbcTest
+@JdbcTest(properties = "spring.datasource.url=jdbc:h2:mem:email-auth-repository;MODE=MySQL")
+@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import({
         EmailCredentialRepository.class,
         EmailVerificationFlowRepository.class,

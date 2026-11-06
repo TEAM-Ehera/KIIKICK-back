@@ -8,6 +8,7 @@ import com.teamehera.kiikick.auth.repository.EmailVerificationFlowRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
 import org.springframework.boot.jdbc.test.autoconfigure.JdbcTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
@@ -42,7 +43,8 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-@JdbcTest
+@JdbcTest(properties = "spring.datasource.url=jdbc:h2:mem:email-verification-service;MODE=MySQL")
+@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import({
         EmailVerificationService.class,
         RegistrationTokenService.class,
