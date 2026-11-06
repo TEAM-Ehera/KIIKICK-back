@@ -10,6 +10,10 @@ v0.4 설계 계약이다. 사용자 확정 사항은 개인 경기, 쿼터별 �
 - 공개 인증 API를 제외하고 Bearer 인증이 필수다. userId/ownerId는 인증 사용자에서 결정하고 요청으로 소유권을 바꾸지 않는다.
 - 서비스 기준 시간대는 **Asia/Seoul**이다. 일반 API의 요청·응답 날짜는 `2026-11-02T10:00:00+09:00`처럼 오프셋이 포함된 RFC 3339 문자열이다. 앱 화면과 날짜별 통계도 서울 기준이다. 시간대 없는 문자열은 사용하지 않는다.
 - DB 내부는 UTC DATETIME(6) 저장을 유지한다. API 입력을 UTC로 정규화하고 출력 시 서울 시각으로 변환한다. 서비스 시간대와 DB 내부 저장 기준은 구별한다.
+- Auth(#61·#72·#73) 날짜와 공통 성공·오류 메타는 기존 합의에 따라 Asia/Seoul의 `+09:00` 오프셋을 포함한다. DB UTC DATETIME(6), Service의 Instant 계산은 유지하고 응답 경계에서만 변환한다. 수동 9시간 가산과 JVM 기본 시간대 해석은 사용하지 않는다. 일별 통계 정책은 변경하지 않는다.
+- 소수초 포함 여부와 자릿수는 기존 합의 문서에서 확정하지 않았다. 현재 구현은 정밀도를 자르지 않고 보존한다. 예: `2026-11-02T10:00:00+09:00`, `2026-11-02T10:00:00.123456+09:00`. DB는 마이크로초 정밀도이며 서버 Instant 유래 값에는 최대 9자리 소수초가 나올 수 있다. iOS의 소수초·오프셋 파싱과 최종 표시 정밀도는 연동 확인이 필요하다.
+- Auth UTC 쓰기: 서비스가 Instant를 UTC LocalDateTime으로 변환해 INSERT/UPDATE 매개변수에 전달한다. UserRepository의 CURRENT_TIMESTAMP(6)는 기존 Connector/J의 `connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true`로 UTC 세션에서 실행된다. 다른 연결 경로에서는 동일한 세션 UTC 설정이 필요하다.
+- 기존 데이터 후속 확인: DATETIME(6) 값 자체에는 시간대가 없어 과거 UTC/KST 저장 여부를 단독 판별할 수 없다. 당시 연결 세션 설정·배포 설정·시간대가 명시된 원본 이벤트와 대조해야 한다. 현재 테스트 fixture 검증은 과거 데이터의 UTC 저장 증명이 아니며, 기존 데이터를 임의로 9시간 보정하지 않는다.
 - query의 날짜를 URL에 넣을 때 `+`는 `%2B`로 인코딩한다. iOS는 URLComponents/URLQueryItem으로 쿼리를 구성하되, 최종 URL에서 `+09:00`의 `+`가 `%2B`로 인코딩됐는지 확인한다.
 - **운동 업로드 원본만 예외**: iOS WorkoutPayload의 startDate/endDate 및 샘플 timestamp는 2001-01-01 UTC 기준 초 단위 Double이다. 서버가 978307200초를 더해 Unix 시각으로 변환한 뒤 UTC DATETIME(6)에 저장한다. 소수 초를 보존하며 Double 유한수와 DB 날짜 범위를 검사한다.
 - 본문 없는 명령은 본문을 생략한다. PATCH는 누락 유지, nullable 필드의 명시적 null만 삭제 의미다. 알 수 없는 필드와 서버 관리 필드는 422다.

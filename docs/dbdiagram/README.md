@@ -5,7 +5,7 @@
 | 목적 | MySQL SQL | DBML | 범위 |
 | --- | --- | --- | --- |
 | 현재 PR 구조 참고 | [current-pr.sql](current-pr.sql) | [current-pr.dbml](current-pr.dbml) | 4개 테이블, 3개 FK |
-| 쿼터 중심 개인 기록 설계 | [full-design.sql](full-design.sql) | [full-design.dbml](full-design.dbml) | 20개 테이블, 28개 FK |
+| 쿼터 중심 개인 기록 설계 | [full-design.sql](full-design.sql) | [full-design.dbml](full-design.dbml) | 25개 테이블, 31개 FK |
 
 ## 확정된 기록 방향
 
@@ -41,7 +41,9 @@
 
 SQL은 ERD용 CREATE TABLE/ALTER TABLE ADD CONSTRAINT 정의이며 운영 DB 변경용 마이그레이션이 아니다. 실제 DB에 실행하지 않았다. DBML은 공식 @dbml/cli로 변환하고 설명과 그룹을 보완했다. 문자열 길이는 nickname(16) 이외 임시값이다. UUID는 BINARY(16), 날짜는 UTC DATETIME(6)을 사용한다.
 
-친구 관계 low/high 정규화, 허용 상태, 권한, 골·어시스트 음수 금지, 단일 활성 쿼터 등은 서비스 검증 또는 후속 제약 설계가 필요하다. 친구·알림·동의·인증 테이블은 유지했다. sync_operations의 필요 범위는 폰·워치의 실제 동기화 요구사항을 추가 검토해야 한다.
+친구 관계 low/high 정규화, 허용 상태, 권한, 골·어시스트 음수 금지, 단일 활성 쿼터 등은 서비스 검증 또는 후속 제약 설계가 필요하다. 이메일 인증코드와 IP 식별값은 용도별 HMAC-SHA-256, registrationToken은 SHA-256 해시만 저장한다. sync_operations의 필요 범위는 폰·워치의 실제 동기화 요구사항을 추가 검토해야 한다.
+
+HMAC 비밀키는 코드나 DB에 저장하지 않는다. API 계층은 `AUTH_EMAIL_CODE_HMAC_SECRET`, `AUTH_IP_HMAC_SECRET` 환경변수에서 각각 32바이트 이상의 별도 값을 읽어 `AuthHashEncoder`를 구성한다.
 
 [ERD](../erd.md), [기능 명세](../functional-spec.md), [API 명세](../api-spec.md)를 v0.4 개인·쿼터 모델로 함께 갱신했다. 현재 PR 스키마와 앱/서버 구현은 변경하지 않았다.
 
