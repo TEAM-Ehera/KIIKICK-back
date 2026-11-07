@@ -23,7 +23,7 @@ Auth 날짜 응답과 성공·오류 메타는 ISO 8601 Asia/Seoul `+09:00` 문�
 | [AUTH-03](#auth-03) | 로그아웃 | `POST` | `/auth/logout` | 구현 (#63) |
 | [AUTH-04](#auth-04) | 내 프로필 조회 | `GET` | `/users/me` | 구현 (#65) |
 | [AUTH-05](#auth-05) | 내 프로필 수정 | `PATCH` | `/users/me` | 구현 (#65) |
-| [AUTH-06](#auth-06) | 온보딩 완료 | `PUT` | `/users/me/onboarding` | 예정 (#66) |
+| [AUTH-06](#auth-06) | 온보딩 완료 | `PUT` | `/users/me/onboarding` | 구현 · 검증 완료 (#66) |
 | [AUTH-07](#auth-07) | 현재 동의 목록 조회 | `GET` | `/users/me/consents` | 예정 (#68) |
 | [AUTH-08](#auth-08) | 동의 부여·철회 | `PUT` | `/users/me/consents/{purpose}` | 예정 (#68) |
 | [AUTH-09](#auth-09) | 회원 탈퇴 요청 | `POST` | `/users/me/deletion-requests` | 예정 (#69) |
@@ -658,7 +658,7 @@ Content-Type: application/json
 ---
 
 <a id="auth-06"></a>
-## AUTH-06 · 온보딩 완료 (예정 · #66)
+## AUTH-06 · 온보딩 완료 (구현 · 검증 완료 · #66)
 
 닉네임과 동의 내역을 제출하고 온보딩을 완료한다.
 
@@ -688,10 +688,10 @@ Query parameter: 없음.
 
 | 필드 | 타입 | 필수 | null | 기본값 / 예시 | 설명 |
 | --- | --- | :---: | :---: | --- | --- |
-| `nickname` | string | O | 불가 | — | 사용자 표시명 |
-| `consents` | array<object> | O | 불가 | — | 현재 정책의 동의 목록. 필수/선택 목적 구분은 P11 미정 |
-| `consents[].purpose` | string | O | 불가 | — | 정책에 등록된 동의 목적 |
-| `consents[].policyVersion` | string | O | 불가 | — | 해당 목적의 유효 정책 버전 |
+| `nickname` | string | O | 불가 | — | 공백만 입력 불가, 기존 Java 길이 최대 16자·중복 허용, 자동 trim 없음 |
+| `consents` | array<object> | O | 불가 | — | 선택 동의 목록. 빈 배열 허용; 필드 누락·null 불가 |
+| `consents[].purpose` | string | O | 불가 | — | GPS_COLLECTION 또는 HEALTH_DATA |
+| `consents[].policyVersion` | string | O | 불가 | 1.0 | 각 목적의 안내문과 일치하는 버전 1.0 |
 | `consents[].granted` | boolean | O | 불가 | — | true 동의, false 거부 |
 
 중첩 필드의 필수 O는 부모 객체/배열을 제출했을 때 적용한다. PATCH의 누락·null 규칙은 [공통 계약](common.md)을 따른다.
@@ -699,8 +699,10 @@ Query parameter: 없음.
 ### 처리 규칙
 
 1. 닉네임 저장·동의 이력 추가·온보딩 완료 처리는 한 트랜잭션이다.
-2. 같은 멱등 키의 재전송은 이력을 중복 생성하지 않는다. 이미 완료한 온보딩을 다른 키로 다시 완료하려면 INVALID_STATE를 반환하는 안이다.
-3. FRIEND_COMPARISON은 설명용 목적 코드다. 해당 항목만으로 필수 동의를 충족한다고 확정하지 않는다.
+2. 같은 멱등 키의 재전송은 이력을 중복 생성하지 않는다. 이미 완료한 온보딩을 다른 키로 다시 완료하면 INVALID_STATE를 반환한다.
+3. GPS_COLLECTION·HEALTH_DATA는 모두 선택이며 둘 다 거부하거나 빈 배열을 제출해도 완료한다. 미제출 항목은 동의로 처리하지 않고 제출한 항목만 이력에 저장한다. FRIEND_DISCOVERY·FRIEND_COMPARISON은 #66에서 허용하지 않는다.
+4. 두 목적의 유효 policyVersion은 각각 1.0이다. 미지원 목적·버전 또는 같은 목적의 중복 입력은 422 VALIDATION_FAILED로 거부하며 닉네임·동의·완료 상태는 전체 롤백한다. 목적별 실제 안내문은 [P11 상세](../decisions.md#p11-동의탈퇴데이터-삭제-정합성-59)를 따른다.
+5. 센서 업로드 허용 검사·철회·삭제는 #66 범위가 아니다. 온보딩 API는 H2·Docker MySQL 자동 테스트와 사용자가 보고한 핵심 Swagger 수동 시나리오를 검증했다. 만료 JWT·모두 동의·모두 거부·빈 배열은 자동 테스트로 검증했으며 해당 수동 검증을 완료한 것으로 표시하지 않는다. #68 및 데이터 삭제 기능은 구현 완료로 표시하지 않는다.
 
 ### 요청 예시
 
@@ -715,8 +717,8 @@ Content-Type: application/json
   "nickname": "준",
   "consents": [
     {
-      "purpose": "FRIEND_COMPARISON",
-      "policyVersion": "2026-11-01",
+      "purpose": "GPS_COLLECTION",
+      "policyVersion": "1.0",
       "granted": true
     }
   ]
@@ -763,11 +765,10 @@ Content-Type: application/json
 
 | HTTP | code | 발생 조건 | 앱 대응 |
 | --- | --- | --- | --- |
-| 422 | `REQUIRED_CONSENT_MISSING` | 필수 동의 누락/거절 | 필수 목적·버전을 확인해 재제출 |
 | 409 | `INVALID_STATE` | 현재 상태에서 이 동작을 실행할 수 없음 | 최신 계정 상태를 조회하고 가능한 동작 표시 |
 | 401 | `UNAUTHENTICATED / TOKEN_EXPIRED` | access token 없음·만료 | 토큰 갱신/로그인 |
 | 409 | `IDEMPOTENCY_KEY_REUSED` | 같은 멱등 키로 다른 본문/If-Match 제출 | 기존 요청 결과 확인. 별도 동작은 새 키 |
-| 422 | `VALIDATION_FAILED` | 누락·타입·읽기 전용 필드 등 검증 실패 | error.details.fields 확인 |
+| 422 | `VALIDATION_FAILED` | 미지원 목적·버전, 누락·타입·읽기 전용 필드 등 검증 실패 | error.details.fields 확인 |
 
 [공통 오류](common.md)에 정의한 400·403·429·500·503도 적용된다. 네트워크 응답 유실 시 저장 여부는 알 수 없으므로 새 ID로 재등록하지 않는다.
 
@@ -776,11 +777,11 @@ Content-Type: application/json
 ```json
 {
   "error": {
-    "code": "REQUIRED_CONSENT_MISSING",
-    "message": "필수 동의 누락/거절",
+    "code": "VALIDATION_FAILED",
+    "message": "온보딩 요청을 처리할 수 없습니다.",
     "retryable": false,
     "persistence": "NOT_SAVED",
-    "details": {}
+    "details": {"fields": ["consents[0].purpose"]}
   },
   "meta": {
     "requestId": "req-error-example",

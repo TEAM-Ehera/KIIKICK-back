@@ -69,10 +69,12 @@ Auth 응답의 날짜는 ISO 8601 Asia/Seoul `+09:00` 문자열이다. `UserSelf
 
 | 필드 | 타입 | 필수 | null | 기본값 / 예시 | 설명 |
 | --- | --- | :---: | :---: | --- | --- |
-| `purpose` | string | O | 불가 | — | 동의 목적 코드. 목록 P11 미정 |
+| `purpose` | string | O | 불가 | — | 동의 목적 코드. #66 허용값은 아래 설명 참조; 다른 목적은 P11 협의 |
 | `policyVersion` | string | O | 불가 | — | 동의한 약관/정책 버전 |
 | `granted` | boolean | O | 불가 | — | true 부여, false 철회 |
 | `recordedAt` | timestamp | O | 불가 | — | 서버가 기록한 시각 |
+
+#66에서 승인한 목적은 GPS_COLLECTION·HEALTH_DATA이며 각각 policyVersion 1.0, 모두 선택이다. 빈 consents 배열·모두 거부도 온보딩 완료를 허용하고 제출 항목만 이력에 저장한다. 다른 목적 및 #68 철회 세부는 별도 합의 대상이다. 이 스키마와 정책의 존재는 API 구현 완료를 뜻하지 않는다. 목적별 안내문은 [P11 상세](../decisions.md#p11-동의탈퇴데이터-삭제-정합성-59)를 따른다.
 
 
 <a id="venue"></a>
