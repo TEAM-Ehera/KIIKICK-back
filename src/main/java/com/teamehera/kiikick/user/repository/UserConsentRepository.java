@@ -19,7 +19,7 @@ public class UserConsentRepository {
     private final RowMapper<UserConsent> rowMapper = (rs, rowNum) -> new UserConsent(
             bytesToUuid(rs.getBytes("id")), bytesToUuid(rs.getBytes("user_id")),
             rs.getString("purpose"), rs.getString("policy_version"),
-            rs.getBoolean("granted"), rs.getTimestamp("recorded_at").toLocalDateTime()
+            rs.getBoolean("granted"), rs.getObject("recorded_at", java.time.LocalDateTime.class)
     );
 
     public UserConsentRepository(JdbcTemplate jdbcTemplate) {

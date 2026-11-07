@@ -291,8 +291,8 @@ Authorization: Bearer <accessToken>
 | [AUTH-04](api/auth.md#auth-04) | 내 프로필 조회 (#65 구현) | `GET` | `/users/me` | 200 |
 | [AUTH-05](api/auth.md#auth-05) | 내 프로필 수정 (#65 구현) | `PATCH` | `/users/me` | 200 |
 | [AUTH-06](api/auth.md#auth-06) | 온보딩 완료 (#66 구현·검증 완료) | `PUT` | `/users/me/onboarding` | 200 |
-| [AUTH-07](api/auth.md#auth-07) | 현재 동의 목록 조회 (예정 #68) | `GET` | `/users/me/consents` | 200 |
-| [AUTH-08](api/auth.md#auth-08) | 동의 부여·철회 (예정 #68) | `PUT` | `/users/me/consents/{purpose}` | 200 |
+| [AUTH-07](api/auth.md#auth-07) | 현재 동의 목록 조회 (GET 구현 #68 부분) | `GET` | `/users/me/consents` | 200 |
+| [AUTH-08](api/auth.md#auth-08) | 동의 부여·철회 (부여·철회 테스트 전용 #68) | `PUT` | `/users/me/consents/{purpose}` | 200 |
 | [AUTH-09](api/auth.md#auth-09) | 회원 탈퇴 요청 (예정 #69) | `POST` | `/users/me/deletion-requests` | 202 |
 | [AUTH-10](api/auth.md#auth-10) | 탈퇴 처리 상태 조회 (예정 #69) | `GET` | `/users/me/deletion-requests/{deletionId}` | 200 |
 
