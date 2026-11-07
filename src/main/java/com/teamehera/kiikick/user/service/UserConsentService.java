@@ -60,12 +60,11 @@ public class UserConsentService {
 
     @Transactional(readOnly = true, isolation = Isolation.READ_COMMITTED)
     public boolean hasEffectiveConsent(UUID userId, String purpose) {
-        if (!ConsentPolicy.supportsPurpose(purpose)
-                || users.findById(userId).filter(user -> user.deletionRequestedAt() == null).isEmpty()) {
+        if (!ConsentPolicy.supportsPurpose(purpose)) {
             return false;
         }
-        // 최신 이력이 철회 또는 구버전이면 이전 부여 이력으로 되돌아가지 않는다.
-        return consents.findLatest(userId, purpose)
+        // 같은 조회 시점에 계정 상태와 최신 이력을 확인하고 이전 부여 이력으로 되돌아가지 않는다.
+        return consents.findLatestForActiveUser(userId, purpose)
                 .filter(consent -> consent.granted() && ConsentPolicy.supports(purpose, consent.policyVersion()))
                 .isPresent();
     }

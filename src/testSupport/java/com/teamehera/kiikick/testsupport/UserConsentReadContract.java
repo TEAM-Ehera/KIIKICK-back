@@ -4,6 +4,7 @@ import com.teamehera.kiikick.auth.email.VerificationEmailSender;
 import com.teamehera.kiikick.auth.security.*;
 import com.teamehera.kiikick.user.domain.UserConsent;
 import com.teamehera.kiikick.user.repository.*;
+import com.teamehera.kiikick.user.service.UserConsentService;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessResourceFailureException;
@@ -33,6 +34,7 @@ public abstract class UserConsentReadContract {
     @Autowired AuthSecurityProperties properties;
     @Autowired ObjectMapper json;
     @Autowired JdbcTemplate jdbc;
+    @Autowired UserConsentService consentService;
     @Autowired RefreshRotationContract.TestClock clock;
     @MockitoSpyBean UserRepository users;
     @MockitoSpyBean UserConsentRepository consents;
@@ -150,7 +152,7 @@ public abstract class UserConsentReadContract {
     @Test void 사용자조회DB오류는_내부정보없이503다() throws Exception {
         var f = fixture(); doThrow(new DataAccessResourceFailureException("PRIVATE_SQL_DETAIL")).when(users).findById(f.id);
         var response = read(f).andExpect(status().isServiceUnavailable()).andExpect(jsonPath("$.error.code").value("SERVICE_UNAVAILABLE"))
-                .andExpect(jsonPath("$.error.retryable").value(true)).andExpect(jsonPath("$.error.persistence").value("NOT_SAVED"));
+                .andExpect(jsonPath("$.error.retryable").value(true)).andExpect(jsonPath("$.error.persistence").value(org.hamcrest.Matchers.nullValue()));
         assertThat(response.andReturn().getResponse().getContentAsString()).doesNotContain("PRIVATE_SQL_DETAIL", f.token);
     }
     @Test void 동의조회DB오류는_내부정보없이503다() throws Exception {
@@ -159,6 +161,14 @@ public abstract class UserConsentReadContract {
                 .andExpect(jsonPath("$.error.code").value("SERVICE_UNAVAILABLE"));
         assertThat(response.andReturn().getResponse().getContentAsString()).doesNotContain("PRIVATE_SQL_DETAIL", f.token);
     }
+    @Test void 유효동의_조회실패는_호출자에게_전파한다() {
+        var f = fixture();
+        doThrow(new DataAccessResourceFailureException("fixture lookup failure"))
+                .when(consents).findLatestForActiveUser(f.id, "GPS_COLLECTION");
+        assertThatThrownBy(() -> consentService.hasEffectiveConsent(f.id, "GPS_COLLECTION"))
+                .isInstanceOf(DataAccessResourceFailureException.class);
+    }
+
     @Test void UTC기록시각을_같은Instant와_마이크로초를보존해_서울로반환한다() throws Exception {
         var f = fixture(); consent(f, "GPS_COLLECTION", true, 0);
         String actual = data(f).get(0).path("recordedAt").asText();

@@ -57,6 +57,6 @@ public class UserConsentController {
         var result = ResponseEntity.status(status).header("X-Request-Id", meta.requestId()).cacheControl(CacheControl.noStore());
         if (status == 401) result.header(HttpHeaders.WWW_AUTHENTICATE, "Bearer");
         return result.body(new AuthApiErrorResponse(new AuthApiErrorResponse.AuthApiError(code,
-                "동의 목록을 조회할 수 없습니다.", retryable, "NOT_SAVED", Map.of()), meta));
+                "동의 목록을 조회할 수 없습니다.", retryable, null, Map.of()), meta));
     }
 }

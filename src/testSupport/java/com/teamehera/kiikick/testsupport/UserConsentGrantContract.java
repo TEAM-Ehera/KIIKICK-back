@@ -206,14 +206,28 @@ public abstract class UserConsentGrantContract {
         request(actor, GPS, UUID.randomUUID(), GRANT.replace("1.0", "2.0"))
                 .andExpect(status().isUnprocessableContent())
                 .andExpect(jsonPath("$.error.details.fields[0]").value("policyVersion"));
-        for (var body : List.of("{}", "{", GRANT + "{}", GRANT.replace("true", "\"true\""),
-                GRANT.replace("true", "null"), GRANT.replace("true", "false,\"granted\":true"))) {
+        for (var body : List.of("{}", GRANT.replace("true", "\"true\""), GRANT.replace("true", "null"))) {
             request(actor, GPS, UUID.randomUUID(), body).andExpect(status().isUnprocessableContent())
                     .andExpect(jsonPath("$.error.code").value("VALIDATION_FAILED"));
         }
-        request(actor, GPS, null, GRANT).andExpect(status().isUnprocessableContent())
+        for (var body : List.of("{", GRANT + "{}", GRANT.replace("true", "false,\"granted\":true"))) {
+            request(actor, GPS, UUID.randomUUID(), body).andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
+        }
+        request(actor, GPS, null, GRANT).andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.details.fields[0]").value("Idempotency-Key"));
         assertCounts(actor, 0, 0);
+    }
+
+    @Test void rejectsIfMatchEvenForAnExistingIdempotencyKey() throws Exception {
+        var actor = fixture();
+        var key = UUID.randomUUID();
+        request(actor, GPS, key, GRANT).andExpect(status().isOk());
+        mvc.perform(put(PATH + "/" + GPS).contentType("application/json")
+                        .header("Authorization", bearer(actor)).header("Idempotency-Key", key)
+                        .header("If-Match", "\"1\"").content(GRANT))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
+        assertCounts(actor, 1, 1);
     }
 
     @Test void requiresJwtAndRejectsReplayAfterDeletionRequest() throws Exception {

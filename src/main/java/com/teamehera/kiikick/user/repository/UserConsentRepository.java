@@ -50,6 +50,19 @@ public class UserConsentRepository {
         ).stream().findFirst();
     }
 
+    public Optional<UserConsent> findLatestForActiveUser(UUID userId, String purpose) {
+        return jdbcTemplate.query(
+                """
+                SELECT c.* FROM user_consents c
+                JOIN users u ON u.id = c.user_id
+                WHERE c.user_id = ? AND c.purpose = ?
+                  AND u.deleted_at IS NULL AND u.deletion_requested_at IS NULL
+                ORDER BY c.recorded_at DESC, c.id DESC LIMIT 1
+                """,
+                rowMapper, uuidToBytes(userId), purpose
+        ).stream().findFirst();
+    }
+
     public List<UserConsent> findLatestByUserId(UUID userId) {
         return jdbcTemplate.query(
                 """

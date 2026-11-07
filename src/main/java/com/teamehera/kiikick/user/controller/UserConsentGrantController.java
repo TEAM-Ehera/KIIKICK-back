@@ -27,6 +27,7 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/v1/users/me/consents")
+// TODO(#68): 업로드 차단·파기·재계산 연동을 검증한 뒤 운영 활성화를 검토한다.
 @ConditionalOnProperty(name = "kiikick.auth.consent-grant-test-enabled", havingValue = "true")
 public class UserConsentGrantController {
     private final UserConsentService service;
@@ -46,13 +47,14 @@ public class UserConsentGrantController {
             @RequestHeader("Idempotency-Key") String key,
             @RequestHeader(value = HttpHeaders.IF_MATCH, required = false) String ifMatch,
             @RequestBody byte[] body) {
+        if (ifMatch != null) return malformed(HttpHeaders.IF_MATCH);
         if (!ConsentPolicy.supportsPurpose(purpose)) return invalid("purpose");
         JsonNode input;
         try {
             input = json.reader().with(tools.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
                     .with(tools.jackson.core.StreamReadFeature.STRICT_DUPLICATE_DETECTION).readTree(body);
         } catch (JacksonException e) {
-            return invalid("body");
+            return malformed("body");
         }
         if (input == null || !input.isObject() || input.size() != 2) return invalid("body");
         var version = input.path("policyVersion");
@@ -62,9 +64,9 @@ public class UserConsentGrantController {
         UUID id;
         try {
             id = UUID.fromString(key);
-            if (!id.toString().equalsIgnoreCase(key)) return invalid("Idempotency-Key");
+            if (!id.toString().equalsIgnoreCase(key)) return malformed("Idempotency-Key");
         } catch (IllegalArgumentException e) {
-            return invalid("Idempotency-Key");
+            return malformed("Idempotency-Key");
         }
         var saved = service.change(actor.userId(), purpose, version.asText(), granted.asBoolean(), id, ifMatch, body);
         var result = ResponseEntity.status(saved.status());
@@ -75,12 +77,12 @@ public class UserConsentGrantController {
 
     @ExceptionHandler(MissingRequestHeaderException.class)
     public ResponseEntity<AuthApiErrorResponse> missingHeader() {
-        return invalid("Idempotency-Key");
+        return malformed("Idempotency-Key");
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<AuthApiErrorResponse> unreadable() {
-        return invalid("body");
+        return malformed("body");
     }
 
     @ExceptionHandler(MyProfileService.MissingUser.class)
@@ -97,6 +99,11 @@ public class UserConsentGrantController {
     @ExceptionHandler(DataAccessException.class)
     public ResponseEntity<AuthApiErrorResponse> unavailable() {
         return error(503, "SERVICE_UNAVAILABLE", "동의 변경 요청을 처리할 수 없습니다.", true, Map.of());
+    }
+
+    private ResponseEntity<AuthApiErrorResponse> malformed(String field) {
+        return error(400, "INVALID_REQUEST", "동의 변경 요청 형식을 확인해주세요.", false,
+                Map.of("fields", List.of(field)));
     }
 
     private ResponseEntity<AuthApiErrorResponse> invalid(String field) {
