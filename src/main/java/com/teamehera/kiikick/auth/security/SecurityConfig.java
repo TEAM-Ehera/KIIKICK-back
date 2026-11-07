@@ -1,6 +1,7 @@
 package com.teamehera.kiikick.auth.security;
 
 import com.nimbusds.jose.jwk.source.ImmutableSecret;
+import com.teamehera.kiikick.user.repository.UserRepository;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -71,8 +72,8 @@ public class SecurityConfig {
     }
 
     @Bean
-    SessionJwtAuthenticationConverter sessionJwtAuthenticationConverter() {
-        return new SessionJwtAuthenticationConverter();
+    SessionJwtAuthenticationConverter sessionJwtAuthenticationConverter(UserRepository users) {
+        return new SessionJwtAuthenticationConverter(users);
     }
 
     @Bean

@@ -142,6 +142,14 @@ public class EmailVerificationFlowRepository {
         );
     }
 
+    public void invalidateUnconsumedSignUpFlows(String normalizedEmail, LocalDateTime now) {
+        jdbcTemplate.update("""
+                UPDATE email_verification_flows SET invalidated_at = ?, updated_at = ?
+                WHERE normalized_email = ? AND purpose = 'SIGN_UP'
+                  AND invalidated_at IS NULL AND action_token_consumed_at IS NULL
+                """, now, now, normalizedEmail);
+    }
+
     public int consumeActionToken(
             UUID id, String expectedActionTokenHash, LocalDateTime consumedAt
     ) {

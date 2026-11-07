@@ -1,6 +1,7 @@
 package com.teamehera.kiikick.auth.security;
 
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import tools.jackson.databind.ObjectMapper;
 
@@ -28,6 +29,7 @@ public class AuthSecurityErrorWriter {
             String message
     ) throws IOException {
         response.setStatus(status);
+        response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store");
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         response.setCharacterEncoding("UTF-8");
 

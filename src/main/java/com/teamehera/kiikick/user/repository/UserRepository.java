@@ -65,6 +65,13 @@ public class UserRepository {
         ).stream().findFirst();
     }
 
+    public boolean isActiveForAuthentication(UUID id) {
+        return Boolean.TRUE.equals(jdbcTemplate.queryForObject("""
+                SELECT EXISTS(SELECT 1 FROM users
+                    WHERE id = ? AND deleted_at IS NULL AND deletion_requested_at IS NULL)
+                """, Boolean.class, uuidToBytes(id)));
+    }
+
     public List<User> findAll() {
         return jdbcTemplate.query(
                 """

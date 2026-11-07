@@ -26,7 +26,7 @@ Auth 날짜 응답과 성공·오류 메타는 ISO 8601 Asia/Seoul `+09:00` 문�
 | [AUTH-06](#auth-06) | 온보딩 완료 | `PUT` | `/users/me/onboarding` | 구현 · 검증 완료 (#66) |
 | [AUTH-07](#auth-07) | 현재 동의 목록 조회 | `GET` | `/users/me/consents` | 예정 (#68) |
 | [AUTH-08](#auth-08) | 동의 부여·철회 | `PUT` | `/users/me/consents/{purpose}` | 예정 (#68) |
-| [AUTH-09](#auth-09) | 회원 탈퇴 요청 | `POST` | `/users/me/deletion-requests` | 예정 (#69) |
+| [AUTH-09](#auth-09) | 회원 탈퇴 요청 | `POST` | `/users/me/deletion-requests` | 접수 구현 (#69) |
 | [AUTH-10](#auth-10) | 탈퇴 처리 상태 조회 | `GET` | `/users/me/deletion-requests/{deletionId}` | 예정 (#69) |
 
 ---
@@ -1010,7 +1010,7 @@ Content-Type: application/json
 ---
 
 <a id="auth-09"></a>
-## AUTH-09 · 회원 탈퇴 요청 (예정 · #69)
+## AUTH-09 · 회원 탈퇴 요청 (접수 구현 · #69)
 
 회원 탈퇴 처리를 접수한다.
 
@@ -1035,12 +1035,14 @@ Path parameter: 없음.
 
 Query parameter: 없음.
 
-Request body: 없음.
+Request body: `{"currentPassword":"현재 비밀번호"}`. `currentPassword`는 필수 문자열이다.
 
 ### 처리 규칙
 
-1. 접수 성공은 실제 데이터 삭제 완료가 아니다. 반환 ID로 진행 상태를 조회한다.
-2. 사용자당 활성 요청은 최대 하나다. 세션 폐기 시점·처리 기한·본인 운동/위치/심박 원본 삭제 범위는 P11 미확정.
+1. 현재 비밀번호는 BCrypt로 확인한다. 로그인 실패와 분리해 15분 내 10번째 실패부터 15분간 제한한다.
+2. 사용자 상태 변경·PENDING 기록·전체 세션 폐기·기존 이메일 자격 해제와 미소비 가입 인증 무효화를 한 트랜잭션에서 처리한다. 접수 커밋 직후 기존 Access/Refresh Token과 로그인을 차단한다.
+3. 동일 사용자의 활성 요청은 하나다. 중복 처리는 사용자 행 잠금으로 직렬화한다. 비밀번호는 멱등 지문에 저장하지 않는다. 커밋 후 기존 JWT로는 성공 응답을 재생할 수 없다.
+4. `202`는 접수이며 실제 파기 완료가 아니다. `Location`은 예정된 AUTH-10 경로를 가리킨다. AUTH-10 조회 자격과 응답 유실 시 복구 방식은 미정이며 조회 자격은 아직 발급하지 않는다.
 
 ### 요청 예시
 
@@ -1049,6 +1051,9 @@ POST /api/v1/users/me/deletion-requests HTTP/1.1
 Accept: application/json
 Authorization: Bearer <accessToken>
 Idempotency-Key: 00000016-0000-4000-8000-000000000016
+Content-Type: application/json
+
+{"currentPassword":"example-current-password"}
 ```
 
 ### 성공 응답
@@ -1089,9 +1094,10 @@ Retry-After: 3
 
 | HTTP | code | 발생 조건 | 앱 대응 |
 | --- | --- | --- | --- |
-| 409 | `DELETION_ALREADY_REQUESTED` | 이미 활성 탈퇴 요청이 있음 | 기존 요청 상태 조회 |
+| 409 | `DELETION_ALREADY_REQUESTED` | 인증을 먼저 통과한 요청이 기존 접수와 겹침 | 신규 접수를 중단 |
 | 401 | `UNAUTHENTICATED / TOKEN_EXPIRED` | access token 없음·만료 | 토큰 갱신/로그인 |
-| 409 | `IDEMPOTENCY_KEY_REUSED` | 같은 멱등 키로 다른 본문/If-Match 제출 | 기존 요청 결과 확인. 별도 동작은 새 키 |
+| 401 | `INVALID_CREDENTIALS` | 현재 비밀번호 불일치 | 현재 비밀번호 확인 |
+| 429 | `RATE_LIMITED` | 탈퇴 비밀번호 실패 제한 도달 | `Retry-After` 이후 재시도 |
 
 [공통 오류](common.md)에 정의한 400·403·429·500·503도 적용된다. 네트워크 응답 유실 시 저장 여부는 알 수 없으므로 새 ID로 재등록하지 않는다.
 

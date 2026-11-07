@@ -84,6 +84,13 @@ public class EmailSendRateLimitRepository {
         return new SendRateLimitDecision(true, emailCount + 1, ipCount + 1, null);
     }
 
+    public void lockEmailForAccountChange(String normalizedEmail, LocalDateTime now) {
+        if (!TransactionSynchronizationManager.isActualTransactionActive()) {
+            throw new IllegalStateException("An active transaction is required");
+        }
+        ensureAndLockKey(EMAIL, normalizedEmail, now);
+    }
+
     private void ensureAndLockKey(String limitType, String keyValue, LocalDateTime now) {
         jdbcTemplate.update(
                 """
