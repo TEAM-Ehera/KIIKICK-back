@@ -25,8 +25,8 @@ public class MatchRepository {
             rs.getString("venue_name_snapshot"), rs.getString("venue_address_snapshot"),
             nullableDateTime(rs, "scheduled_at"), rs.getString("status"),
             nullableDateTime(rs, "started_at"), nullableDateTime(rs, "ended_at"),
-            rs.getLong("version"), rs.getTimestamp("created_at").toLocalDateTime(),
-            rs.getTimestamp("updated_at").toLocalDateTime()
+            rs.getLong("version"), rs.getObject("created_at", LocalDateTime.class),
+            rs.getObject("updated_at", LocalDateTime.class)
     );
 
     public MatchRepository(JdbcTemplate jdbcTemplate) {

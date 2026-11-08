@@ -49,35 +49,26 @@ public class VenueRepository {
     }
 
     public List<Venue> findPageByOwnerId(UUID ownerId, String query, int limit) {
-        String pattern = query == null ? "%" : "%" + query + "%";
-        return jdbcTemplate.query(
-                """
-                SELECT * FROM venues
-                WHERE owner_id = ? AND name LIKE ?
-                ORDER BY updated_at DESC, id DESC
-                LIMIT ?
-                """,
-                rowMapper, uuidToBytes(ownerId), pattern, limit
-        );
+        return findPageByOwnerId(ownerId, query, null, null, limit);
     }
 
     public List<Venue> findPageByOwnerId(UUID ownerId, String query, LocalDateTime before, UUID beforeId, int limit) {
-        String pattern = query == null ? "%" : "%" + query.replace("!", "!!").replace("%", "!%").replace("_", "!_") + "%";
-        if (before == null) {
-            return jdbcTemplate.query(
-                    """
-                    SELECT * FROM venues
-                    WHERE owner_id = ? AND name LIKE ? ESCAPE '!'
-                    ORDER BY updated_at DESC, id DESC LIMIT ?
-                    """, rowMapper, uuidToBytes(ownerId), pattern, limit);
+        var sql = new StringBuilder("SELECT * FROM venues WHERE owner_id = ?");
+        var args = new java.util.ArrayList<Object>();
+        args.add(uuidToBytes(ownerId));
+        if (query != null && !query.isEmpty()) {
+            sql.append(" AND name LIKE ? ESCAPE '!'");
+            args.add("%" + query.replace("!", "!!").replace("%", "!%").replace("_", "!_") + "%");
         }
-        return jdbcTemplate.query(
-                """
-                SELECT * FROM venues
-                WHERE owner_id = ? AND name LIKE ? ESCAPE '!'
-                  AND (updated_at < ? OR (updated_at = ? AND id < ?))
-                ORDER BY updated_at DESC, id DESC LIMIT ?
-                """, rowMapper, uuidToBytes(ownerId), pattern, before, before, uuidToBytes(beforeId), limit);
+        if (before != null) {
+            sql.append(" AND (updated_at < ? OR (updated_at = ? AND id < ?))");
+            args.add(before);
+            args.add(before);
+            args.add(uuidToBytes(beforeId));
+        }
+        sql.append(" ORDER BY updated_at DESC, id DESC LIMIT ?");
+        args.add(limit);
+        return jdbcTemplate.query(sql.toString(), rowMapper, args.toArray());
     }
 
     public int update(UUID id, UUID ownerId, String name, String address) {

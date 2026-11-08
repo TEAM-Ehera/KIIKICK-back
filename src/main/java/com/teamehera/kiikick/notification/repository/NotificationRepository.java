@@ -16,24 +16,25 @@ import static com.teamehera.kiikick.global.jdbc.JdbcValueConverter.uuidToBytes;
 
 @Repository
 public class NotificationRepository {
-    private static final String VISIBLE = """
-            FROM notifications n
-            WHERE n.recipient_id = ?
-              AND ((n.target_type = 'MATCH' AND EXISTS (
-                    SELECT 1 FROM matches m WHERE m.id = n.target_id AND m.owner_id = n.recipient_id
-                  )) OR (n.target_type = 'FRIEND_REQUEST' AND EXISTS (
-                    SELECT 1 FROM friend_pairs p
-                    JOIN users sender ON sender.id = p.requester_id AND sender.deleted_at IS NULL
-                    WHERE p.id = n.target_id AND p.status = 'PENDING' AND p.requester_id <> n.recipient_id
-                      AND (p.user_low_id = n.recipient_id OR p.user_high_id = n.recipient_id)
-                      AND NOT EXISTS (
-                          SELECT 1 FROM user_blocks b
-                          WHERE (b.blocker_id = n.recipient_id AND b.blocked_id = p.requester_id)
-                             OR (b.blocked_id = n.recipient_id AND b.blocker_id = p.requester_id)
-                      )
-                  )))
+    private static final String MATCH_TARGET = """
+            EXISTS (SELECT 1 FROM matches m WHERE m.id = n.target_id AND m.owner_id = n.recipient_id)
             """;
-
+    private static final String FRIEND_TARGET = """
+            EXISTS (
+                SELECT 1 FROM friend_pairs p
+                JOIN users sender ON sender.id = p.requester_id AND sender.deleted_at IS NULL
+                WHERE p.id = n.target_id AND p.status = 'PENDING' AND p.requester_id <> n.recipient_id
+                  AND (p.user_low_id = n.recipient_id OR p.user_high_id = n.recipient_id)
+                  AND NOT EXISTS (
+                      SELECT 1 FROM user_blocks b
+                      WHERE (b.blocker_id = n.recipient_id AND b.blocked_id = p.requester_id)
+                         OR (b.blocked_id = n.recipient_id AND b.blocker_id = p.requester_id)
+                  )
+            )
+            """;
+    private static final String RECIPIENT = "FROM notifications n WHERE n.recipient_id = ?";
+    private static final String VISIBLE = RECIPIENT + " AND ((n.target_type = 'MATCH' AND " + MATCH_TARGET
+            + ") OR (n.target_type = 'FRIEND_REQUEST' AND " + FRIEND_TARGET + "))";
 
     private final JdbcTemplate jdbcTemplate;
     private final RowMapper<Notification> rowMapper = (rs, rowNum) -> new Notification(
@@ -41,7 +42,7 @@ public class NotificationRepository {
             rs.getString("type"), rs.getString("title"), rs.getString("body"),
             rs.getString("target_type"), bytesToUuid(rs.getBytes("target_id")),
             rs.getString("dedup_key"), nullableDateTime(rs, "read_at"),
-            rs.getTimestamp("created_at").toLocalDateTime()
+            rs.getObject("created_at", LocalDateTime.class)
     );
 
     public NotificationRepository(JdbcTemplate jdbcTemplate) {
@@ -105,8 +106,13 @@ public class NotificationRepository {
     }
 
     public long countVisibleUnread(UUID recipient) {
-        return jdbcTemplate.queryForObject("SELECT COUNT(*) " + VISIBLE + " AND n.read_at IS NULL",
-                Long.class, uuidToBytes(recipient));
+        // 표시 규칙은 목록과 공유하되 타입별로 분리해 서로 다른 대상 테이블의 OR 검사를 피한다.
+        String match = "SELECT COUNT(*) AS total " + RECIPIENT
+                + " AND n.read_at IS NULL AND n.target_type = 'MATCH' AND " + MATCH_TARGET;
+        String request = "SELECT COUNT(*) AS total " + RECIPIENT
+                + " AND n.read_at IS NULL AND n.target_type = 'FRIEND_REQUEST' AND " + FRIEND_TARGET;
+        return jdbcTemplate.queryForObject("SELECT SUM(total) FROM ((" + match + ") UNION ALL ("
+                        + request + ")) counts", Long.class, uuidToBytes(recipient), uuidToBytes(recipient));
     }
 
     public int markRead(UUID id, UUID recipientId, LocalDateTime readAt) {

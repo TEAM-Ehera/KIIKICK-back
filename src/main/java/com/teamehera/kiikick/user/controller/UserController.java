@@ -119,8 +119,8 @@ public class UserController {
     }
 
     @Operation(
-            summary = "전체 사용자 조회",
-            description = "soft delete되지 않은 전체 사용자를 조회합니다. 사용자가 없으면 빈 배열을 반환합니다."
+            summary = "사용자 목록 조회",
+            description = "활성 사용자를 기본 20명·최대 100명 조회합니다. 다음 페이지 URL은 Link 헤더의 rel=next로 제공합니다."
     )
     @ApiResponse(
             responseCode = "200",
@@ -131,8 +131,19 @@ public class UserController {
             )
     )
     @GetMapping("/users")
-    public List<UserResponse> getAll() {
-        return userService.getAll();
+    public ResponseEntity<List<UserResponse>> list(
+            @RequestParam(required = false) String cursor,
+            @RequestParam(required = false) Integer limit
+    ) {
+        var page = userService.list(cursor, limit);
+        var response = ResponseEntity.ok();
+        if (page.nextCursor() != null) {
+            String next = org.springframework.web.util.UriComponentsBuilder.fromPath("/api/v1/users")
+                    .queryParam("limit", limit == null ? 20 : limit).queryParam("cursor", page.nextCursor())
+                    .build().toUriString();
+            response.header(org.springframework.http.HttpHeaders.LINK, "<" + next + ">; rel=\"next\"");
+        }
+        return response.body(page.data());
     }
 
     @Operation(

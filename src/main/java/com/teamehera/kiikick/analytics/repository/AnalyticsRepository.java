@@ -1,6 +1,7 @@
 package com.teamehera.kiikick.analytics.repository;
 
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowCallbackHandler;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -9,6 +10,9 @@ import tools.jackson.databind.ObjectMapper;
 
 import java.time.LocalDateTime;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.function.Consumer;
+import java.util.stream.Collectors;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -36,21 +40,29 @@ public class AnalyticsRepository {
         this.json = json;
     }
 
-    public List<QuarterData> quarters(UUID owner, UUID match, LocalDateTime from, LocalDateTime to) {
+    public void visitQuarters(UUID owner, UUID match, LocalDateTime from, LocalDateTime to,
+                              String requestedMetric, Consumer<QuarterData> consumer) {
+        var columns = new LinkedHashMap<String, String>();
+        if (requestedMetric == null) columns.putAll(METRIC_COLUMNS);
+        else if (METRIC_COLUMNS.containsKey(requestedMetric)) {
+            columns.put(requestedMetric, METRIC_COLUMNS.get(requestedMetric));
+            if ("averageSpeedMps".equals(requestedMetric)) {
+                columns.put("totalDistanceM", METRIC_COLUMNS.get("totalDistanceM"));
+            }
+        }
+        String projection = columns.values().stream().map(column -> "s." + column)
+                .collect(Collectors.joining(", "));
+
         String sql = """
-                SELECT m.id AS match_id, q.ended_at, p.position_code, stats.goals, stats.assists,
-                       s.calculation_status, s.calculation_version, s.metric_status, s.total_distance_m,
-                       s.total_calories_kcal, s.high_intensity_distance_m, s.acceleration_count,
-                       s.deceleration_count, s.direction_change_count, s.max_speed_mps, s.max_heart_rate_bpm,
-                       s.average_speed_mps, s.average_heart_rate_bpm, s.trimp_edwards, s.duration_seconds,
-                       s.valid_hr_duration_seconds, s.hr_max_reference_bpm
+                SELECT m.id AS match_id, q.ended_at, stats.goals, stats.assists,
+                       s.calculation_status, s.calculation_version, s.metric_status,
+                       s.duration_seconds, s.valid_hr_duration_seconds, s.hr_max_reference_bpm%s
                 FROM matches m
                 JOIN quarters q ON q.match_id = m.id AND q.status = 'COMPLETED'
                 LEFT JOIN quarter_player_stats stats ON stats.quarter_id = q.id
-                LEFT JOIN quarter_positions p ON p.quarter_id = q.id
                 LEFT JOIN quarter_summaries s ON s.quarter_id = q.id
                 WHERE m.owner_id = :owner AND m.status = 'COMPLETED'
-                """;
+                """.formatted(projection.isEmpty() ? "" : ", " + projection);
         var args = new MapSqlParameterSource("owner", uuidToBytes(owner));
         if (match != null) {
             sql += " AND m.id = :match";
@@ -64,13 +76,13 @@ public class AnalyticsRepository {
             sql += " AND q.ended_at < :to";
             args.addValue("to", to);
         }
-        return jdbc.query(sql, args, (row, index) -> {
+        jdbc.query(sql, args, (RowCallbackHandler) row -> {
             var values = new HashMap<String, Double>();
             String status = row.getString("calculation_status");
             String metadata = row.getString("metric_status");
-            if (("READY".equals(status) || "PARTIAL".equals(status)) && metadata != null) {
+            if (("READY".equals(status) || "PARTIAL".equals(status)) && metadata != null && !columns.isEmpty()) {
                 JsonNode statuses = json.readTree(metadata);
-                for (var metric : METRIC_COLUMNS.entrySet()) {
+                for (var metric : columns.entrySet()) {
                     var state = statuses.path(metric.getKey()).path("status");
                     if (state.isTextual() && "READY".equals(state.stringValue())) {
                         var value = row.getObject(metric.getValue(), Double.class);
@@ -80,13 +92,29 @@ public class AnalyticsRepository {
                     }
                 }
             }
-            return new QuarterData(bytesToUuid(row.getBytes("match_id")), nullableDateTime(row, "ended_at"),
-                    row.getString("position_code"), row.getObject("goals", Integer.class),
+            consumer.accept(new QuarterData(bytesToUuid(row.getBytes("match_id")), nullableDateTime(row, "ended_at"),
+                    null, row.getObject("goals", Integer.class),
                     row.getObject("assists", Integer.class), row.getString("calculation_version"), Map.copyOf(values),
                     row.getObject("duration_seconds", Double.class), row.getObject("valid_hr_duration_seconds", Double.class),
-                    row.getObject("hr_max_reference_bpm", Double.class));
+                    row.getObject("hr_max_reference_bpm", Double.class)));
         });
     }
+
+    public List<PositionCount> positions(UUID owner, LocalDateTime from, LocalDateTime to) {
+        String sql = """
+                SELECT p.position_code, COUNT(*) AS quarter_count
+                FROM matches m JOIN quarters q ON q.match_id = m.id AND q.status = 'COMPLETED'
+                LEFT JOIN quarter_positions p ON p.quarter_id = q.id
+                WHERE m.owner_id = :owner AND m.status = 'COMPLETED'
+                """;
+        var args = new MapSqlParameterSource("owner", uuidToBytes(owner));
+        if (from != null) { sql += " AND q.ended_at >= :from"; args.addValue("from", from); }
+        if (to != null) { sql += " AND q.ended_at < :to"; args.addValue("to", to); }
+        return jdbc.query(sql + " GROUP BY p.position_code", args,
+                (row, index) -> new PositionCount(row.getString("position_code"), row.getInt("quarter_count")));
+    }
+
+    public record PositionCount(String position, int count) {}
 
     public Extent extent(UUID owner, LocalDateTime from, LocalDateTime to) {
         String sql = """

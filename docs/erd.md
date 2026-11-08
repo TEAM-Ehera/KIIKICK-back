@@ -502,3 +502,8 @@ calculation_status는 PROCESSING/PARTIAL/READY/FAILED, metric_status는 각 지�
 ## 7. 물리 정의의 검토 범위
 
 BINARY(16) UUID와 DATETIME(6) UTC를 사용한다. UTC 저장은 DB 타입만으로 보장되지 않으므로 세션·JDBC·애플리케이션 설정을 함께 적용한다. nickname(16) 외 문자열 길이는 임시 물리 설계값이다. 실제 인증·삭제 정책에 따라 운영 제약을 추가해야 한다. 현 파일은 다이어그램용 생성 정의이며 운영 마이그레이션이 아니다. 서버 코드와 DB는 이번 문서 변경으로 바뀌지 않는다.
+
+
+## 조회 경로 인덱스 보완 (V004)
+
+기존 테이블별 인덱스 설명에 더해 [V004](db/mysql/migrations/V004__query_access_indexes.sql)의 경기 목록·이전 경기, 친구 양방향 목록, 사용자 목록·검색, 미확인 알림, 완료 쿼터 인덱스 12개를 추가한다. 사용자 목록은 `created_at DESC, id ASC` 혼합 정렬이며, DBML의 컬럼 나열만으로 정렬 방향을 표현하지 않으므로 실제 DDL을 기준으로 한다. 인덱스별 용도·검증 및 되돌리기는 [조회 성능 개선 기록](performance/query-performance.md)을 참조한다.

@@ -1,7 +1,6 @@
 package com.teamehera.kiikick.analytics.service;
 
 import com.teamehera.kiikick.analytics.repository.AnalyticsRepository;
-import com.teamehera.kiikick.analytics.repository.AnalyticsRepository.QuarterData;
 import com.teamehera.kiikick.analytics.service.AnalyticsSummary.MetricAggregate;
 import com.teamehera.kiikick.friend.repository.FriendPairRepository;
 import com.teamehera.kiikick.friend.repository.UserBlockRepository;
@@ -30,7 +29,6 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 import static com.teamehera.kiikick.match.api.MatchApiResponse.fromUtc;
 import static com.teamehera.kiikick.match.api.MatchApiResponse.toUtc;
@@ -59,17 +57,17 @@ public class AnalyticsQuery {
 
     public AnalyticsSummary summary(UUID actor, UUID subject, Period period) {
         requireAccess(actor, subject);
-        return AnalyticsSummary.from(rows(subject, period));
+        return accumulate(subject, null, period).finish();
     }
 
     public List<PositionAnalysis> positions(UUID actor, UUID subject, Period period) {
         requireAccess(actor, subject);
-        var rows = rows(subject, period);
-        var counts = new HashMap<String, Integer>();
-        rows.forEach(row -> counts.merge(row.position(), 1, Integer::sum));
-        return counts.entrySet().stream()
-                .sorted(java.util.Map.Entry.comparingByKey(Comparator.nullsLast(Comparator.naturalOrder())))
-                .map(entry -> new PositionAnalysis(entry.getKey(), entry.getValue(), (double) entry.getValue() / rows.size()))
+        var counts = data.positions(subject, period.from(), period.to());
+        int total = counts.stream().mapToInt(AnalyticsRepository.PositionCount::count).sum();
+        return counts.stream()
+                .sorted(Comparator.comparing(AnalyticsRepository.PositionCount::position,
+                        Comparator.nullsLast(Comparator.naturalOrder())))
+                .map(row -> new PositionAnalysis(row.position(), row.count(), (double) row.count() / total))
                 .toList();
     }
 
@@ -82,15 +80,15 @@ public class AnalyticsQuery {
         if (prior == null && match.endedAt() != null) {
             prior = data.previous(actor, matchId, match.endedAt()).orElse(null);
         }
-        var currentRows = data.quarters(actor, matchId, null, null);
-        var current = AnalyticsSummary.from(currentRows);
+        var currentRows = accumulate(actor, matchId, new Period(null, null));
+        var current = currentRows.finish();
         if (prior == null) {
             return new Comparison(current, null, metric, null);
         }
         completed(actor, prior);
-        var priorRows = data.quarters(actor, prior, null, null);
-        var previous = AnalyticsSummary.from(priorRows);
-        return new Comparison(current, previous, metric, AnalyticsSummary.delta(current, currentRows, previous, priorRows, metric));
+        var priorRows = accumulate(actor, prior, new Period(null, null));
+        var previous = priorRows.finish();
+        return new Comparison(current, previous, metric, AnalyticsSummary.delta(currentRows, priorRows, metric));
     }
 
     public FriendComparison compareFriend(UUID actor, UUID friend, Period period, String metric) {
@@ -98,11 +96,11 @@ public class AnalyticsQuery {
             throw new InvalidAnalytics("friendUserId");
         }
         requireAccess(actor, friend);
-        var myRows = rows(actor, period);
-        var friendRows = rows(friend, period);
-        var me = AnalyticsSummary.from(myRows);
-        var other = AnalyticsSummary.from(friendRows);
-        return new FriendComparison(me, other, metric, AnalyticsSummary.delta(me, myRows, other, friendRows, metric));
+        var myRows = accumulate(actor, null, period);
+        var friendRows = accumulate(friend, null, period);
+        var me = myRows.finish();
+        var other = friendRows.finish();
+        return new FriendComparison(me, other, metric, AnalyticsSummary.delta(myRows, friendRows, metric));
     }
 
     public TrendPage trends(UUID actor, UUID subject, Period period, String metric, Bucket bucket,
@@ -141,16 +139,23 @@ public class AnalyticsQuery {
         // Bound the sample-free database projection to the buckets on this page.
         var from = max(period.from(), utc(start));
         var to = min(period.to(), utc(next));
-        var grouped = data.quarters(subject, null, from, to).stream().filter(row -> row.endedAt() != null)
-                .collect(Collectors.groupingBy(row -> bucket.start(row.endedAt())));
+        var grouped = new HashMap<LocalDateTime, AnalyticsSummary.MetricFold>();
+        data.visitQuarters(subject, null, from, to, metric, row -> {
+            if (row.endedAt() != null) {
+                grouped.computeIfAbsent(bucket.start(row.endedAt()), ignored -> new AnalyticsSummary.MetricFold(metric))
+                        .accept(row);
+            }
+        });
         var points = starts.stream().map(point -> new TrendPoint(seoul(point), seoul(bucket.next(point)), metric,
-                AnalyticsSummary.calculate(grouped.getOrDefault(point, List.of()), metric))).toList();
+                grouped.getOrDefault(point, new AnalyticsSummary.MetricFold(metric)).finish())).toList();
         String nextCursor = next.isAfter(finalBucket) ? null : encode(scope + starts.getLast());
         return trendPage(points, nextCursor);
     }
 
-    private List<QuarterData> rows(UUID subject, Period period) {
-        return data.quarters(subject, null, period.from(), period.to());
+    private AnalyticsSummary.Accumulator accumulate(UUID subject, UUID match, Period period) {
+        var accumulator = new AnalyticsSummary.Accumulator();
+        data.visitQuarters(subject, match, period.from(), period.to(), null, accumulator::accept);
+        return accumulator;
     }
 
     private Match completed(UUID actor, UUID matchId) {

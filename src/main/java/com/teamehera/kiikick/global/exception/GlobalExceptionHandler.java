@@ -11,6 +11,12 @@ import java.util.Map;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    @ExceptionHandler(com.teamehera.kiikick.match.service.MatchListQuery.InvalidListRequest.class)
+    public ResponseEntity<Map<String, String>> invalidList(
+            com.teamehera.kiikick.match.service.MatchListQuery.InvalidListRequest exception) {
+        return ResponseEntity.badRequest().body(Map.of("message", exception.getMessage()));
+    }
+
     // 사용자가 존재하지 않거나 이미 삭제된 경우 HTTP 404를 반환한다.
     @ExceptionHandler(UserNotFoundException.class)
     public ResponseEntity<Map<String, String>> handleNotFound(

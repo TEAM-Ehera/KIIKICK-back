@@ -103,7 +103,7 @@ class UserTimestampMySqlIntegrationTest {
         assertThat(user.deletionRequestedAt()).isEqualTo(time.plusSeconds(3));
         assertThat(user.deletedAt()).isNull();
         assertThat(user.createdAt().toInstant(ZoneOffset.UTC)).isEqualTo(Instant.parse("2026-11-05T00:01:02.123456Z"));
-        assertThat(users.findAll()).contains(user);
+        assertThat(users.findPage(null, null, 100)).contains(user);
         assertThat(users.searchByNickname(nickname,10)).contains(user);
         assertThat(service.getById(id).createdAt()).isEqualTo(time);
     }
@@ -116,7 +116,7 @@ class UserTimestampMySqlIntegrationTest {
         assertThat(user.deletionRequestedAt()).isNull();
         assertThat(user.deletedAt()).isNull();
         assertThat(service.update(created.id(),new UserUpdateRequest("utc-updated")).nickname()).isEqualTo("utc-updated");
-        assertThat(service.getAll()).anyMatch(value -> value.id().equals(created.id()));
+        assertThat(service.list(null, 100).data()).anyMatch(value -> value.id().equals(created.id()));
         service.delete(created.id());
         assertThat(users.findById(created.id())).isEmpty();
         assertThat(users.searchByNickname("utc-updated",100)).noneMatch(value -> value.id().equals(created.id()));
