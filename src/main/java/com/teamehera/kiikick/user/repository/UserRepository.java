@@ -65,17 +65,22 @@ public class UserRepository {
         ).stream().findFirst();
     }
 
-    public List<User> findAll() {
-        return jdbcTemplate.query(
-                """
+    public List<User> findPage(LocalDateTime before, UUID afterId, int limit) {
+        var sql = new StringBuilder("""
                 SELECT id, nickname, avatar_url, onboarding_completed_at,
                        deletion_requested_at, created_at, updated_at, deleted_at
-                FROM users
-                WHERE deleted_at IS NULL
-                ORDER BY created_at DESC, id ASC
-                """,
-                rowMapper
-        );
+                FROM users WHERE deleted_at IS NULL
+                """);
+        var args = new java.util.ArrayList<Object>();
+        if (before != null) {
+            sql.append(" AND (created_at < ? OR (created_at = ? AND id > ?))");
+            args.add(before);
+            args.add(before);
+            args.add(uuidToBytes(afterId));
+        }
+        sql.append(" ORDER BY created_at DESC, id ASC LIMIT ?");
+        args.add(limit);
+        return jdbcTemplate.query(sql.toString(), rowMapper, args.toArray());
     }
 
     public List<User> searchByNickname(String query, int limit) {

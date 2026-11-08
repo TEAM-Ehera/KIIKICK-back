@@ -82,3 +82,8 @@ FROM heartRateSamples ORDER BY workoutPayloadId, sampleSeq;
 | DDL 부분 적용 후 복구 | 첫 ALTER 적용 뒤 테이블 충돌로 실패. 백업 복원 및 V001 재적용 후 비교 결과 일치 |
 
 계산 작업 식별 방식에 대한 후속 PR이 병합되면 확정 스키마에 V001을 맞추고 위 검증을 다시 실행한다. 현재 결과는 `calculation_job_id`가 있는 스키마에 해당한다.
+
+
+## V004 조회 인덱스
+
+기존 V001~V003이 적용된 개발 DB에 `migrations/V004__query_access_indexes.sql`을 한 번 적용한다. 적용·검증 결과와 인덱스별 용도, 운영 이행 및 되돌리기는 [조회 성능 개선](../../performance/query-performance.md)을 참조한다. 새 SQL의 H2/MySQL 공통 회귀 테스트는 `QueryAccessContract`다.

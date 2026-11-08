@@ -3,7 +3,6 @@ package com.teamehera.kiikick.global.jdbc;
 import java.nio.ByteBuffer;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
@@ -34,7 +33,7 @@ public final class JdbcValueConverter {
             ResultSet resultSet,
             String column
     ) throws SQLException {
-        Timestamp timestamp = resultSet.getTimestamp(column);
-        return timestamp == null ? null : timestamp.toLocalDateTime();
+        // DATETIME의 UTC 벽시계 값을 보존한다. Timestamp를 거치면 JVM 시간대가 커서에 섞일 수 있다.
+        return resultSet.getObject(column, LocalDateTime.class);
     }
 }

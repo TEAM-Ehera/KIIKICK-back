@@ -9,6 +9,11 @@ import com.teamehera.kiikick.user.repository.UserRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.teamehera.kiikick.match.service.MatchListQuery.InvalidListRequest;
+import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeParseException;
+import java.util.Base64;
 import java.util.List;
 import java.util.UUID;
 
@@ -55,15 +60,46 @@ public class UserService {
         return UserResponse.from(user);
     }
 
-    // 사용자 전체 조회
     @Transactional(readOnly = true)
-    public List<UserResponse> getAll() {
-
-        return userRepository.findAll()
-                .stream()
-                .map(UserResponse::from)
-                .toList();
+    public Page list(String cursor, Integer limit) {
+        int size = limit == null ? 20 : limit;
+        if (size < 1 || size > 100) throw invalidList("INVALID_REQUEST");
+        LocalDateTime before = null;
+        UUID afterId = null;
+        if (cursor != null) {
+            try {
+                if (cursor.length() > 200) throw new IllegalArgumentException();
+                String decoded = new String(Base64.getUrlDecoder().decode(cursor),
+                        StandardCharsets.UTF_8);
+                String[] parts = decoded.split("\\|", -1);
+                if (parts.length != 4 || !"1".equals(parts[0]) || !"users".equals(parts[1])) {
+                    throw new IllegalArgumentException();
+                }
+                before = LocalDateTime.parse(parts[2]);
+                afterId = UUID.fromString(parts[3]);
+                if (before.getYear() < 1000 || before.getYear() > 9999) throw new IllegalArgumentException();
+            } catch (IllegalArgumentException | DateTimeParseException exception) {
+                throw invalidList("INVALID_CURSOR");
+            }
+        }
+        var rows = userRepository.findPage(before, afterId, size + 1);
+        boolean hasNext = rows.size() > size;
+        var visible = rows.subList(0, Math.min(size, rows.size()));
+        String next = null;
+        if (hasNext) {
+            var last = visible.getLast();
+            next = Base64.getUrlEncoder().withoutPadding().encodeToString(
+                    ("1|users|" + last.createdAt() + "|" + last.id())
+                            .getBytes(StandardCharsets.UTF_8));
+        }
+        return new Page(visible.stream().map(UserResponse::from).toList(), next);
     }
+
+    private static InvalidListRequest invalidList(String code) {
+        return InvalidListRequest.of(code);
+    }
+
+    public record Page(List<UserResponse> data, String nextCursor) {}
 
     // 사용자 닉네임 수정
     @Transactional

@@ -23,7 +23,7 @@ public class FriendPairRepository {
             bytesToUuid(rs.getBytes("user_high_id")),
             bytesToUuid(rs.getBytes("requester_id")), rs.getString("status"),
             nullableDateTime(rs, "accepted_at"),
-            rs.getTimestamp("created_at").toLocalDateTime()
+            rs.getObject("created_at", LocalDateTime.class)
     );
 
     public FriendPairRepository(JdbcTemplate jdbcTemplate) {

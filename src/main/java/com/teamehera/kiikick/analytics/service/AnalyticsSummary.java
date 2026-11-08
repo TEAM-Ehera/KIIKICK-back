@@ -19,47 +19,103 @@ public record AnalyticsSummary(long matchCount, int quarterCount, Long goals, Lo
     private static final Set<String> MAXIMUMS = Set.of("maxSpeedMps", "maxHeartRateBpm");
 
     static AnalyticsSummary from(List<QuarterData> rows) {
-        var results = new LinkedHashMap<String, MetricAggregate>();
-        var coverage = new LinkedHashMap<String, Coverage>();
-        for (String metric : METRICS) {
-            var result = calculate(rows, metric);
-            results.put(metric, result);
-            coverage.put(metric, new Coverage(result.includedQuarterCount(), result.totalQuarterCount()));
-        }
-        long matchCount = rows.stream().map(QuarterData::matchId).distinct().count();
-        int missingStats = (int) rows.stream().filter(row -> row.goals() == null || row.assists() == null).count();
-        var versions = rows.stream().map(QuarterData::version).filter(java.util.Objects::nonNull).distinct().sorted().toList();
-        return new AnalyticsSummary(matchCount, rows.size(), integerValue(results.get("goals")),
-                integerValue(results.get("assists")), results,
-                new Meta(rows.size(), missingStats, coverage, versions, rows.isEmpty() ? "NO_COMPLETED_QUARTERS" : null));
+        var accumulator = new Accumulator();
+        rows.forEach(accumulator::accept);
+        return accumulator.finish();
     }
 
     static MetricAggregate calculate(List<QuarterData> rows, String metric) {
-        if (rows.isEmpty()) {
-            return new MetricAggregate(isDirect(metric) ? 0.0 : null, 0, 0, "NO_DATA");
+        var fold = new MetricFold(metric);
+        rows.forEach(fold::accept);
+        return fold.finish();
+    }
+
+    static Double delta(Accumulator left, Accumulator right, String metric) {
+        var first = left.metrics.get(metric).finish(left.total, left.policy);
+        var second = right.metrics.get(metric).finish(right.total, right.policy);
+        if (!"READY".equals(first.status()) || !"READY".equals(second.status())
+                || !left.policy.compatible(right.policy, metric)) {
+            return null;
+        }
+        double difference = first.value() - second.value();
+        return Double.isFinite(difference) ? difference : null;
+    }
+
+    static final class Accumulator {
+        private final Map<String, MetricAccumulator> metrics = new LinkedHashMap<>();
+        private final Set<java.util.UUID> matches = new HashSet<>();
+        private final Set<String> versions = new java.util.TreeSet<>();
+        private final Policy policy = new Policy();
+        private int total;
+        private int missing;
+
+        Accumulator() {
+            METRICS.forEach(metric -> metrics.put(metric, new MetricAccumulator(metric)));
         }
 
-        double aggregate = MAXIMUMS.contains(metric) ? Double.NEGATIVE_INFINITY : 0;
-        double weight = 0;
-        int included = 0;
-        for (var row : rows) {
+        void accept(QuarterData row) {
+            total++;
+            matches.add(row.matchId());
+            if (row.goals() == null || row.assists() == null) missing++;
+            if (row.version() != null) versions.add(row.version());
+            policy.accept(row);
+            metrics.values().forEach(metric -> metric.accept(row));
+        }
+
+        AnalyticsSummary finish() {
+            var results = new LinkedHashMap<String, MetricAggregate>();
+            var coverage = new LinkedHashMap<String, Coverage>();
+            metrics.forEach((name, accumulator) -> {
+                var result = accumulator.finish(total, policy);
+                results.put(name, result);
+                coverage.put(name, new Coverage(result.includedQuarterCount(), total));
+            });
+            return new AnalyticsSummary(matches.size(), total, integerValue(results.get("goals")),
+                    integerValue(results.get("assists")), results,
+                    new Meta(total, missing, coverage, List.copyOf(versions),
+                            total == 0 ? "NO_COMPLETED_QUARTERS" : null));
+        }
+    }
+
+    static final class MetricFold {
+        private final MetricAccumulator metric;
+        private final Policy policy = new Policy();
+        private int total;
+
+        MetricFold(String name) { metric = new MetricAccumulator(name); }
+
+        void accept(QuarterData row) {
+            total++;
+            policy.accept(row);
+            metric.accept(row);
+        }
+
+        MetricAggregate finish() { return metric.finish(total, policy); }
+    }
+
+    private static final class MetricAccumulator {
+        private final String metric;
+        private double aggregate;
+        private double weight;
+        private int included;
+
+        private MetricAccumulator(String metric) {
+            this.metric = metric;
+            aggregate = MAXIMUMS.contains(metric) ? Double.NEGATIVE_INFINITY : 0;
+        }
+
+        private void accept(QuarterData row) {
             Double value = value(row, metric);
-            if (value == null) {
-                continue;
-            }
-            // Ratios use their actual denominators. A quarter mean never counts as one unweighted sample.
+            if (value == null) return;
+            // 평균은 쿼터 개수가 아닌 실제 거리/시간 및 유효 심박 시간으로 가중한다.
             switch (metric) {
                 case "averageSpeedMps" -> {
-                    if (!positive(row.elapsedSeconds()) || !row.values().containsKey("totalDistanceM")) {
-                        continue;
-                    }
+                    if (!positive(row.elapsedSeconds()) || !row.values().containsKey("totalDistanceM")) return;
                     aggregate += row.values().get("totalDistanceM");
                     weight += row.elapsedSeconds();
                 }
                 case "averageHeartRateBpm" -> {
-                    if (!positive(row.validHeartSeconds())) {
-                        continue;
-                    }
+                    if (!positive(row.validHeartSeconds())) return;
                     aggregate += value * row.validHeartSeconds();
                     weight += row.validHeartSeconds();
                 }
@@ -69,51 +125,40 @@ public record AnalyticsSummary(long matchCount, int quarterCount, Long goals, Lo
             included++;
         }
 
-        if (included < rows.size()) {
-            return new MetricAggregate(null, included, rows.size(), "INCOMPLETE");
-        }
-        if (!comparable(rows, List.of(), metric)) {
-            return new MetricAggregate(null, included, rows.size(), "POLICY_REQUIRED");
-        }
-        double result = weight == 0 ? aggregate : aggregate / weight;
-        if (!Double.isFinite(result)) {
-            return new MetricAggregate(null, included, rows.size(), "POLICY_REQUIRED");
-        }
-        return new MetricAggregate(result, included, rows.size(), "READY");
-    }
-
-    static Double delta(AnalyticsSummary left, List<QuarterData> leftRows, AnalyticsSummary right,
-                        List<QuarterData> rightRows, String metric) {
-        var first = left.metrics().get(metric);
-        var second = right.metrics().get(metric);
-        if (!"READY".equals(first.status()) || !"READY".equals(second.status()) || !comparable(leftRows, rightRows, metric)) {
-            return null;
-        }
-        double difference = first.value() - second.value();
-        return Double.isFinite(difference) ? difference : null;
-    }
-
-    private static boolean comparable(List<QuarterData> left, List<QuarterData> right, String metric) {
-        if (!VERSION_SENSITIVE.contains(metric)) {
-            return true;
-        }
-        var versions = new HashSet<String>();
-        var references = new HashSet<Double>();
-        for (var rows : List.of(left, right)) {
-            for (var row : rows) {
-                if (row.version() == null || row.version().isBlank()) {
-                    return false;
-                }
-                versions.add(row.version());
-                if ("trimpEdwards".equals(metric)) {
-                    if (!positive(row.referenceBpm())) {
-                        return false;
-                    }
-                    references.add(row.referenceBpm());
-                }
+        private MetricAggregate finish(int total, Policy policy) {
+            if (total == 0) return new MetricAggregate(isDirect(metric) ? 0.0 : null, 0, 0, "NO_DATA");
+            // 누락을 정책 불일치보다 먼저 보고하는 기존 계약을 보존한다.
+            if (included < total) return new MetricAggregate(null, included, total, "INCOMPLETE");
+            double result = weight == 0 ? aggregate : aggregate / weight;
+            if (!policy.compatible(policy, metric) || !Double.isFinite(result)) {
+                return new MetricAggregate(null, included, total, "POLICY_REQUIRED");
             }
+            return new MetricAggregate(result, included, total, "READY");
         }
-        return versions.size() <= 1 && references.size() <= 1;
+    }
+
+    private static final class Policy {
+        private String version;
+        private Double reference;
+        private boolean invalidVersion;
+        private boolean invalidReference;
+
+        private void accept(QuarterData row) {
+            invalidVersion |= row.version() == null || row.version().isBlank()
+                    || (version != null && !version.equals(row.version()));
+            if (version == null) version = row.version();
+            invalidReference |= !positive(row.referenceBpm())
+                    || (reference != null && !reference.equals(row.referenceBpm()));
+            if (reference == null) reference = row.referenceBpm();
+        }
+
+        private boolean compatible(Policy other, String metric) {
+            if (!VERSION_SENSITIVE.contains(metric)) return true;
+            if (invalidVersion || other.invalidVersion
+                    || (version != null && other.version != null && !version.equals(other.version))) return false;
+            return !"trimpEdwards".equals(metric) || (!invalidReference && !other.invalidReference
+                    && (reference == null || other.reference == null || reference.equals(other.reference)));
+        }
     }
 
     private static Double value(QuarterData row, String metric) {
