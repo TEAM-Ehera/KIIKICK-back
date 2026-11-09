@@ -92,3 +92,7 @@ Idempotency-Key는 UUID이며 범위는 (userId, method, canonical path, key)다
 ```
 
 persistence는 NOT_SAVED/SAVED/UNKNOWN이며 조회 오류에는 null이다. 네트워크 응답 유실 시 저장 여부는 알 수 없으므로 새 키로 무조건 제출하지 않는다. 위치·심박·토큰 원문은 로그에 넣지 않는다. 새 지표의 임계값은 미확정이며 계산 코드가 임의의 제품 기준을 만들면 안 된다.
+
+## Swagger에서 JSON 직접 입력 (#117)
+
+[Swagger UI](https://kiikick-api.duckdns.org/swagger-ui/index.html)에서 API를 펼친 뒤 **Try it out**을 누르면 Request body의 JSON을 직접 편집할 수 있다. 변경 API에는 필요한 Authorization, Idempotency-Key, If-Match 헤더를 채운다. 본문 없는 전이·삭제 요청에는 입력창을 표시하지 않으며, 프로필 사진 업로드는 실제 파일을 선택한다. 원본 바이트를 사용하는 API도 문서에서는 JSON 객체로 표시하며 실제 검증·멱등 처리 방식은 유지한다. WorkoutPayload 업로드 예시에는 events와 field가 포함된다.
