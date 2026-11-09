@@ -75,7 +75,24 @@ public class WorkoutPayloadController {
                                                   "timestamp": 750000001.0,
                                                   "bpm": 142.0
                                                 }
-                                              ]
+                                              ],
+                                              "events": [
+                                                {
+                                                  "type": "goal",
+                                                  "location": {
+                                                    "latitude": 37.5665, "longitude": 126.978, "altitude": 20.1,
+                                                    "horizontalAccuracy": 4.8, "speed": -1, "course": -1,
+                                                    "timestamp": 750000010.0
+                                                  }
+                                                }
+                                              ],
+                                              "field": {
+                                                "name": "풋살장",
+                                                "cornerA": {"latitude":37.5,"longitude":127.0},
+                                                "cornerB": {"latitude":37.5,"longitude":127.001},
+                                                "cornerC": {"latitude":37.501,"longitude":127.001},
+                                                "cornerD": {"latitude":37.501,"longitude":127.0}
+                                              }
                                             }
                                             """
                             )
