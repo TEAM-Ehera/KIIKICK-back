@@ -5,6 +5,16 @@ Jenkins의 `kiikick-develop` 작업이 Java 21로 검증한 JAR를 서버의
 서버에 설치된 사본도 갱신한다. 새 컨테이너는 헬스체크 통과 후 배포를 완료한다.
 기동 실패 시 직전 컨테이너를 복원한다.
 
+## Discord 배포 알림
+
+Jenkins 작업에서 접근 가능한 Secret text Credential
+`kiikick-deploy-discord-webhook`에 Discord Webhook URL을 등록한다.
+배포 에이전트에서 Python 3과 `discord.com` HTTPS 접근이 필요하다.
+
+빌드별로 배포 시작과 최종 결과를 각각 한 번 전송 시도한다. 설치 명령이
+헬스체크를 통과해 0을 반환하면 성공이며, 롤백 후에도 실패로 표시한다.
+Credential 누락이나 전송 오류는 Jenkins 로그에서 확인할 수 있으며 배포 결과는 유지된다.
+
 ## 이메일 인증 활성화 전 준비
 
 서버의 `/etc/kiikick/kiikick.env`는 root 소유와 권한 600을 유지한다.
@@ -23,9 +33,3 @@ Jenkins의 `kiikick-develop` 작업이 Java 21로 검증한 JAR를 서버의
 이메일 인증을 공개하기 전에 운영 DB의 V001 적용을 확인하고, 배포 버전에 포함된
 인증 마이그레이션을 순서대로 적용한다. Nginx는 외부 Forwarded 헤더를 제거하고
 X-Forwarded-For를 연결의 원격 IP로 덮어써야 이메일 요청의 IP 한도를 보호할 수 있다.
-
-## 포지션 코드
-
-기본 허용 코드는 대문자 `GK,LB,CB,RB,LM,CM,RM,LW,ST,RW`다.
-`KIIKICK_MATCH_POSITION_CODES`를 `/etc/kiikick/kiikick.env`에 설정하면 목록을
-덮어쓰며, 배포 스크립트가 컨테이너로 전달한다. 빈 값은 모든 코드의 저장을 거절하므로 사용하지 않는다.
