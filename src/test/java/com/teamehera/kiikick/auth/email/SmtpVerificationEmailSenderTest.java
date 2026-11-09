@@ -45,11 +45,13 @@ class SmtpVerificationEmailSenderTest {
             assertThat(body.getBodyPart(1).getContentType()).startsWith("text/html");
             assertThat(body.getBodyPart(1).getContent().toString())
                     .contains("[KIIKICK] 회원 인증 메일",
-                            "본 이메일 인증은 KIIKICK(키킥) 계정 설정을 위한 필수사항이에요. 아래 인증코드 6자리를 확인해 주세요.",
+                            "본 이메일 인증은 KIIKICK(키킥) 계정 설정을 위한 필수사항이에요.",
+                            "아래 인증코드 6자리를 확인해 주세요.",
                             "012345",
                             "인증코드는 발급 후 3분 동안 유효해요.",
                             "KIIKICK 앱으로 돌아가 인증코드를 입력해 주세요.",
-                            "본인이 요청하지 않은 이메일이라면 무시해 주세요.", "#00DAC3")
+                            "본인이 요청하지 않은 이메일이라면 무시해 주세요.",
+                            "#00DAC3")
                     .doesNotContain("{{code}}", "{{expiresInMinutes}}");
         }
     }
