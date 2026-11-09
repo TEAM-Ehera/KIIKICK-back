@@ -23,6 +23,7 @@ import java.util.UUID;
 
 @Service
 public class QuarterPositionService {
+    private static final String DEFAULT_POSITION_CODES = "GK,LB,CB,RB,LM,CM,RM,LW,ST,RW";
     private final MatchOwnership ownership;
     private final QuarterPositionRepository positions;
 
@@ -31,7 +32,7 @@ public class QuarterPositionService {
 
     public QuarterPositionService(MatchOwnership ownership, QuarterPositionRepository positions,
                                   MatchRepository matches,
-                                  @Value("${kiikick.match.position-codes:}") String configuredCodes) {
+                                  @Value("${kiikick.match.position-codes:" + DEFAULT_POSITION_CODES + "}") String configuredCodes) {
         this.ownership = ownership;
         this.positions = positions;
         this.matches = matches;
