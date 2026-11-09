@@ -23,3 +23,9 @@ Jenkins의 `kiikick-develop` 작업이 Java 21로 검증한 JAR를 서버의
 이메일 인증을 공개하기 전에 운영 DB의 V001 적용을 확인하고, 배포 버전에 포함된
 인증 마이그레이션을 순서대로 적용한다. Nginx는 외부 Forwarded 헤더를 제거하고
 X-Forwarded-For를 연결의 원격 IP로 덮어써야 이메일 요청의 IP 한도를 보호할 수 있다.
+
+## 포지션 코드
+
+기본 허용 코드는 대문자 `GK,LB,CB,RB,LM,CM,RM,LW,ST,RW`다.
+`KIIKICK_MATCH_POSITION_CODES`를 `/etc/kiikick/kiikick.env`에 설정하면 목록을
+덮어쓰며, 배포 스크립트가 컨테이너로 전달한다. 빈 값은 모든 코드의 저장을 거절하므로 사용하지 않는다.

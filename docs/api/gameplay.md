@@ -150,7 +150,7 @@ path: matchId, quarterId. 본문: positionCode(필수 string).
 ### 처리 규칙
 
 1. 쿼터 측정 마감 후, 부모 경기 종료 전 입력한다. 쿼터가 COMPLETED여도 경기 IN_PROGRESS인 동안 정정 가능하다.
-2. 쿼터당 한 행을 upsert한다. 허용 코드는 서버의 `KIIKICK_MATCH_POSITION_CODES`에 쉼표로 구분해 설정한다. 목록은 iOS와 합의 후 설정하며, 미설정 상태에서는 모든 코드의 저장을 422로 거절한다.
+2. 쿼터당 한 행을 upsert한다. 허용 코드는 대문자 `GK, LB, CB, RB, LM, CM, RM, LW, ST, RW`다. 대소문자를 구분하며 소문자와 목록 밖의 코드는 422로 거절한다. 서버의 `KIIKICK_MATCH_POSITION_CODES`로 쉼표로 구분한 목록을 설정할 수 있고, 미설정 시 위 기본 목록을 사용한다.
 
 ### 성공 응답 예시
 

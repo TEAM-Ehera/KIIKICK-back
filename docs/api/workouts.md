@@ -397,7 +397,7 @@ path: quarterId. 본문 없음.
 ```
 
 - 서버에 없는 `matchId`이면 로그인 사용자의 완료 경기와 요청의 `quarterId`를 그대로 저장한 완료 쿼터를 생성한다. 배열 순서가 쿼터 번호가 되고, 운동 원본의 시작·종료 시각으로 쿼터 시간 및 경기 전체 시간을 정한다. 경기장과 제목은 미지정으로 둔다. 생성과 원본·포지션·계산 대기 등록은 하나의 트랜잭션이며 실패하면 모두 롤백한다. 타인 경기 ID 또는 다른 경기에 연결된 쿼터 ID는 `404`다.
-- 경기의 모든 쿼터 ID가 정확히 한 번씩 필요하다. `position`은 서버에 설정된 대표 포지션 코드여야 하며, `workout`은 WORK-01과 같은 형식이다.
+- 경기의 모든 쿼터 ID가 정확히 한 번씩 필요하다. `position`은 대문자 `GK, LB, CB, RB, LM, CM, RM, LW, ST, RW` 중 하나여야 하며, `workout`은 WORK-01과 같은 형식이다.
 - 쿼터별 포지션과 운동 원본을 하나의 트랜잭션에서 저장하고, 새 원본마다 요약 계산을 대기 상태로 등록한다. 기존 쿼터 원본과 같은 데이터는 재사용하고 다른 원본과 충돌하면 전체 제출을 롤백한다.
 - 요청 본문 전체에 `kiikick.workout.max-upload-bytes` 제한을 적용한다. 기본값은 8 MiB이며 초과하면 `413`을 반환한다.
 - 성공하면 `202 Accepted`, 새 경기 `ETag`, `Location: /api/v1/matches/{matchId}/result`, `Retry-After: 5`를 반환한다. 응답의 `data`에는 `matchId`와 `quarterCount`가 들어간다. iOS는 경기 결과의 `summaryAvailability`로 분석 진행 상태를 확인할 수 있다.
