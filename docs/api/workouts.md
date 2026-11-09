@@ -16,6 +16,8 @@
 | totalCalories | number | 필수 / null 불가 | kcal, 유한수, 0 이상 |
 | totalDistance | number | 필수 / null 불가 | m, 유한수, 0 이상 |
 | points | TrackPointInput[] | 필수 / null 불가 | 빈 배열 허용. null 요소 불가 |
+| events | MatchEvent[] | 선택 / 생략·null은 빈 배열 | 골·어시스트 발생 위치 원본. 수신 순서 보존 |
+| field | WorkoutField | 선택 / null 허용 | 운동 당시 경기장 이름·코너 사본 |
 | heartRateSamples | HeartRateInput[] | 필수 / null 불가 | 빈 배열 허용. null 요소 불가 |
 | points[].latitude / longitude | number | 필수 | degrees; -90~90 / -180~180 |
 | points[].altitude / horizontalAccuracy | number | 필수 | m, 유한수; 원본 무효 표식 보존 |
@@ -24,6 +26,16 @@
 | points[].timestamp | number | 필수 | Apple epoch 초 |
 | heartRateSamples[].timestamp | number | 필수 | Apple epoch 초 |
 | heartRateSamples[].bpm | number | 필수 | 유한수 원본. 품질 미달은 계산에서 제외; 범위 정책 P08 |
+
+### 이벤트와 경기장 (#115 · 2026-11-09)
+
+요청 키는 iOS `WorkoutPayload.swift`와 같은 복수형 `events`다. 각 항목은 `{ "type": "goal", "location": TrackPointInput }`이며 type은 소문자 `goal` 또는 `assist`만 허용한다. `location`은 latitude, longitude, altitude, horizontalAccuracy, speed, course, timestamp의 7개 필수 숫자를 가진다. 이벤트 위치 시각도 Apple epoch 초이며 운동 시작~종료 범위 안이어야 한다. 이벤트 배열은 원본 순서를 유지하며 경로 points에 동일한 포인트가 없어도 된다.
+
+`field`는 `{name, cornerA, cornerB, cornerC, cornerD, rawCornerA?, rawCornerB?, rawCornerC?, rawCornerD?}`다. 각 코너는 `{latitude, longitude}`이며 보정 코너 4개는 필수, 원본 핀은 개별 nullable이다. 위도 -90~90, 경도 -180~180의 유한한 숫자를 받는다. 이 값은 운동 당시의 독립된 사본으로 저장하므로 저장 경기장의 수정·삭제에 영향을 받지 않는다.
+
+기존 사용자별 `POST /api/v1/user/{userId}/workout-payloads`, 쿼터 업로드, 경기 일괄 제출의 `quarters[].workout` 모두 같은 필드를 받는다. 사용자별 기존 경로의 응답은 workoutPayloadId만 반환하는 계약을 유지한다. 쿼터 운동 조회와 업로드 응답, 쿼터 결과·경기 결과의 workout에는 `events`와 `field`를 반환한다. 기존 원본은 `events: []`, `field: null`로 조회한다. 새 필드를 생략하거나 빈 값으로 보내는 요청은 기존 원본 해시와 호환되며, 실제 이벤트·경기장 사본을 변경한 재업로드는 409 충돌이다.
+
+이벤트는 위치 기록이며 별도 입력하는 goals/assists 합계를 자동 변경하지 않는다. iOS의 SwiftData `Field`는 현재 Codable이 아니므로 전송용 Codable DTO에 이름·코너를 매핑해 `field`에 넣는다. iOS 코드 자체는 이번 백엔드 변경에 포함하지 않는다.
 
 ### 업로드 본문 예시
 
@@ -45,11 +57,24 @@
     }
   ],
   "heartRateSamples": [
+    { "timestamp": 815274001.0, "bpm": 142.0 }
+  ],
+  "events": [
     {
-      "timestamp": 815274001.0,
-      "bpm": 142.0
+      "type": "goal",
+      "location": {
+        "latitude": 37.5665, "longitude": 126.978, "altitude": 20.1,
+        "horizontalAccuracy": 4.8, "speed": -1, "course": -1, "timestamp": 815274010.0
+      }
     }
-  ]
+  ],
+  "field": {
+    "name": "풋살장",
+    "cornerA": { "latitude": 37.5, "longitude": 127.0 },
+    "cornerB": { "latitude": 37.5, "longitude": 127.001 },
+    "cornerC": { "latitude": 37.501, "longitude": 127.001 },
+    "cornerD": { "latitude": 37.501, "longitude": 127.0 }
+  }
 }
 ```
 

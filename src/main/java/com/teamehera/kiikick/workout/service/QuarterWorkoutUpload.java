@@ -29,16 +29,18 @@ public class QuarterWorkoutUpload {
     private final QuarterSummaryRepository summaries;
     private final MatchRepository matches;
     private final ObjectMapper json;
+    private final WorkoutContextCodec context;
 
     public QuarterWorkoutUpload(WorkoutPayloadRepository workouts, TrackPointRepository tracks,
                                 HeartRateSampleRepository heartRates, QuarterSummaryRepository summaries,
-                                MatchRepository matches, ObjectMapper json) {
+                                MatchRepository matches, ObjectMapper json, WorkoutContextCodec context) {
         this.workouts = workouts;
         this.tracks = tracks;
         this.heartRates = heartRates;
         this.summaries = summaries;
         this.matches = matches;
         this.json = json;
+        this.context = context;
     }
 
     // MatchMutation locks the parent across deduplication, sample inserts and publication of PROCESSING.
@@ -52,6 +54,7 @@ public class QuarterWorkoutUpload {
         if (quarter.endedAt() == null) {
             throw new QuarterNotEnded();
         }
+        context.validate(request);
         var start = WorkoutPayloadService.convertDate("startDate", request.startDate());
         var end = WorkoutPayloadService.convertDate("endDate", request.endDate());
         if (request.endDate() <= request.startDate() || !end.isAfter(start)
@@ -82,7 +85,7 @@ public class QuarterWorkoutUpload {
         }
 
         var workout = new WorkoutPayload(UUID.randomUUID(), quarter.id(), match.ownerId(), start, end,
-                request.totalCalories(), request.totalDistance());
+                request.totalCalories(), request.totalDistance(), context.events(request), context.field(request));
         workouts.save(workout);
         tracks.saveAll(WorkoutPayloadService.createTrackPoints(workout.id(), request.points()));
         heartRates.saveAll(WorkoutPayloadService.createHeartRateSamples(workout.id(), request.heartRateSamples()));

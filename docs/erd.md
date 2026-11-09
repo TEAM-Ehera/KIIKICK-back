@@ -420,6 +420,9 @@ HTTP 변경 요청 재전송 결과. 사용자/메서드/경로/키 범위.
 | end_date | DATETIME(6) | NOT NULL |  |
 | total_calories | DOUBLE | NOT NULL |  |
 | total_distance | DOUBLE | NOT NULL |  |
+| events_json | JSON | NULL |  |
+| field_snapshot | JSON | NULL |  |
+
 
 인덱스: `PRIMARY KEY (`id`)`; `UNIQUE KEY `uk_workout_quarter` (`quarter_id`)`; `UNIQUE KEY `uk_workout_quarter_id` (`quarter_id`, `id`)`; `KEY `idx_workout_user_start` (`user_id`, `start_date`)`.
 

@@ -30,7 +30,9 @@ public class WorkoutPayloadRepository {
             rs.getTimestamp("start_date").toLocalDateTime(),
             rs.getTimestamp("end_date").toLocalDateTime(),
             rs.getDouble("total_calories"),
-            rs.getDouble("total_distance")
+            rs.getDouble("total_distance"),
+            rs.getString("events_json"),
+            rs.getString("field_snapshot")
     );
 
     public WorkoutPayloadRepository(JdbcTemplate jdbcTemplate) {
@@ -46,13 +48,13 @@ public class WorkoutPayloadRepository {
                 """
                 INSERT INTO workout_payloads (
                     id, quarter_id, user_id, start_date, end_date,
-                    total_calories, total_distance
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    total_calories, total_distance, events_json, field_snapshot
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 uuidToBytes(workoutPayload.id()), uuidToBytes(workoutPayload.quarterId()),
                 uuidToBytes(workoutPayload.userId()), workoutPayload.startDate(),
                 workoutPayload.endDate(), workoutPayload.totalCalories(),
-                workoutPayload.totalDistance()
+                workoutPayload.totalDistance(), workoutPayload.eventsJson(), workoutPayload.fieldJson()
         );
     }
 
@@ -86,13 +88,13 @@ public class WorkoutPayloadRepository {
         jdbcTemplate.update(
                 """
                 INSERT INTO workoutPayloads (
-                    id, userId, startDate, endDate, totalCalories, totalDistance
-                ) VALUES (?, ?, ?, ?, ?, ?)
+                    id, userId, startDate, endDate, totalCalories, totalDistance, events_json, field_snapshot
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 legacyUuidToBytes(workoutPayload.id()),
                 legacyUuidToBytes(workoutPayload.userId()), workoutPayload.startDate(),
                 workoutPayload.endDate(), workoutPayload.totalCalories(),
-                workoutPayload.totalDistance()
+                workoutPayload.totalDistance(), workoutPayload.eventsJson(), workoutPayload.fieldJson()
         );
     }
 

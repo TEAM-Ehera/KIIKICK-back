@@ -109,7 +109,7 @@ public class MatchResultQuery {
         var ids = page.stream().map(Response::id).toList();
         var statsById = stats.findByQuarterIds(ids).stream().collect(toMap(QuarterPlayerStats::quarterId, Stats::from));
         var positionsById = positions.findByQuarterIds(ids).stream().collect(toMap(QuarterPosition::quarterId, Position::from));
-        var workoutsById = workouts.findByQuarterIds(ids).stream().collect(toMap(WorkoutPayload::quarterId, Workout::from));
+        var workoutsById = workouts.findByQuarterIds(ids).stream().collect(toMap(WorkoutPayload::quarterId, workout -> Workout.from(workout, json)));
         var summariesById = summaries.findByQuarterIds(ids).stream()
                 .collect(toMap(QuarterSummary::quarterId, summary -> Summary.from(summary, json)));
         return page.stream().map(quarter -> new QuarterResult(quarter, statsById.get(quarter.id()),

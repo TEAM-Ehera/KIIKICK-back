@@ -131,6 +131,8 @@ class MySqlRepositoryIntegrationTest {
     @Autowired QuarterRepository quarters;
     @Autowired WorkoutPayloadRepository workouts;
     @Autowired WorkoutPayloadService legacyWorkoutUploads;
+    @Autowired com.teamehera.kiikick.workout.service.WorkoutContextCodec context;
+    @Autowired tools.jackson.databind.ObjectMapper json;
     @Autowired TrackPointRepository trackPoints;
     @Autowired HeartRateSampleRepository heartRates;
     @Autowired QuarterSummaryRepository summaries;
@@ -175,6 +177,39 @@ class MySqlRepositoryIntegrationTest {
                 Integer.class
         );
         assertEquals(28, tableCount);
+    }
+
+    @Test
+    @Transactional
+    void workoutEventsAndFieldPersistInLegacyAndQuarterTables() {
+        UUID owner = UUID.randomUUID();
+        users.save(owner, "context-player");
+        var point = new TrackPointRequest(37.500000123, 127.000000456, 20.0, 5.0, -1.0, -1.0, 1001.0);
+        var corner = new com.teamehera.kiikick.workout.dto.WorkoutFieldRequest.Corner(37.500000123, 127.000000456);
+        var field = new com.teamehera.kiikick.workout.dto.WorkoutFieldRequest("Snapshot",
+                corner, corner, corner, corner, corner, null, null, null);
+        var events = List.of(new com.teamehera.kiikick.workout.dto.WorkoutEventRequest("goal", point),
+                new com.teamehera.kiikick.workout.dto.WorkoutEventRequest("assist", point));
+        var request = new WorkoutPayloadCreateRequest(1000.0, 1060.0, 10.0, 100.0,
+                List.of(point), List.of(), events, field);
+        UUID legacy = legacyWorkoutUploads.create(owner, request).workoutPayloadId();
+        var expectedEvents = json.valueToTree(events);
+        var expectedField = json.valueToTree(field);
+        assertEquals(expectedEvents, json.readTree(jdbc.queryForObject(
+                "SELECT events_json FROM workoutPayloads WHERE id=?", String.class, uuidToBytes(legacy))));
+        assertEquals(expectedField, json.readTree(jdbc.queryForObject(
+                "SELECT field_snapshot FROM workoutPayloads WHERE id=?", String.class, uuidToBytes(legacy))));
+        UUID matchId = UUID.randomUUID();
+        UUID quarterId = UUID.randomUUID();
+        var time = LocalDateTime.of(2026, 11, 9, 0, 0);
+        matches.save(new Match(matchId, owner, null, null, null, null, time, "DRAFT", null, null, 1, time, time));
+        quarters.save(new Quarter(quarterId, matchId, 1, 60, "READY", null, null, time, time));
+        var workout = new WorkoutPayload(UUID.randomUUID(), quarterId, owner, time, time.plusMinutes(1),
+                10, 100, context.events(request), context.field(request));
+        workouts.save(workout);
+        var stored = workouts.findByQuarterId(quarterId).orElseThrow();
+        assertEquals(expectedEvents, json.readTree(stored.eventsJson()));
+        assertEquals(expectedField, json.readTree(stored.fieldJson()));
     }
 
     @Test

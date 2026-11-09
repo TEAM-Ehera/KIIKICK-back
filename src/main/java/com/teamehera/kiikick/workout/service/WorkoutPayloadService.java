@@ -34,13 +34,16 @@ public class WorkoutPayloadService {
 
     private final UserRepository userRepository;
     private final WorkoutPayloadRepository workoutPayloadRepository;
+    private final WorkoutContextCodec context;
 
     public WorkoutPayloadService(
             UserRepository userRepository,
-            WorkoutPayloadRepository workoutPayloadRepository
+            WorkoutPayloadRepository workoutPayloadRepository,
+            WorkoutContextCodec context
     ) {
         this.userRepository = userRepository;
         this.workoutPayloadRepository = workoutPayloadRepository;
+        this.context = context;
     }
 
     /*
@@ -55,11 +58,13 @@ public class WorkoutPayloadService {
             WorkoutPayloadCreateRequest request
     ) {
         validateUserExists(userId);
+        context.validate(request);
 
         UUID workoutPayloadId = UUID.randomUUID();
 
         WorkoutPayload workoutPayload = new WorkoutPayload(
                 workoutPayloadId,
+                null,
                 userId,
                 convertDate(
                         "startDate",
@@ -70,7 +75,7 @@ public class WorkoutPayloadService {
                         request.endDate()
                 ),
                 request.totalCalories(),
-                request.totalDistance()
+                request.totalDistance(), context.events(request), context.field(request)
         );
 
         List<TrackPoint> trackPoints = createTrackPoints(

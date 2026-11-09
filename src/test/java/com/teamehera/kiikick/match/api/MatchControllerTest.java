@@ -40,6 +40,7 @@ import java.util.concurrent.TimeUnit;
 import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -589,6 +590,85 @@ class MatchControllerTest {
             }
             """;
 
+    private String workoutWithContext() {
+        var root = (tools.jackson.databind.node.ObjectNode) json.readTree(WORKOUT);
+        root.set("events", json.readTree("""
+                [{"type":"goal","location":{"latitude":37.500000123,"longitude":127.000000456,
+                  "altitude":20,"horizontalAccuracy":5,"speed":-1,"course":-1,"timestamp":815274010}},
+                 {"type":"assist","location":{"latitude":37.500000124,"longitude":127.000000457,
+                  "altitude":21,"horizontalAccuracy":6,"speed":2,"course":100,"timestamp":815274020}}]
+                """));
+        root.set("field", json.readTree("""
+                {"name":"운동 당시 경기장",
+                 "cornerA":{"latitude":37.5,"longitude":127},
+                 "cornerB":{"latitude":37.5,"longitude":127.001},
+                 "cornerC":{"latitude":37.501,"longitude":127.001},
+                 "cornerD":{"latitude":37.501,"longitude":127},
+                 "rawCornerA":{"latitude":37.50001,"longitude":127.00001}}
+                """));
+        return json.writeValueAsString(root);
+    }
+
+    @Test
+    void workoutEventsAndFieldRoundTripInWorkoutAndResultWithoutChangingStats() throws Exception {
+        String path = completedQuarterUploadPath();
+        UUID quarterId = UUID.fromString(path.split("/")[4]);
+        var body = workoutWithContext();
+        var created = mvc.perform(workoutUpload(path, actor, UUID.randomUUID(), 8, body))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.data.events[0].type").value("goal"))
+                .andExpect(jsonPath("$.data.events[1].location.timestamp").value(815274020))
+                .andExpect(jsonPath("$.data.field.name").value("운동 당시 경기장"))
+                .andReturn().getResponse();
+        mvc.perform(get(path.replace("/workout-payloads", "/workout")).with(bearer(accessTokens, actor)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.events[0].location.latitude").value(37.500000123))
+                .andExpect(jsonPath("$.data.field.cornerD.latitude").value(37.501))
+                .andExpect(jsonPath("$.data.field.rawCornerA.latitude").value(37.50001))
+                .andExpect(jsonPath("$.data.field.rawCornerD").value(nullValue()));
+        String result = path.replace("/workout-payloads", "/result");
+        mvc.perform(get(result).with(bearer(accessTokens, actor)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.workout.events.length()").value(2))
+                .andExpect(jsonPath("$.data.workout.field.name").value("운동 당시 경기장"));
+        var match = quarters.findByIdAndOwnerId(quarterId, actor).orElseThrow().matchId();
+        mvc.perform(get(MATCHES + "/" + match + "/result/quarters").with(bearer(accessTokens, actor)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data[0].workout.events[1].type").value("assist"));
+        mvc.perform(workoutUpload(path, actor, UUID.randomUUID(), 9, body))
+                .andExpect(status().isOk());
+        mvc.perform(workoutUpload(path, actor, UUID.randomUUID(), 10, body.replace("goal", "assist")))
+                .andExpect(status().isConflict());
+        mvc.perform(workoutUpload(path, actor, UUID.randomUUID(), 10, body.replace("운동 당시 경기장", "다른 경기장")))
+                .andExpect(status().isConflict());
+        assertTrue(stats.findByQuarterId(quarterId).isEmpty());
+        mvc.perform(get(path.replace("/workout-payloads", "/workout")).with(bearer(accessTokens, other)))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void invalidEventAndFieldInputRollsBackAndLegacyEmptyFieldsKeepOriginalHash() throws Exception {
+        String path = completedQuarterUploadPath();
+        UUID quarterId = UUID.fromString(path.split("/")[4]);
+        String valid = workoutWithContext();
+        for (String body : java.util.List.of(valid.replace("goal", "Goal"),
+                valid.replace("815274010", "815274601"), valid.replace("37.500000123", "91"),
+                valid.replace("\"cornerA\":", "\"unknownCorner\":"),
+                valid.replace("\"type\":\"goal\"", "\"type\":null"),
+                valid.replace("\"speed\":-1", "\"speed\":-2"))) {
+            mvc.perform(workoutUpload(path, actor, UUID.randomUUID(), 8, body))
+                    .andExpect(status().isUnprocessableContent());
+            assertTrue(workouts.findByQuarterId(quarterId).isEmpty());
+        }
+        mvc.perform(workoutUpload(path, actor, UUID.randomUUID(), 8, WORKOUT))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.data.events.length()").value(0))
+                .andExpect(jsonPath("$.data.field").value(nullValue()));
+        var root = (tools.jackson.databind.node.ObjectNode) json.readTree(WORKOUT);
+        root.set("events", json.readTree("[]"));
+        root.set("field", json.readTree("null"));
+        mvc.perform(workoutUpload(path, actor, UUID.randomUUID(), 9, json.writeValueAsString(root)))
+                .andExpect(status().isOk());
+        var typed = json.treeToValue(root, com.teamehera.kiikick.workout.dto.WorkoutPayloadCreateRequest.class);
+        assertFalse(json.valueToTree(typed).has("events"));
+        assertFalse(json.valueToTree(typed).has("field"));
+    }
+
     @Test
     void delayedWorkoutUploadReplaysAndRejectsDifferentSource() throws Exception {
         String path = completedQuarterUploadPath();
@@ -637,7 +717,7 @@ class MatchControllerTest {
                   {"quarterId":"%s","position":"TEST_FIRST","workout":%s},
                   {"quarterId":"%s","position":"TEST_SECOND","workout":%s}
                 ]}
-                """.formatted(firstId, WORKOUT, secondId, WORKOUT);
+                """.formatted(firstId, workoutWithContext(), secondId, WORKOUT);
         UUID key = UUID.randomUUID();
         mvc.perform(workoutUpload(path, actor, key, version, body.replace("TEST_SECOND", "UNKNOWN")))
                 .andExpect(status().isUnprocessableContent());
