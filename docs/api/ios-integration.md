@@ -92,3 +92,10 @@
 - [워치·폰 SessionManager](https://github.com/DeveloperAcademy-POSTECH/2026-C6-A03-KIIKICK-iOS/blob/33f55613ce17a91ce9656b780e92e84960540578/KIIKICK/KIIKICK%20Global/SessionManager.swift)
 - [APIClient](https://github.com/DeveloperAcademy-POSTECH/2026-C6-A03-KIIKICK-iOS/blob/33f55613ce17a91ce9656b780e92e84960540578/KIIKICK/KIIKICK/Network/APIClient.swift)
 - [WorkoutAPI](https://github.com/DeveloperAcademy-POSTECH/2026-C6-A03-KIIKICK-iOS/blob/33f55613ce17a91ce9656b780e92e84960540578/KIIKICK/KIIKICK/Network/WorkoutAPI.swift)
+
+
+## 친구 경기·댓글 연동 (#120)
+
+친구 목록 `profile.id` 또는 공개 프로필 `id`를 사용해 `GET /api/v1/friends/{userId}/matches`로 이동한다. 친구 전용 경로에서 경기 상세·쿼터 목록·완료 경기/쿼터 결과를 조회한다. 댓글은 `GET/POST /api/v1/matches/{matchId}/comments`, 본인 댓글 삭제는 `DELETE /api/v1/matches/{matchId}/comments/{commentId}`다. 작성 본문은 `{"content":"좋은 경기!"}`, 쓰기에는 UUID `Idempotency-Key`가 필요하고 `If-Match`는 사용하지 않는다.
+
+친구 해제·차단 시 재전송을 포함해 404이므로 이전 화면으로 이동한다. 댓글 작성자는 `authorId`로 표시하고 닉네임·아바타는 기존 공개 프로필 API를 사용한다. 댓글 목록 커서는 조회자·경기별로 보관한다. 서버 계약을 반영한 것으로 현재 iOS 구현 완료를 뜻하지 않는다.

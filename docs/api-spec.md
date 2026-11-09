@@ -33,7 +33,7 @@
 
 **현재 기술 제안:** 쿼터당 운동 파일 하나, Bearer 인증, 중복 방지 키, 경기 버전 검사. iOS 적용 방식은 협의가 필요하다. 상세 미확정 사항은 [협의표](api/ios-integration.md)에 구분했다.
 
-팀 배정·홈/어웨이 점수·참가자 목록·개별 득점 시각은 사용하지 않는다. 사용자는 자기 경기만 수정하고, 친구 비교는 별도로 허용된 분석 요약만 사용한다.
+팀 배정·홈/어웨이 점수·참가자 목록·개별 득점 시각은 사용하지 않는다. 사용자는 자기 경기만 수정하고, 친구 전용 경로에서 수락된 친구의 경기·쿼터 결과를 조회하고 경기별 댓글을 주고받는다. 원본 GPS·심박 샘플은 소유자 전용이다.
 
 <a id="flow"></a>
 ## 2. 화면별로 호출하는 순서
@@ -404,3 +404,10 @@ v0.5는 구현된 이메일 인증번호 발송·검증과 회원가입 완료 A
 개선 제안이며, 합의 전 적용된 것으로 읽지 않는다.
 
 운동 원본은 #115에서 iOS의 `events`(goal/assist 위치 배열)와 `field`(운동 당시 경기장 사본)를 추가 지원한다. 기존 필드만 보내는 요청은 유지하며, events와 field를 보내려면 iOS 전송 DTO에 포함한다.
+
+
+### 친구 경기·댓글 추가 (#120)
+
+[친구 경기·댓글 계약](api/friends.md#친구-경기-조회--friend-1115): `GET /friends/{userId}/matches`, `GET /friends/{userId}/matches/{matchId}`, `GET /friends/{userId}/matches/{matchId}/quarters`, `GET /friends/{userId}/matches/{matchId}/result`, `GET /friends/{userId}/matches/{matchId}/result/quarters`.
+
+댓글은 `GET/POST /matches/{matchId}/comments`, `DELETE /matches/{matchId}/comments/{commentId}`를 사용한다. 현재 친구 관계를 매번 확인하며 경기 수정 권한은 소유자 전용이다.

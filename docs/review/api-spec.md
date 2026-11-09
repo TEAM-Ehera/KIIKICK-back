@@ -444,3 +444,8 @@ Authorization: Bearer <accessToken>
 이번 v0.4는 읽는 순서·예시·협의 항목을 정리하고 서울 시간대 입출력을 반영했다. API 경로·Method·필수 헤더와 운동 원본 검증 규칙은 v0.3 초안에서 임의로 변경하지 않았다. 운동 업로드 버전 검사와 샘플 경계 처리는 협의표의 개선 제안이며, 합의 전 적용된 것으로 읽지 않는다. 서버 코드·실제 DB·iOS 구현은 이번 문서 편집으로 바뀌지 않는다.
 
 운동 원본은 #115에서 iOS의 `events`(goal/assist 위치 배열)와 `field`(운동 당시 경기장 사본)를 추가 지원한다. 기존 필드만 보내는 요청은 유지하며, events와 field를 보내려면 iOS 전송 DTO에 포함한다.
+
+
+### 친구 경기 및 댓글 (#120)
+
+수락된 친구는 `GET /api/v1/friends/{userId}/matches`에서 경기 목록을 보고, `/{matchId}`, `/{matchId}/quarters`, `/{matchId}/result`, `/{matchId}/result/quarters`에서 상세·쿼터·결과를 조회한다. 댓글 작성·조회는 `POST/GET /api/v1/matches/{matchId}/comments`, 삭제는 `DELETE /api/v1/matches/{matchId}/comments/{commentId}`(본인 댓글만)이다. 친구 해제·차단 시 접근을 회수한다. 경기 수정 및 원본 GPS·심박 샘플 조회는 소유자 전용이다. [상세 계약](../api/friends.md).

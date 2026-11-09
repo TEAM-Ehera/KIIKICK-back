@@ -176,7 +176,7 @@ Request body: 없음.
 
 ### 처리 규칙
 
-1. 친구 여부만으로 개인 위치·비공개 경기 전체를 공개하지 않는다.
+1. 수락된 친구는 아래 FRIEND-11~15로 경기 목록·상세·결과를 조회한다. 원본 GPS·심박 샘플 경로는 소유자 전용이다.
 2. 차단·비공개 대상은 404로 처리한다.
 
 ### 요청 예시
@@ -1022,3 +1022,38 @@ X-Request-Id: req-example
 [공통 오류](common.md)에 정의한 400·403·429·500·503도 적용된다. 네트워크 응답 유실 시 저장 여부는 알 수 없으므로 새 ID로 재등록하지 않는다.
 
 [이 문서 위로](#api-바로가기) · [전체 API 목차](../api-spec.md)
+
+
+## 친구 경기 조회 · FRIEND-11~15
+
+공개 프로필의 `relationship=FRIEND` 또는 친구 목록의 `profile.id`를 `userId`로 사용한다. 모든 경로는 Bearer 인증이 필요하며, 현재 수락된 친구 관계와 양방향 차단·공개 프로필 상태를 매번 검사한다. 대상이 없거나 접근할 수 없으면 `404 RESOURCE_NOT_FOUND`다. 본인 경기는 기존 `/matches` 경로를 사용한다.
+
+| ID | Method | 경로 (`/api/v1` 기준) | 응답 |
+| --- | --- | --- | --- |
+| FRIEND-11 | GET | `/friends/{userId}/matches` | 기존 경기 목록 Page |
+| FRIEND-12 | GET | `/friends/{userId}/matches/{matchId}` | 기존 경기 Detail, ETag |
+| FRIEND-13 | GET | `/friends/{userId}/matches/{matchId}/quarters` | 기존 쿼터 Page, ETag |
+| FRIEND-14 | GET | `/friends/{userId}/matches/{matchId}/result` | 기존 MatchResult, ETag |
+| FRIEND-15 | GET | `/friends/{userId}/matches/{matchId}/result/quarters` | 기존 QuarterResults, ETag |
+
+목록은 `cursor`, `limit`(기본 20, 1~100)을 받고 경기 목록은 `status`도 받는다. 커서는 기존 경기/쿼터 목록 계약을 따른다. 결과 경로는 COMPLETED 경기만 허용하고 준비 전에는 기존 `409 RESULT_NOT_READY`를 반환한다. 모든 `matchId`는 해당 `userId`의 소유 경기여야 한다. 빈 목록은 `data: []`, 마지막 페이지는 `hasNext: false`, `nextCursor: null`이다.
+
+경기/쿼터 응답 필드는 기존 [진행 API](gameplay.md)와 [결과 API](results.md)를 따른다. 쿼터 결과에는 골·어시스트·포지션·운동 메타·계산된 요약이 포함된다. 친구 관계는 경기 설정 변경·상태 변경·운동 업로드 권한을 부여하지 않는다. 원본 GPS·심박 샘플 API는 기존 소유자 전용 권한을 유지한다.
+
+## 경기 댓글 · COMMENT-01~03
+
+경기 소유자와 현재 수락된 친구가 경기별 댓글을 주고받는다. 다른 친구가 작성한 댓글도 해당 경기 접근 권한이 있으면 조회할 수 있다. 조회자와 양방향 차단 관계인 작성자의 댓글은 숨긴다. 친구 해제·차단 후 해당 친구는 목록 조회, 새 댓글 작성/삭제 및 과거 성공 요청 재전송에 접근할 수 없다. 기존 댓글은 보존한다.
+
+| ID | Method | 경로 (`/api/v1` 기준) | 성공 |
+| --- | --- | --- | --- |
+| COMMENT-01 | GET | `/matches/{matchId}/comments` | 200, 댓글 Page |
+| COMMENT-02 | POST | `/matches/{matchId}/comments` | 201, 댓글 Success, Location |
+| COMMENT-03 | DELETE | `/matches/{matchId}/comments/{commentId}` | 204, 본인 작성 댓글만 삭제 |
+
+GET은 `cursor`, `limit`(기본 20, 1~100)을 받는다. `createdAt/id` 내림차순이며 커서는 조회자·경기에 귀속된다. 공통 `meta.pagination`을 사용한다. 댓글 항목 필드는 `id`, `matchId`, `authorId`, `content`, `createdAt`(+09:00)이다.
+
+POST 본문은 `{"content":"좋은 경기였어!"}`다. `content`는 문자열, 공백만 제출 불가, Unicode 코드 포인트 기준 최대 1000자이며 앞뒤 공백은 저장 전에 제거한다. 누락·null·타입 오류·알 수 없는 필드는 `422 VALIDATION_FAILED`다. `authorId`는 인증 사용자로 결정한다.
+
+POST/DELETE는 UUID `Idempotency-Key`가 필수이고 `If-Match`를 사용하지 않는다. 댓글은 경기 버전을 변경하지 않는다. 동일 키·동일 요청은 최초 응답을 재생하고 다른 본문은 `409 IDEMPOTENCY_KEY_REUSED`다. 접근 및 소유권 실패는 `404 RESOURCE_NOT_FOUND`, 잘못된 커서는 `400 INVALID_CURSOR`, 인증 없이는 401이다. DELETE 본문은 보내지 않는다.
+
+배포 전 [V006__match_comments.sql](../db/mysql/migrations/V006__match_comments.sql)을 적용한다.

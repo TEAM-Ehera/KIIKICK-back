@@ -25,11 +25,11 @@
 | 홈 | 준비/진행 경기, 최근 완료 경기와 쿼터 요약 | iOS에서 본인 경기·결과 API를 조합 |
 | 쿼터 결과 | 골·어시스트·포지션·운동 지표·경로·심박 그래프 | quarter_id |
 | 경기 결과 | 소속 쿼터 목록과 개인 합계 | 쿼터 원본 및 저장 요약 |
-| 친구 | 검색·요청·수락·해제·차단, 공개 프로필 | 개인 기록 소유권과 분리 |
+| 친구 | 검색·요청·수락·해제·차단, 공개 프로필, 친구 경기 조회·댓글 | 개인 기록 소유권과 분리 |
 | 분석 | 기간 통계·추이·이전 경기 비교·포지션 분포·친구 비교 | 완료 쿼터와 저장 요약 |
 | 알림 | 목록·읽음·접근 가능한 대상 이동 | 수신자 본인과 현재 권한 |
 
-친구의 결과를 알리는 기능의 트리거·공개 범위는 P09 미확정이다. 친구 관계만으로 타인의 경기 상세나 GPS·심박 원본에 접근하지 않는다. 함께 경기한 사용자를 자동으로 식별하는 구조는 현재 범위에 없다.
+친구의 결과를 알리는 기능의 트리거·공개 범위는 P09 미확정이다. 수락된 친구는 친구 전용 경로로 경기·쿼터 결과를 조회하고 댓글을 주고받는다. GPS·심박 원본 샘플과 경기 수정은 소유자 전용이다. 함께 경기한 사용자를 자동으로 식별하는 구조는 현재 범위에 없다.
 
 ## 3. 쿼터 운동 지표
 
@@ -99,7 +99,7 @@ flowchart TD
 | F03 | 장소·개인 경기·쿼터 설정 | [setup](api/setup.md) | venues, matches, quarters |
 | F04 | 쿼터 진행·골·어시스트·포지션 | [gameplay](api/gameplay.md) | quarters, quarter_player_stats, quarter_positions |
 | F05 | 홈 | [iOS 홈 화면 연동](api/home.md) | matches, quarters, quarter_summaries |
-| F06 | 친구 | [friends](api/friends.md) | friend_pairs, user_blocks |
+| F06 | 친구 | [friends](api/friends.md) | friend_pairs, user_blocks, match_comments |
 | F07 | 개인 경기·쿼터 결과 | [results](api/results.md) | quarters, quarter_player_stats, quarter_positions, quarter_summaries |
 | F08 | 개인 분석·비교 | [analytics](api/analytics.md) | quarter_player_stats, quarter_positions, quarter_summaries |
 | F09 | 마이페이지 | [auth](api/auth.md) | users, user_consents |

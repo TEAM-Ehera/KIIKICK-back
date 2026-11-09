@@ -41,8 +41,14 @@ public class FriendCommands {
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public MatchMutation.Response forUser(MatchMutation.Request request, LocalDateTime expiresAt, UUID target,
                                           Supplier<MatchMutation.Response> command) {
+        return forUser(request, expiresAt, target, () -> {}, command);
+    }
+
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public MatchMutation.Response forUser(MatchMutation.Request request, LocalDateTime expiresAt, UUID target,
+                                          Runnable checkAccess, Supplier<MatchMutation.Response> command) {
         lockUsers(request.actorUserId(), target);
-        return mutation.executeUnversioned(request, expiresAt, command);
+        return mutation.executeUnversioned(request, expiresAt, checkAccess, command);
     }
 
     @Transactional(isolation = Isolation.READ_COMMITTED)

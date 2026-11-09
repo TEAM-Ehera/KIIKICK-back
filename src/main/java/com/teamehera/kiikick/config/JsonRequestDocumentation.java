@@ -49,6 +49,8 @@ public class JsonRequestDocumentation {
                     "{\"positionCode\":\"GK\"}", List.of("positionCode"))),
             Map.entry("PUT /api/v1/quarters/{quarterId}/summary/settings", new RequestSpec(SummarySettingsBody.class,
                     "{\"hrMaxReferenceBpm\":190}", List.of("hrMaxReferenceBpm"))),
+            Map.entry("POST /api/v1/matches/{matchId}/comments", new RequestSpec(CommentBody.class,
+                    "{\"content\":\"좋은 경기였어!\"}", List.of("content"))),
             Map.entry("POST /api/v1/friend-requests", new RequestSpec(FriendRequestBody.class,
                     "{\"targetUserId\":\"00000000-0000-4000-8000-000000000001\"}", List.of("targetUserId"))),
             Map.entry("PUT /api/v1/devices/{deviceId}", new RequestSpec(DeviceBody.class,
@@ -104,6 +106,8 @@ public class JsonRequestDocumentation {
     public record StatsBody(Integer goals, Integer assists) {}
     public record PositionBody(@Schema(description = "서버에 설정된 대표 포지션 코드") String positionCode) {}
     public record SummarySettingsBody(Double hrMaxReferenceBpm) {}
+    public record CommentBody(@Schema(description = "공백만 불가, Unicode 코드 포인트 기준 최대 1000자",
+                                         minLength = 1, maxLength = 1000) String content) {}
     public record FriendRequestBody(UUID targetUserId) {}
     public record DeviceBody(@Schema(allowableValues = {"IOS", "WATCHOS"}) String platform,
                              String pushToken, Boolean pushEnabled) {}

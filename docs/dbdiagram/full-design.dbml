@@ -471,6 +471,7 @@ TableGroup quarter_records {
   heart_rate_samples
 }
 TableGroup social {
+  match_comments
   friend_pairs
   user_blocks
   notifications
@@ -482,3 +483,18 @@ TableGroup synchronization {
 
 Ref "fk_summary_quarter_id":"quarters"."id" <? "quarter_summaries"."quarter_id" [update: restrict, delete: restrict]
 Ref "fk_summary_workout_payload_id":"workout_payloads".("quarter_id", "id") <? "quarter_summaries".("quarter_id", "workout_payload_id") [update: restrict, delete: restrict]
+
+
+Table match_comments {
+  id binary(16) [pk, not null]
+  match_id binary(16) [not null]
+  author_id binary(16) [not null]
+  content varchar(1000) [not null]
+  created_at datetime(6) [not null]
+  indexes {
+    (match_id, created_at, id) [name: 'idx_match_comments_page']
+  }
+  Note: '댓글 페이지 인덱스의 물리 정렬은 created_at DESC, id DESC. 경기 버전과 독립적.'
+}
+Ref fk_match_comment_match: match_comments.match_id > matches.id [delete: cascade]
+Ref fk_match_comment_author: match_comments.author_id > users.id
