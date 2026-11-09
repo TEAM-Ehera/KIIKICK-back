@@ -82,3 +82,11 @@ FROM heartRateSamples ORDER BY workoutPayloadId, sampleSeq;
 | DDL 부분 적용 후 복구 | 첫 ALTER 적용 뒤 테이블 충돌로 실패. 백업 복원 및 V001 재적용 후 비교 결과 일치 |
 
 계산 작업 식별 방식에 대한 후속 PR이 병합되면 확정 스키마에 V001을 맞추고 위 검증을 다시 실행한다. 현재 결과는 `calculation_job_id`가 있는 스키마에 해당한다.
+
+## 경기장 좌표 추가 (V004)
+
+기존 V001~V003(Refresh Token 이력) 적용 DB에는 애플리케이션 변경 배포 전에 [V004__venue_corners.sql](migrations/V004__venue_corners.sql)을 한 번 적용한다. 이 저장소의 이행 SQL은 수동 적용 방식이다. 기존 경기장의 16개 위도·경도 컬럼은 모두 NULL이며 좌표를 추정하거나 기존 주소를 변경하지 않는다. 신규 환경도 V001~V004를 순서대로 적용한다.
+
+검증: 8개 핀의 서로 다른 소수 좌표를 저장한 뒤 상세·목록에서 값이 그대로 조회되는지, PATCH로 보정 좌표 전체 교체와 원본 개별 삭제가 되는지 확인한다. H2 통합 테스트는 갱신된 `src/test/resources/schema.sql`을 사용한다. 실제 MySQL 적용 전에는 대상 DB 백업과 별도 검증 DB에서 V004 적용 확인이 필요하다.
+
+2026-11-09 검증: 격리 MySQL 8.4.11에 기존 스키마와 V001~V004를 순서대로 적용했다. 실제 JDBC Repository에서 8개 핀의 Double 정밀도, 목록·상세 매핑, 보정 핀 교체·원본 NULL 삭제와 기존 좌표 없는 경기장 테스트 2개가 통과했다. develop 기반 전체 H2 테스트 275개와 bootJar 빌드도 통과했다.

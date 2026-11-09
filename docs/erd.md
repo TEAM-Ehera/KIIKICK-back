@@ -125,7 +125,7 @@
 
 ### venues
 
-사용자 개인 경기장 목록. 경기 선택 시 장소 사본을 저장.
+사용자 개인 경기장 목록. 경기 선택 시 이름·주소 사본을 저장한다. `corner_*`는 보정 좌표, `raw_corner_*`는 사용자 원본 핀으로 별도 보존한다. 기존 좌표 없는 경기장은 NULL이며 좌표 검증과 보정 코너 4개 동시 변경은 API에서 처리한다.
 
 | 컬럼 | SQL 타입 | null | 키 |
 | --- | --- | --- | --- |
@@ -133,6 +133,22 @@
 | owner_id | BINARY(16) | NOT NULL |  |
 | name | VARCHAR(255) | NOT NULL |  |
 | address | TEXT | NULL |  |
+| corner_a_latitude | DOUBLE | NULL |  |
+| corner_a_longitude | DOUBLE | NULL |  |
+| corner_b_latitude | DOUBLE | NULL |  |
+| corner_b_longitude | DOUBLE | NULL |  |
+| corner_c_latitude | DOUBLE | NULL |  |
+| corner_c_longitude | DOUBLE | NULL |  |
+| corner_d_latitude | DOUBLE | NULL |  |
+| corner_d_longitude | DOUBLE | NULL |  |
+| raw_corner_a_latitude | DOUBLE | NULL |  |
+| raw_corner_a_longitude | DOUBLE | NULL |  |
+| raw_corner_b_latitude | DOUBLE | NULL |  |
+| raw_corner_b_longitude | DOUBLE | NULL |  |
+| raw_corner_c_latitude | DOUBLE | NULL |  |
+| raw_corner_c_longitude | DOUBLE | NULL |  |
+| raw_corner_d_latitude | DOUBLE | NULL |  |
+| raw_corner_d_longitude | DOUBLE | NULL |  |
 | created_at | DATETIME(6) | NOT NULL |  |
 | updated_at | DATETIME(6) | NOT NULL |  |
 

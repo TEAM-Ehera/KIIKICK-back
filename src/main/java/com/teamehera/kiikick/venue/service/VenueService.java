@@ -5,6 +5,7 @@ import com.teamehera.kiikick.match.repository.MatchRepository;
 import com.teamehera.kiikick.match.service.MatchListQuery.InvalidListRequest;
 import com.teamehera.kiikick.match.service.MatchListQuery.Pagination;
 import com.teamehera.kiikick.match.service.MatchOwnership.ResourceNotFound;
+import com.teamehera.kiikick.venue.domain.FieldCorner;
 import com.teamehera.kiikick.venue.domain.Venue;
 import com.teamehera.kiikick.venue.repository.VenueRepository;
 import org.springframework.stereotype.Service;
@@ -17,6 +18,7 @@ import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoUnit;
 import java.util.Base64;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -58,19 +60,35 @@ public class VenueService {
         return View.from(requireVenue(actor, venueId));
     }
 
-    public View create(UUID actor, String name, String address) {
+    public View create(UUID actor, String name, String address, Map<String, FieldCorner> corners) {
         var now = LocalDateTime.now(ZoneOffset.UTC).truncatedTo(ChronoUnit.MICROS);
-        var venue = new Venue(UUID.randomUUID(), actor, name, address, now, now);
+        var venue = new Venue(UUID.randomUUID(), actor, name, address,
+                corners.get("cornerA"), corners.get("cornerB"),
+                corners.get("cornerC"), corners.get("cornerD"),
+                corners.get("rawCornerA"), corners.get("rawCornerB"),
+                corners.get("rawCornerC"), corners.get("rawCornerD"), now, now);
         venues.save(venue);
         return View.from(venue);
     }
 
-    public View update(UUID actor, UUID venueId, String name, String address, boolean addressPresent) {
+    public View update(UUID actor, UUID venueId, String name, String address, boolean addressPresent,
+                       Map<String, FieldCorner> corners) {
         var venue = requireVenue(actor, venueId);
         String nextName = name == null ? venue.name() : name;
         String nextAddress = addressPresent ? address : venue.address();
-        if (!nextName.equals(venue.name()) || !Objects.equals(nextAddress, venue.address())) {
-            venues.update(venueId, actor, nextName, nextAddress);
+        // PATCH에서 누락된 핀은 유지하고, 명시적인 rawCorner=null만 원본 핀을 지운다.
+        var next = new Venue(venue.id(), actor, nextName, nextAddress,
+                corners.containsKey("cornerA") ? corners.get("cornerA") : venue.cornerA(),
+                corners.containsKey("cornerB") ? corners.get("cornerB") : venue.cornerB(),
+                corners.containsKey("cornerC") ? corners.get("cornerC") : venue.cornerC(),
+                corners.containsKey("cornerD") ? corners.get("cornerD") : venue.cornerD(),
+                corners.containsKey("rawCornerA") ? corners.get("rawCornerA") : venue.rawCornerA(),
+                corners.containsKey("rawCornerB") ? corners.get("rawCornerB") : venue.rawCornerB(),
+                corners.containsKey("rawCornerC") ? corners.get("rawCornerC") : venue.rawCornerC(),
+                corners.containsKey("rawCornerD") ? corners.get("rawCornerD") : venue.rawCornerD(),
+                venue.createdAt(), venue.updatedAt());
+        if (!next.equals(venue)) {
+            venues.update(next);
         }
         return detail(actor, venueId);
     }
@@ -115,9 +133,19 @@ public class VenueService {
 
     private record Boundary(LocalDateTime updatedAt, UUID id) {}
 
-    public record View(UUID id, String name, String address, OffsetDateTime createdAt, OffsetDateTime updatedAt) {
+    public record View(UUID id, String name, String address,
+                       FieldCorner cornerA, FieldCorner cornerB,
+                       FieldCorner cornerC, FieldCorner cornerD,
+                       FieldCorner rawCornerA, FieldCorner rawCornerB,
+                       FieldCorner rawCornerC, FieldCorner rawCornerD,
+                       OffsetDateTime createdAt, OffsetDateTime updatedAt) {
         static View from(Venue venue) {
-            return new View(venue.id(), venue.name(), venue.address(), fromUtc(venue.createdAt()), fromUtc(venue.updatedAt()));
+            return new View(venue.id(), venue.name(), venue.address(),
+                    venue.cornerA(), venue.cornerB(),
+                    venue.cornerC(), venue.cornerD(),
+                    venue.rawCornerA(), venue.rawCornerB(),
+                    venue.rawCornerC(), venue.rawCornerD(),
+                    fromUtc(venue.createdAt()), fromUtc(venue.updatedAt()));
         }
     }
 

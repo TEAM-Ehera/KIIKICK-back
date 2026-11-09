@@ -44,6 +44,7 @@ import com.teamehera.kiikick.user.repository.AccountDeletionRequestRepository;
 import com.teamehera.kiikick.user.repository.UserConsentRepository;
 import com.teamehera.kiikick.user.repository.UserRepository;
 import com.teamehera.kiikick.venue.domain.Venue;
+import com.teamehera.kiikick.venue.domain.FieldCorner;
 import com.teamehera.kiikick.venue.repository.VenueRepository;
 import com.teamehera.kiikick.workout.domain.HeartRateSample;
 import com.teamehera.kiikick.workout.domain.QuarterSummary;
@@ -202,6 +203,36 @@ class MySqlRepositoryIntegrationTest {
                         Integer.class, storedId)),
                 () -> assertTrue(workouts.findById(workoutId).isEmpty())
         );
+    }
+
+    @Test
+    @Transactional
+    void venueCornersPreserveDoublePrecisionAndRawNulls() {
+        UUID owner = UUID.randomUUID();
+        UUID id = UUID.randomUUID();
+        users.save(owner, null);
+        var time = LocalDateTime.of(2026, 11, 9, 0, 0);
+        var a = new FieldCorner(37.123456789, 127.987654321);
+        var b = new FieldCorner(37.123456790, 127.987654322);
+        var c = new FieldCorner(37.123456791, 127.987654323);
+        var d = new FieldCorner(37.123456792, 127.987654324);
+        var rawA = new FieldCorner(37.123456793, 127.987654325);
+        var rawB = new FieldCorner(37.123456794, 127.987654326);
+        var rawC = new FieldCorner(37.123456795, 127.987654327);
+        var rawD = new FieldCorner(37.123456796, 127.987654328);
+        var original = new Venue(id, owner, "Coordinates", null,
+                a, b, c, d, rawA, rawB, rawC, rawD, time, time);
+        venues.save(original);
+        assertEquals(original, venues.findByIdAndOwnerId(id, owner).orElseThrow());
+        assertEquals(original, venues.findPageByOwnerId(owner, "Coordinates", 10).getFirst());
+        var changed = new Venue(id, owner, "Updated", null,
+                d, c, b, a, null, rawB, null, rawD, time, time);
+        assertEquals(1, venues.update(changed));
+        var stored = venues.findByIdAndOwnerId(id, owner).orElseThrow();
+        assertEquals(changed, new Venue(stored.id(), stored.ownerId(), stored.name(), stored.address(),
+                stored.cornerA(), stored.cornerB(), stored.cornerC(), stored.cornerD(),
+                stored.rawCornerA(), stored.rawCornerB(), stored.rawCornerC(), stored.rawCornerD(),
+                stored.createdAt(), time));
     }
 
     @Test

@@ -1,6 +1,7 @@
 package com.teamehera.kiikick.match.api;
 
 import com.teamehera.kiikick.match.service.MatchMutation;
+import com.teamehera.kiikick.venue.domain.FieldCorner;
 import com.teamehera.kiikick.venue.service.VenueService;
 import io.swagger.v3.oas.annotations.Operation;
 import org.springframework.beans.factory.annotation.Value;
@@ -23,6 +24,7 @@ import java.security.Principal;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -32,7 +34,9 @@ import java.util.UUID;
 @RequestMapping(VenueController.PATH)
 public class VenueController {
     static final String PATH = "/api/v1/venues";
-    private static final Set<String> FIELDS = Set.of("name", "address");
+    private static final Set<String> FIELDS = Set.of("name", "address",
+            "cornerA", "cornerB", "cornerC", "cornerD",
+            "rawCornerA", "rawCornerB", "rawCornerC", "rawCornerD");
 
     private final VenueService venues;
     private final MatchMutation mutation;
@@ -70,7 +74,7 @@ public class VenueController {
         var request = request(principal, "POST", PATH, key, ifMatch, body);
         return replay(mutation.executeUnversioned(request, expiresAt(), () -> {
             var input = input(body);
-            var venue = venues.create(request.actorUserId(), name(input, true), address(input));
+            var venue = venues.create(request.actorUserId(), name(input, true), address(input), corners(input));
             return response(201, Map.of(HttpHeaders.LOCATION, PATH + "/" + venue.id()), venue);
         }));
     }
@@ -86,7 +90,7 @@ public class VenueController {
                 () -> venues.detail(request.actorUserId(), venueId), () -> {
                     var input = input(body);
                     var venue = venues.update(request.actorUserId(), venueId, name(input, input.has("name")),
-                            address(input), input.has("address"));
+                            address(input), input.has("address"), corners(input));
                     return response(200, Map.of(), venue);
                 }));
     }
@@ -121,6 +125,38 @@ public class VenueController {
         var input = MatchSettings.readBody(json, body);
         MatchSettings.checkObject(input, "body", FIELDS);
         return input;
+    }
+
+    private static Map<String, FieldCorner> corners(JsonNode input) {
+        var result = new LinkedHashMap<String, FieldCorner>();
+        var corrected = List.of("cornerA", "cornerB", "cornerC", "cornerD");
+        boolean hasCorrected = corrected.stream().anyMatch(input::has);
+        // 보정 좌표는 한 직사각형을 나타내므로 일부만 교체할 수 없다. 서버는 재보정하지 않는다.
+        if (hasCorrected && !corrected.stream().allMatch(input::has)) {
+            throw new MatchSettings.InvalidSettings(corrected);
+        }
+        for (String field : List.of("cornerA", "cornerB", "cornerC", "cornerD", "rawCornerA", "rawCornerB", "rawCornerC", "rawCornerD")) {
+            if (!input.has(field)) {
+                continue;
+            }
+            var node = input.get(field);
+            if (node.isNull() && field.startsWith("raw")) {
+                result.put(field, null);
+                continue;
+            }
+            MatchSettings.checkObject(node, field, Set.of("latitude", "longitude"));
+            var latitude = node.get("latitude");
+            var longitude = node.get("longitude");
+            if (latitude == null || longitude == null || !latitude.isNumber() || !longitude.isNumber()) {
+                throw new MatchSettings.InvalidSettings(List.of(field));
+            }
+            try {
+                result.put(field, new FieldCorner(latitude.doubleValue(), longitude.doubleValue()));
+            } catch (IllegalArgumentException exception) {
+                throw new MatchSettings.InvalidSettings(List.of(field));
+            }
+        }
+        return result;
     }
 
     private static String name(JsonNode input, boolean required) {

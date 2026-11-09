@@ -85,9 +85,17 @@ Auth 응답의 날짜는 ISO 8601 Asia/Seoul `+09:00` 문자열이다. `UserSelf
 | `id` | UUID | O | 불가 | — | 저장 경기장 ID |
 | `name` | string | O | 불가 | — | 경기장 이름 |
 | `address` | string | O | 허용 | — | 주소 |
+| `cornerA` / `cornerB` / `cornerC` / `cornerD` | FieldCorner | O | 허용(기존 좌표 없는 경기장) | — | iOS가 직사각형으로 보정한 좌표. 실제 연산 기준 |
+| `rawCornerA` / `rawCornerB` / `rawCornerC` / `rawCornerD` | FieldCorner | O | 허용 | null | 사용자가 찍은 원본 좌표. 재보정·디버깅용 |
 | `createdAt` | timestamp | O | 불가 | — | 등록 시각 |
 | `updatedAt` | timestamp | O | 불가 | — | 마지막 수정 시각 |
 
+
+### FieldCorner
+
+`{ "latitude": 37.123456789, "longitude": 127.987654321 }`
+
+두 필드는 필수 숫자(Double)이며, 위도는 -90~90, 경도는 -180~180의 유한한 값이다. 서버는 보정 좌표와 원본 좌표를 별도로 저장하고 재보정하거나 서로 대체하지 않는다. 직사각형 여부·꼭짓점 순서·보정 알고리즘은 iOS 책임이다.
 
 <a id="friendrequest"></a>
 ## FriendRequest
