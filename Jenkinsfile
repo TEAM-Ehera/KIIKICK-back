@@ -1,3 +1,15 @@
+def notifyDeploy(String state) {
+    catchError(buildResult: 'SUCCESS', stageResult: 'SUCCESS', catchInterruptions: false,
+               message: "Discord deployment notification failed (${state})") {
+        withCredentials([string(credentialsId: 'kiikick-deploy-discord-webhook',
+                                variable: 'DISCORD_WEBHOOK_URL')]) {
+            withEnv(["KIIKICK_DEPLOY_STATE=${state}"]) {
+                sh 'set +x; python3 -B ops/deploy/notify-discord.py'
+            }
+        }
+    }
+}
+
 pipeline {
     agent { label 'jdk21' }
 
@@ -39,12 +51,21 @@ pipeline {
                 expression { env.JOB_NAME == 'kiikick-develop' && env.GIT_BRANCH == 'origin/develop' }
             }
             steps {
-                sh '''
-                    set -eu
-                    jar=build/libs/KIIKICK-back-0.0.1-SNAPSHOT.jar
-                    digest=$(sha256sum "$jar" | cut -d ' ' -f 1)
-                    sudo -n /usr/local/sbin/kiikick-install-dev-container "$GIT_COMMIT" "$digest" < "$jar"
-                '''
+                script {
+                    notifyDeploy('started')
+                    def deployed = false
+                    try {
+                        sh '''
+                            set -eu
+                            jar=build/libs/KIIKICK-back-0.0.1-SNAPSHOT.jar
+                            digest=$(sha256sum "$jar" | cut -d ' ' -f 1)
+                            sudo -n /usr/local/sbin/kiikick-install-dev-container "$GIT_COMMIT" "$digest" < "$jar"
+                        '''
+                        deployed = true
+                    } finally {
+                        notifyDeploy(deployed ? 'succeeded' : 'failed')
+                    }
+                }
             }
         }
     }
