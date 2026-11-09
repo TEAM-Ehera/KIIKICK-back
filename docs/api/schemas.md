@@ -260,6 +260,10 @@ calculation_job_id, calculation_parameters와 source_payload_hash는 내부 작�
 | endDate | timestamp | 필수 | 응답에서는 +09:00 포함 서울 시각 문자열 |
 | totalCalories | number | 필수 | 활동 칼로리 kcal |
 | totalDistance | number | 필수 | 이동 거리 m |
+| events | MatchEvent[] | 필수 / null 불가 | 원본 순서의 goal/assist와 location. 기존 원본은 [] |
+| field | WorkoutField | 필수 / nullable | 운동 당시 경기장 사본. 기존 원본은 null |
+
+MatchEvent는 `{type: "goal" | "assist", location: TrackPointInput}`이다. location의 timestamp는 업로드된 Apple epoch 숫자를 유지한다. WorkoutField는 이름·필수 보정 코너 4개·선택 원본 핀 4개이며 상세는 [운동 원본 계약](workouts.md#원본-요청-필드)을 따른다.
 
 <a id="trackpoint"></a>
 ## TrackPoint

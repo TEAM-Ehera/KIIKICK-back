@@ -340,6 +340,8 @@ CREATE TABLE `workout_payloads` (
     `end_date` DATETIME(6) NOT NULL,
     `total_calories` DOUBLE NOT NULL,
     `total_distance` DOUBLE NOT NULL,
+    `events_json` JSON NULL,
+    `field_snapshot` JSON NULL,
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_workout_quarter` (`quarter_id`),
     UNIQUE KEY `uk_workout_quarter_id` (`quarter_id`, `id`),

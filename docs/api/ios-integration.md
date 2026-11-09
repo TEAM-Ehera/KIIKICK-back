@@ -13,6 +13,7 @@
 | 항목 | 기준 |
 | --- | --- |
 | 경기장 핀 (#112) | `cornerA`~`cornerD`는 iOS 보정 좌표, `rawCornerA`~`rawCornerD`는 선택 원본. 각 핀은 `{latitude: Double, longitude: Double}`로 저장·조회. 보정 좌표는 4개 동시 변경, 원본은 개별 null 삭제. 기존 좌표 없는 경기장은 복원 전 좌표 등록 필요 |
+| 운동 원본 확장 (#115) | `events`는 goal/assist와 전체 location TrackPoint 배열, `field`는 운동 당시 경기장 이름·코너 사본. 기존·쿼터·일괄 업로드 모두 지원. iOS는 Codable 전송 DTO에 field를 추가하며 기존 합계 입력은 유지 |
 | 기록 대상 | 각자 본인 경기만 기록 |
 | 저장 단위 | 쿼터별 골·어시스트 합계, 대표 포지션 하나, 운동 원본 |
 | 원본 보존 | GPS와 심박 수집값 전체를 서버에 저장 |

@@ -15,6 +15,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.InjectMocks;
+import com.teamehera.kiikick.workout.service.WorkoutContextCodec;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -44,6 +45,9 @@ class WorkoutPayloadServiceTest {
 
     @Mock
     private WorkoutPayloadRepository workoutPayloadRepository;
+
+    @Mock
+    private WorkoutContextCodec context;
 
     @InjectMocks
     private WorkoutPayloadService workoutPayloadService;

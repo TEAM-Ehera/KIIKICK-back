@@ -90,6 +90,8 @@ CREATE TABLE workout_payloads (
     end_date TIMESTAMP(6) NOT NULL,
     total_calories DOUBLE NOT NULL,
     total_distance DOUBLE NOT NULL,
+    events_json VARCHAR(1000000),
+    field_snapshot VARCHAR(1000000),
     CONSTRAINT uk_workout_quarter UNIQUE (quarter_id),
     CONSTRAINT uk_workout_quarter_id UNIQUE (quarter_id, id),
     FOREIGN KEY (quarter_id) REFERENCES quarters(id),

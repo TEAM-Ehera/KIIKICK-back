@@ -165,7 +165,7 @@ If-Match: "8"
 | 내용 | 계약 |
 | --- | --- |
 | 요청 | `POST /api/v1/quarters/{quarterId}/workout-payloads` |
-| 본문 | 기존 WorkoutPayload의 startDate/endDate, points, heartRateSamples, totalCalories, totalDistance |
+| 본문 | WorkoutPayload의 startDate/endDate, points, heartRateSamples, totalCalories, totalDistance 및 선택 events/field |
 | 날짜 예외 | 원본 날짜는 기존 Apple epoch 숫자 유지. 서울 시각 문자열로 바꾸지 않음 |
 | 새 원본 저장 | 201과 Workout. 응답은 `{data, meta}` 형식 |
 | 같은 원본 재업로드 | 새 키로 보내도 기존 원본이면 200. 동일 멱등 키 재생은 최초 201을 그대로 반환할 수 있음 |
@@ -402,3 +402,5 @@ v0.5는 구현된 이메일 인증번호 발송·검증과 회원가입 완료 A
 그 밖의 API 경로·Method·필수 헤더와 운동 원본
 검증 규칙은 v0.4에서 변경하지 않았다. 운동 업로드 버전 검사와 샘플 경계 처리는 협의표의
 개선 제안이며, 합의 전 적용된 것으로 읽지 않는다.
+
+운동 원본은 #115에서 iOS의 `events`(goal/assist 위치 배열)와 `field`(운동 당시 경기장 사본)를 추가 지원한다. 기존 필드만 보내는 요청은 유지하며, events와 field를 보내려면 iOS 전송 DTO에 포함한다.

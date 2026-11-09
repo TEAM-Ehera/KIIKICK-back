@@ -351,6 +351,8 @@ Table "workout_payloads" {
   "total_calories" DOUBLE [not null]
   "total_distance" DOUBLE [not null]
 
+  "events_json" JSON
+  "field_snapshot" JSON
   Indexes {
     quarter_id [unique, name: "uk_workout_quarter"]
     (quarter_id, id) [unique, name: "uk_workout_quarter_id"]

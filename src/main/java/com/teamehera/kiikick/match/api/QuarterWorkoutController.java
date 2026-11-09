@@ -50,7 +50,7 @@ public class QuarterWorkoutController {
     private static final String SUMMARY_RETRY_SECONDS = "5";
     private static final Set<String> TOTAL_FIELDS = Set.of("startDate", "endDate", "totalCalories", "totalDistance");
     private static final Set<String> PAYLOAD_FIELDS =
-            Set.of("startDate", "endDate", "totalCalories", "totalDistance", "points", "heartRateSamples");
+            Set.of("startDate", "endDate", "totalCalories", "totalDistance", "points", "heartRateSamples", "events", "field");
     private static final Set<String> POINT_FIELDS =
             Set.of("latitude", "longitude", "altitude", "horizontalAccuracy", "speed", "course", "timestamp");
     private static final Set<String> HEART_RATE_FIELDS = Set.of("timestamp", "bpm");
@@ -169,6 +169,10 @@ public class QuarterWorkoutController {
         return ResponseEntity.ok().eTag(MatchMutation.etag(result.meta().matchVersion())).body(result);
     }
 
+    @Operation(summary = "쿼터 운동 원본 업로드",
+            requestBody = @io.swagger.v3.oas.annotations.parameters.RequestBody(required = true,
+                    content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE,
+                            schema = @Schema(implementation = WorkoutPayloadCreateRequest.class))))
     @PostMapping(path = PATH + "{quarterId}/workout-payloads", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<String> upload(
             Principal principal, @PathVariable UUID quarterId,
@@ -317,7 +321,45 @@ public class QuarterWorkoutController {
         requireNumbers(root, TOTAL_FIELDS, prefix);
         requireSamples(root.path("points"), POINT_FIELDS, prefix + "points");
         requireSamples(root.path("heartRateSamples"), HEART_RATE_FIELDS, prefix + "heartRateSamples");
+        requireContext(root, prefix);
         return json.treeToValue(root, WorkoutPayloadCreateRequest.class);
+    }
+
+    private static void requireContext(JsonNode root, String prefix) {
+        var events = root.get("events");
+        if (events != null && !events.isNull()) {
+            if (!events.isArray()) {
+                throw new MatchSettings.InvalidSettings(List.of(prefix + "events"));
+            }
+            int index = 0;
+            for (var event : events) {
+                String path = prefix + "events[" + index++ + "]";
+                MatchSettings.checkObject(event, path, Set.of("type", "location"));
+                if (!event.path("type").isTextual()
+                        || !Set.of("goal", "assist").contains(event.path("type").asText())) {
+                    throw new MatchSettings.InvalidSettings(List.of(path + ".type"));
+                }
+                MatchSettings.checkObject(event.path("location"), path + ".location", POINT_FIELDS);
+                requireNumbers(event.path("location"), POINT_FIELDS, path + ".location.");
+            }
+        }
+        var field = root.get("field");
+        if (field == null || field.isNull()) {
+            return;
+        }
+        MatchSettings.checkObject(field, prefix + "field", Set.of("name", "cornerA", "cornerB", "cornerC", "cornerD",
+                "rawCornerA", "rawCornerB", "rawCornerC", "rawCornerD"));
+        if (!field.path("name").isTextual()) {
+            throw new MatchSettings.InvalidSettings(List.of(prefix + "field.name"));
+        }
+        for (String name : List.of("cornerA", "cornerB", "cornerC", "cornerD", "rawCornerA", "rawCornerB", "rawCornerC", "rawCornerD")) {
+            var corner = field.get(name);
+            if (name.startsWith("raw") && (corner == null || corner.isNull())) {
+                continue;
+            }
+            MatchSettings.checkObject(corner, prefix + "field." + name, Set.of("latitude", "longitude"));
+            requireNumbers(corner, Set.of("latitude", "longitude"), prefix + "field." + name + ".");
+        }
     }
 
     private static void requireSamples(JsonNode samples, Set<String> fields, String name) {
@@ -343,7 +385,7 @@ public class QuarterWorkoutController {
     }
 
     private MatchMutation.Response serialize(QuarterWorkoutUpload.Result result, String path) {
-        var data = Workout.from(result.workout());
+        var data = Workout.from(result.workout(), json);
         var meta = MatchApiResponse.Meta.create();
         var body = new VersionedResponse<>(data, new DetailMeta(meta.requestId(), meta.serverTime(), result.matchVersion()));
         String tag = MatchMutation.etag(result.matchVersion());

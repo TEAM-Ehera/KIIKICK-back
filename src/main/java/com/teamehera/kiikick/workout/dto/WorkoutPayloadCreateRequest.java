@@ -1,6 +1,7 @@
 package com.teamehera.kiikick.workout.dto;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.AssertTrue;
@@ -78,8 +79,27 @@ public record WorkoutPayloadCreateRequest(
                         message = "heartRateSamples 배열 요소는 null일 수 없습니다."
                 )
                 @Valid HeartRateSampleRequest
-                > heartRateSamples
+                > heartRateSamples,
+
+        @JsonInclude(JsonInclude.Include.NON_EMPTY)
+        @Schema(description = "골·어시스트 위치 이벤트. 생략/null은 빈 배열, 순서 보존")
+        List<@NotNull @Valid WorkoutEventRequest> events,
+
+        @JsonInclude(JsonInclude.Include.NON_NULL)
+        @Valid @Schema(description = "운동 당시 경기장 사본. 생략/null 허용")
+        WorkoutFieldRequest field
 ) {
+    public WorkoutPayloadCreateRequest {
+        events = events == null ? List.of() : events;
+    }
+
+    // 기존 요청·해시의 호환성을 유지한다. 비어 있는 새 필드는 해시 직렬화에서 제외한다.
+    public WorkoutPayloadCreateRequest(Double startDate, Double endDate, Double totalCalories,
+                                       Double totalDistance, List<TrackPointRequest> points,
+                                       List<HeartRateSampleRequest> heartRateSamples) {
+        this(startDate, endDate, totalCalories, totalDistance, points, heartRateSamples, List.of(), null);
+    }
+
     @JsonIgnore
     @AssertTrue(
             message = "startDate와 endDate는 유효한 숫자여야 하며, endDate는 startDate보다 빠를 수 없습니다."

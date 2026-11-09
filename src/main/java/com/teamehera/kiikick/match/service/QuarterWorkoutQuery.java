@@ -57,7 +57,7 @@ public class QuarterWorkoutQuery {
     public VersionedResponse<Workout> workout(UUID actor, UUID quarterId) {
         var owned = requireWorkout(actor, quarterId);
         var meta = MatchApiResponse.Meta.create();
-        return new VersionedResponse<>(Workout.from(owned.workout()),
+        return new VersionedResponse<>(Workout.from(owned.workout(), json),
                 new DetailMeta(meta.requestId(), meta.serverTime(), owned.matchVersion()));
     }
 
@@ -152,10 +152,12 @@ public class QuarterWorkoutQuery {
     public record PageMeta(UUID requestId, OffsetDateTime serverTime, long matchVersion, Pagination pagination) {}
 
     public record Workout(UUID id, UUID quarterId, OffsetDateTime startDate, OffsetDateTime endDate,
-                          double totalCalories, double totalDistance) {
-        public static Workout from(WorkoutPayload workout) {
+                          double totalCalories, double totalDistance, JsonNode events, JsonNode field) {
+        public static Workout from(WorkoutPayload workout, ObjectMapper json) {
             return new Workout(workout.id(), workout.quarterId(), fromUtc(workout.startDate()),
-                    fromUtc(workout.endDate()), workout.totalCalories(), workout.totalDistance());
+                    fromUtc(workout.endDate()), workout.totalCalories(), workout.totalDistance(),
+                    json.readTree(workout.eventsJson() == null ? "[]" : workout.eventsJson()),
+                    json.readTree(workout.fieldJson() == null ? "null" : workout.fieldJson()));
         }
     }
 
