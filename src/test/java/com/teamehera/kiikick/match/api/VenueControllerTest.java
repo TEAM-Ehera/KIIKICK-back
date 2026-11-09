@@ -175,6 +175,80 @@ class VenueControllerTest {
         }
     }
 
+    @Test
+    void correctedAndRawCornersRoundTripWithoutRecalibration() throws Exception {
+        var body = new java.util.LinkedHashMap<String, Object>();
+        body.put("name", "Coordinates");
+        var fields = java.util.List.of("cornerA", "cornerB", "cornerC", "cornerD",
+                "rawCornerA", "rawCornerB", "rawCornerC", "rawCornerD");
+        for (int index = 0; index < fields.size(); index++) {
+            body.put(fields.get(index), Map.of("latitude", 37.123456789 + index * 0.001,
+                    "longitude", 127.987654321 + index * 0.001));
+        }
+        UUID key = UUID.randomUUID();
+        var created = mvc.perform(write(post(VENUES), owner, key, body))
+                .andExpect(status().isCreated()).andReturn().getResponse();
+        String path = created.getHeader("Location");
+        mvc.perform(write(post(VENUES), owner, key, body))
+                .andExpect(status().isCreated()).andExpect(content().string(created.getContentAsString()));
+        var detail = mvc.perform(get(path).with(bearer(accessTokens, owner)))
+                .andExpect(status().isOk()).andReturn().getResponse();
+        var stored = json.readTree(detail.getContentAsString()).path("data");
+        for (String field : fields) {
+            assertEquals(json.valueToTree(body.get(field)), stored.get(field));
+        }
+        mvc.perform(get(VENUES).with(bearer(accessTokens, owner)).param("q", "Coordinates"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].cornerD.latitude").value(37.123456789 + 3 * 0.001))
+                .andExpect(jsonPath("$.data[0].rawCornerD.longitude").value(127.987654321 + 7 * 0.001));
+
+        var patch = new java.util.LinkedHashMap<String, Object>();
+        patch.put("name", "Renamed coordinates");
+        patch.put("rawCornerA", null);
+        mvc.perform(write(patch(path), owner, UUID.randomUUID(), patch))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.rawCornerA").value(nullValue()))
+                .andExpect(jsonPath("$.data.cornerA.latitude").value(37.123456789))
+                .andExpect(jsonPath("$.data.rawCornerB.latitude").value(37.123456789 + 5 * 0.001));
+        var corrected = new java.util.LinkedHashMap<String, Object>();
+        for (String field : fields.subList(0, 4)) {
+            corrected.put(field, Map.of("latitude", 38.0, "longitude", 128.0));
+        }
+        mvc.perform(write(patch(path), owner, UUID.randomUUID(), corrected))
+                .andExpect(status().isOk());
+        mvc.perform(get(path).with(bearer(accessTokens, owner)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.cornerD.latitude").value(38.0))
+                .andExpect(jsonPath("$.data.rawCornerA").value(nullValue()))
+                .andExpect(jsonPath("$.data.rawCornerD.longitude").value(127.987654321 + 7 * 0.001));
+        mvc.perform(get(path).with(bearer(accessTokens, other))).andExpect(status().isNotFound());
+    }
+
+    @Test
+    void invalidCornersAreRejectedAndLegacyVenuesCanAcquireCoordinates() throws Exception {
+        String path = mvc.perform(write(post(VENUES), owner, UUID.randomUUID(), Map.of("name", "Legacy")))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.data.cornerA").value(nullValue()))
+                .andReturn().getResponse().getHeader("Location");
+        for (String invalid : java.util.List.of(
+                "{\"cornerA\":{\"latitude\":37,\"longitude\":127}}",
+                "{\"rawCornerA\":{\"latitude\":91,\"longitude\":127}}",
+                "{\"rawCornerA\":{\"latitude\":37,\"longitude\":181}}",
+                "{\"rawCornerA\":{\"latitude\":37}}",
+                "{\"rawCornerA\":{\"latitude\":\"37\",\"longitude\":127}}",
+                "{\"rawCornerA\":{\"latitude\":37,\"longitude\":127,\"extra\":1}}",
+                "{\"cornerA\":null,\"cornerB\":null,\"cornerC\":null,\"cornerD\":null}")) {
+            mvc.perform(patch(path).with(bearer(accessTokens, owner))
+                            .header("Idempotency-Key", UUID.randomUUID()).contentType("application/json").content(invalid))
+                    .andExpect(status().isUnprocessableContent());
+            var createBody = "{\"name\":\"Invalid\"," + invalid.substring(1);
+            mvc.perform(post(VENUES).with(bearer(accessTokens, owner))
+                            .header("Idempotency-Key", UUID.randomUUID()).contentType("application/json").content(createBody))
+                    .andExpect(status().isUnprocessableContent());
+        }
+        var corner = Map.of("latitude", -90.0, "longitude", 180.0);
+        mvc.perform(write(patch(path), owner, UUID.randomUUID(), Map.of(
+                        "cornerA", corner, "cornerB", corner, "cornerC", corner, "cornerD", corner)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.cornerA.latitude").value(-90.0));
+    }
+
     private static String tag(long version) {
         return Character.toString('"') + version + '"';
     }
@@ -184,7 +258,7 @@ class VenueControllerTest {
     }
 
     private MockHttpServletRequestBuilder write(MockHttpServletRequestBuilder request, UUID actor, UUID key,
-                                                Map<String, String> body) {
+                                                Map<String, ?> body) {
         return request.with(bearer(accessTokens, actor)).header("Idempotency-Key", key)
                 .contentType("application/json").content(json.writeValueAsString(body));
     }

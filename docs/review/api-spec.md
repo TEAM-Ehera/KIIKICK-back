@@ -52,7 +52,7 @@
 | 4 | 쿼터 시간 설정 | POST /matches/{matchId}/quarters | durationSeconds / quarterId와 새 ETag |
 | 5 | 준비 완료 | POST /matches/{matchId}/ready | 본문 없음 / 새 ETag |
 
-저장할 새 장소가 있으면 POST /venues를 사용한다. 장소를 재사용하지 않고 경기 생성 시 직접 입력하는 것도 현재 초안에서 가능하다.
+저장할 새 장소가 있으면 POST /venues를 사용한다. 장소를 재사용하지 않고 경기 생성 시 직접 입력하는 것도 현재 초안에서 가능하다. 경기장 API는 iOS `Field`의 보정 `cornerA`~`cornerD`와 선택적인 원본 `rawCornerA`~`rawCornerD`를 `{latitude, longitude}`로 저장·조회한다. 보정 코너는 4개를 함께 등록·변경하며 원본은 개별 삭제할 수 있다. 기존 좌표 없는 경기장은 null을 반환한다.
 
 ### 2-2. 쿼터 진행과 개인 기록
 

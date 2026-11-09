@@ -130,3 +130,7 @@ Swagger/OpenAPI의 Auth 전체 문서화·`/v3/api-docs` 검증은 응답·정�
 ## iOS 적용 협의
 
 이미 확정된 요구사항과 아직 합의하지 않은 구현 방식을 [iOS 연동 협의표](api/ios-integration.md)에 구분했다. 업로드 If-Match 제거와 센서 경계 샘플 수신 방식은 개선 제안이며 현 API 계약에 자동 적용하지 않았다.
+
+## 경기장 코너 보존 (#112 · 2026-11-09)
+
+iOS가 보정한 cornerA~D를 그대로 보존하며 서버는 재보정하지 않는다. rawCornerA~D는 사용자 원본 핀으로 개별 nullable이며 연산에 사용하지 않는다. FieldCorner는 위도·경도 Double이다. 기존 좌표 없는 경기장은 유지하며 보정 코너 등록·수정 시 4개를 함께 받는다. 경기별 venueSnapshot의 과거 좌표 보존은 별도 범위다.

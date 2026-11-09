@@ -83,7 +83,24 @@ path: venueId(UUID).
 
 ### 입력과 헤더
 
-본문: `name` 필수 비어 있지 않은 문자열, `address` 선택 nullable 문자열. P12 확정 전 저장 제약에 맞춰 이름 최대 255자와 주소 최대 1,000자를 적용한다.
+본문: `name` 필수 비어 있지 않은 문자열, `address` 선택 nullable 문자열. 이름 최대 255자와 주소 최대 1,000자를 적용한다.
+
+- `cornerA`~`cornerD`: iOS가 직사각형으로 보정한 `FieldCorner` 객체. 보내는 경우 4개를 모두 보내야 하며 `null`은 허용하지 않는다. 기존 클라이언트 호환을 위해 4개 전부 생략은 허용한다. iOS `Field`는 필수 코너가 있으므로 신규 저장 시 4개를 보내야 한다.
+- `rawCornerA`~`rawCornerD`: 사용자 원본 핀. 각각 선택이며 생략하거나 `null`을 보낼 수 있다.
+- `FieldCorner`는 `{ "latitude": Double, "longitude": Double }`. 위도 -90~90, 경도 -180~180의 유한한 숫자만 받으며 알 수 없는 하위 필드는 거절한다. 좌표 오류는 422다.
+
+```json
+{
+  "name": "풋살장",
+  "cornerA": { "latitude": 37.5000, "longitude": 127.0000 },
+  "cornerB": { "latitude": 37.5000, "longitude": 127.0010 },
+  "cornerC": { "latitude": 37.5010, "longitude": 127.0010 },
+  "cornerD": { "latitude": 37.5010, "longitude": 127.0000 },
+  "rawCornerA": { "latitude": 37.50001, "longitude": 127.00002 }
+}
+```
+
+저장·수정 응답과 목록·상세 응답은 8개 좌표 필드를 같은 이름으로 반환한다. 좌표가 없는 기존 경기장은 `null`을 반환하므로 iOS에서 보정 코너를 등록한 후 `Field`로 복원한다. 서버는 좌표를 재보정하지 않는다.
 
 인증 헤더는 필수다. 변경 요청에는 Idempotency-Key가 필수다. If-Match는 사용하지 않는다.
 
@@ -108,11 +125,13 @@ path: venueId(UUID).
 
 path: venueId. name/address는 선택; name=null 불가, address=null 허용.
 
+좌표도 선택이다. `cornerA`~`cornerD`를 변경할 때는 4개를 모두 보내며 `null`은 불가하다. `rawCornerA`~`rawCornerD`는 개별 변경이 가능하고 `null`은 해당 원본 핀 삭제를 뜻한다. 누락된 필드는 유지하므로 보정 좌표 변경 시 원본 핀도 교체하려면 함께 보내야 한다. 기존 경기장에 보정 좌표를 추가할 수 있다.
+
 인증 헤더는 필수다. 변경 요청에는 Idempotency-Key가 필수다. If-Match는 사용하지 않는다.
 
 ### 처리 규칙
 
-1. 누락은 유지한다. 이미 저장된 경기의 장소 사본은 바꾸지 않는다.
+1. 누락은 유지한다. 이미 저장된 경기의 장소 사본은 바꾸지 않는다. 현재 `venueSnapshot`은 이름·주소만 보관하며, 이 변경은 경기장 저장·조회 API의 좌표 지원 범위다. 경기별 과거 코너 보존은 지원하지 않는다.
 
 ### 오류와 앱 대응
 

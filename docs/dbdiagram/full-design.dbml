@@ -102,6 +102,22 @@ Table "venues" {
   "owner_id" BINARY(16) [not null]
   "name" VARCHAR(255) [not null]
   "address" TEXT
+  "corner_a_latitude" DOUBLE
+  "corner_a_longitude" DOUBLE
+  "corner_b_latitude" DOUBLE
+  "corner_b_longitude" DOUBLE
+  "corner_c_latitude" DOUBLE
+  "corner_c_longitude" DOUBLE
+  "corner_d_latitude" DOUBLE
+  "corner_d_longitude" DOUBLE
+  "raw_corner_a_latitude" DOUBLE
+  "raw_corner_a_longitude" DOUBLE
+  "raw_corner_b_latitude" DOUBLE
+  "raw_corner_b_longitude" DOUBLE
+  "raw_corner_c_latitude" DOUBLE
+  "raw_corner_c_longitude" DOUBLE
+  "raw_corner_d_latitude" DOUBLE
+  "raw_corner_d_longitude" DOUBLE
   "created_at" DATETIME(6) [not null]
   "updated_at" DATETIME(6) [not null]
 
