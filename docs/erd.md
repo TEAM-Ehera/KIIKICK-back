@@ -2,7 +2,7 @@
 
 **v0.4 · 2026-11-02 · 개인 기록 설계**
 
-기준 물리 정의는 [full-design.sql](dbdiagram/full-design.sql)과 [full-design.dbml](dbdiagram/full-design.dbml)이다. 컬럼 사전은 해당 SQL의 25개 테이블·31개 FK를 반영한다. 전체 ERD 이미지는 사용자가 제공한 dbdiagram 화면을 사용한다. 운영 DB나 현재 PR에 적용된 스키마라는 의미는 아니다.
+기준 물리 정의는 [full-design.sql](dbdiagram/full-design.sql)과 [full-design.dbml](dbdiagram/full-design.dbml)이다. 컬럼 사전은 해당 SQL의 26개 테이블·33개 FK를 반영한다. 전체 ERD 이미지는 사용자가 제공한 dbdiagram 화면을 사용한다. 운영 DB나 현재 PR에 적용된 스키마라는 의미는 아니다.
 
 ## 1. 모델 원칙
 
@@ -521,3 +521,18 @@ calculation_status는 PROCESSING/PARTIAL/READY/FAILED, metric_status는 각 지�
 ## 7. 물리 정의의 검토 범위
 
 BINARY(16) UUID와 DATETIME(6) UTC를 사용한다. UTC 저장은 DB 타입만으로 보장되지 않으므로 세션·JDBC·애플리케이션 설정을 함께 적용한다. nickname(16) 외 문자열 길이는 임시 물리 설계값이다. 실제 인증·삭제 정책에 따라 운영 제약을 추가해야 한다. 현 파일은 다이어그램용 생성 정의이며 운영 마이그레이션이 아니다. 서버 코드와 DB는 이번 문서 변경으로 바뀌지 않는다.
+
+
+### match_comments (#120)
+
+경기 소유자와 수락된 친구의 댓글. 경기 수정 권한과 분리하고 경기 버전을 변경하지 않는다. 기존 ERD 이미지는 댓글 테이블을 포함하지 않으므로 SQL·DBML을 기준으로 확인한다.
+
+| 컬럼 | SQL 타입 | null | 키 |
+| --- | --- | --- | --- |
+| id | BINARY(16) | NOT NULL | PK |
+| match_id | BINARY(16) | NOT NULL | FK → matches.id, ON DELETE CASCADE |
+| author_id | BINARY(16) | NOT NULL | FK → users.id |
+| content | VARCHAR(1000) | NOT NULL | |
+| created_at | DATETIME(6) | NOT NULL | UTC |
+
+목록 인덱스: `(match_id, created_at DESC, id DESC)`. 친구 삭제 시 댓글을 보존하고 접근을 제한한다. 차단 관계의 작성자 댓글은 양방향 숨김 처리한다. 기존 DB에는 `V006__match_comments.sql`을 적용한다.

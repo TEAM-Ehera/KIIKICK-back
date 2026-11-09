@@ -50,6 +50,11 @@ public class MatchRepository {
         );
     }
 
+    public Optional<Match> findById(UUID id) {
+        return jdbcTemplate.query("SELECT * FROM matches WHERE id = ?", rowMapper, uuidToBytes(id))
+                .stream().findFirst();
+    }
+
     public boolean existsById(UUID id) {
         return Boolean.TRUE.equals(jdbcTemplate.queryForObject(
                 "SELECT EXISTS (SELECT 1 FROM matches WHERE id = ?)", Boolean.class, uuidToBytes(id)));

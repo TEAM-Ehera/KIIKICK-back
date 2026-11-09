@@ -362,3 +362,14 @@ CREATE TABLE auth_refresh_token_history (
 );
 CREATE INDEX idx_refresh_history_expiry ON auth_refresh_token_history(expires_at);
 CREATE INDEX idx_auth_sessions_refresh_hash ON auth_sessions(refresh_token_hash);
+
+CREATE TABLE match_comments (
+    id BINARY(16) PRIMARY KEY,
+    match_id BINARY(16) NOT NULL,
+    author_id BINARY(16) NOT NULL,
+    content VARCHAR(1000) NOT NULL,
+    created_at TIMESTAMP(6) NOT NULL,
+    CONSTRAINT fk_match_comment_match FOREIGN KEY (match_id) REFERENCES matches(id) ON DELETE CASCADE,
+    CONSTRAINT fk_match_comment_author FOREIGN KEY (author_id) REFERENCES users(id)
+);
+CREATE INDEX idx_match_comments_page ON match_comments (match_id, created_at DESC, id DESC);
