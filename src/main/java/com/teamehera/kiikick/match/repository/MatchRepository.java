@@ -50,6 +50,11 @@ public class MatchRepository {
         );
     }
 
+    public boolean existsById(UUID id) {
+        return Boolean.TRUE.equals(jdbcTemplate.queryForObject(
+                "SELECT EXISTS (SELECT 1 FROM matches WHERE id = ?)", Boolean.class, uuidToBytes(id)));
+    }
+
     public Optional<Match> findByIdAndOwnerId(UUID id, UUID ownerId) {
         return queryOne(
                 "SELECT * FROM matches WHERE id = ? AND owner_id = ?",

@@ -743,6 +743,138 @@ class MatchControllerTest {
     }
 
     @Test
+    void localMatchSubmissionCreatesCompletedMatchAndQuartersAndReplaysWithoutAnEtag() throws Exception {
+        UUID matchId = UUID.randomUUID();
+        UUID firstId = UUID.randomUUID();
+        UUID secondId = UUID.randomUUID();
+        UUID key = UUID.randomUUID();
+        String path = MATCHES + "/" + matchId + "/workout-submissions";
+        String body = """
+                {"quarters":[
+                  {"quarterId":"%s","position":"TEST_FIRST","workout":%s},
+                  {"quarterId":"%s","position":"TEST_SECOND","workout":%s}
+                ]}
+                """.formatted(firstId, WORKOUT, secondId, WORKOUT);
+        var accepted = mvc.perform(write(post(path), actor, key, body))
+                .andExpect(status().isAccepted())
+                .andExpect(header().string("ETag", tag(2)))
+                .andExpect(header().string("Location", MATCHES + "/" + matchId + "/result"))
+                .andExpect(jsonPath("$.data.matchId").value(matchId.toString()))
+                .andExpect(jsonPath("$.data.quarterCount").value(2))
+                .andReturn().getResponse();
+        var match = matches.findByIdAndOwnerId(matchId, actor).orElseThrow();
+        assertEquals("COMPLETED", match.status());
+        assertEquals(2, match.version());
+        var imported = quarters.findByMatchId(matchId, 10);
+        assertEquals(List.of(firstId, secondId), imported.stream().map(q -> q.id()).toList());
+        assertEquals(600, imported.getFirst().durationSeconds());
+        assertEquals(workouts.findByQuarterId(firstId).orElseThrow().startDate(), match.startedAt());
+        assertEquals(workouts.findByQuarterId(secondId).orElseThrow().endDate(), match.endedAt());
+
+        // Analysis can finish and advance the version before a lost response is retried.
+        summaryCalculation.process(pendingSummary(firstId));
+        summaryCalculation.process(pendingSummary(secondId));
+        mvc.perform(write(post(path), actor, key, body))
+                .andExpect(status().isAccepted())
+                .andExpect(header().string("ETag", tag(2)))
+                .andExpect(content().string(accepted.getContentAsString()));
+        mvc.perform(get(MATCHES + "/" + matchId + "/result/quarters").with(bearer(accessTokens, actor)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].position.positionCode").value("TEST_FIRST"))
+                .andExpect(jsonPath("$.data[1].position.positionCode").value("TEST_SECOND"));
+        mvc.perform(write(post(path), other, UUID.randomUUID(), body)).andExpect(status().isNotFound());
+        mvc.perform(write(post(path), actor, UUID.randomUUID(), body))
+                .andExpect(status().isPreconditionRequired());
+        mvc.perform(write(post(path), actor, key, body.replace("1500", "1600")))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("IDEMPOTENCY_KEY_REUSED"));
+    }
+
+    @Test
+    void invalidLocalSubmissionRollsBackImportedMatchAndAllQuarters() throws Exception {
+        UUID matchId = UUID.randomUUID();
+        UUID firstId = UUID.randomUUID();
+        UUID secondId = UUID.randomUUID();
+        UUID key = UUID.randomUUID();
+        String path = MATCHES + "/" + matchId + "/workout-submissions";
+        String body = """
+                {"quarters":[
+                  {"quarterId":"%s","position":"TEST_FIRST","workout":%s},
+                  {"quarterId":"%s","position":"UNKNOWN","workout":%s}
+                ]}
+                """.formatted(firstId, WORKOUT, secondId, WORKOUT);
+        mvc.perform(write(post(path), actor, key, body)).andExpect(status().isUnprocessableContent());
+        assertTrue(matches.findByIdAndOwnerId(matchId, actor).isEmpty());
+        assertTrue(quarters.findByMatchId(matchId, 10).isEmpty());
+        assertTrue(workouts.findByQuarterId(firstId).isEmpty());
+        assertTrue(summaries.findByQuarterId(firstId).isEmpty());
+        mvc.perform(write(post(path), actor, key, body.replace("UNKNOWN", "TEST_SECOND")))
+                .andExpect(status().isAccepted());
+    }
+
+    @Test
+    void localSubmissionAcceptsInitialVersionButRejectsOtherVersionsAndInvalidDates() throws Exception {
+        UUID matchId = UUID.randomUUID();
+        String path = MATCHES + "/" + matchId + "/workout-submissions";
+        String body = localSubmission(UUID.randomUUID());
+        mvc.perform(workoutUpload(path, actor, UUID.randomUUID(), 9, body))
+                .andExpect(status().isPreconditionFailed());
+        mvc.perform(write(post(path), actor, UUID.randomUUID(), body.replace("815274600", "815273999")))
+                .andExpect(status().isUnprocessableContent());
+        mvc.perform(write(post(path), actor, UUID.randomUUID(), body.replace("815274000", "1e100")))
+                .andExpect(status().isUnprocessableContent());
+        assertTrue(matches.findByIdAndOwnerId(matchId, actor).isEmpty());
+        mvc.perform(workoutUpload(path, actor, UUID.randomUUID(), 1, body))
+                .andExpect(status().isAccepted());
+        mvc.perform(workoutUpload(path, actor, UUID.randomUUID(), 1, body))
+                .andExpect(status().isPreconditionFailed());
+        mvc.perform(workoutUpload(path, actor, UUID.randomUUID(), 2, body))
+                .andExpect(status().isAccepted());
+    }
+
+    @Test
+    void localSubmissionCannotReuseAQuarterFromAnotherMatch() throws Exception {
+        UUID originalId = UUID.randomUUID();
+        UUID quarterId = UUID.randomUUID();
+        String body = localSubmission(quarterId);
+        mvc.perform(write(post(MATCHES + "/" + originalId + "/workout-submissions"), other,
+                UUID.randomUUID(), body)).andExpect(status().isAccepted());
+        UUID newId = UUID.randomUUID();
+        mvc.perform(write(post(MATCHES + "/" + newId + "/workout-submissions"), actor,
+                UUID.randomUUID(), body)).andExpect(status().isNotFound());
+        assertTrue(matches.findByIdAndOwnerId(newId, actor).isEmpty());
+        assertEquals(originalId, quarters.findByIdAndOwnerId(quarterId, other).orElseThrow().matchId());
+    }
+
+    @Test
+    void concurrentLocalSubmissionsWithOneKeyCreateOneMatch() throws Exception {
+        UUID matchId = UUID.randomUUID();
+        UUID quarterId = UUID.randomUUID();
+        UUID key = UUID.randomUUID();
+        String path = MATCHES + "/" + matchId + "/workout-submissions";
+        String body = localSubmission(quarterId);
+        var ready = new CountDownLatch(2);
+        Callable<String> send = () -> {
+            ready.countDown();
+            assertTrue(ready.await(5, TimeUnit.SECONDS));
+            return mvc.perform(write(post(path), actor, key, body))
+                    .andExpect(status().isAccepted()).andReturn().getResponse().getContentAsString();
+        };
+        try (var pool = Executors.newFixedThreadPool(2)) {
+            var first = pool.submit(send);
+            var second = pool.submit(send);
+            assertEquals(first.get(10, TimeUnit.SECONDS), second.get(10, TimeUnit.SECONDS));
+        }
+        assertEquals(2, matches.findByIdAndOwnerId(matchId, actor).orElseThrow().version());
+        assertEquals(1, quarters.findByMatchId(matchId, 10).size());
+    }
+
+    private String localSubmission(UUID quarterId) {
+        return "{\"quarters\":[{\"quarterId\":\"%s\",\"position\":\"TEST_FIRST\",\"workout\":%s}]}"
+                .formatted(quarterId, WORKOUT);
+    }
+
+    @Test
     void workoutRejectsInvalidSamplesAndRollsBackWhenSampleWriteFails() throws Exception {
         String path = completedQuarterUploadPath();
         UUID quarterId = UUID.fromString(path.split("/")[4]);

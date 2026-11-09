@@ -37,7 +37,7 @@ import java.security.Principal;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -196,7 +196,7 @@ public class QuarterWorkoutController {
 
     @Operation(
             summary = "완료 경기의 운동 기록과 포지션 일괄 제출",
-            description = "본인 경기의 모든 쿼터를 정확히 한 번씩 보내야 합니다. 하나라도 실패하면 전체가 롤백됩니다. "
+            description = "미등록 iOS matchId는 완료 경기와 쿼터를 생성한 뒤 접수합니다. 본인 경기의 모든 쿼터를 정확히 한 번씩 보내야 합니다. 하나라도 실패하면 전체가 롤백됩니다. "
                     + "요청 크기 기본 상한은 8 MiB이며, 응답을 받지 못했다면 같은 헤더와 본문으로 재시도합니다.",
             requestBody = @io.swagger.v3.oas.annotations.parameters.RequestBody(required = true,
                     content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE,
@@ -217,7 +217,7 @@ public class QuarterWorkoutController {
                     @ApiResponse(responseCode = "412", description = "경기 버전 불일치"),
                     @ApiResponse(responseCode = "413", description = "요청 크기 초과"),
                     @ApiResponse(responseCode = "422", description = "쿼터 목록, 포지션 또는 운동 데이터 검증 실패"),
-                    @ApiResponse(responseCode = "428", description = "If-Match 누락")
+                    @ApiResponse(responseCode = "428", description = "기존 경기 요청의 If-Match 누락")
             })
     @PostMapping(path = MatchController.PATH + "/{matchId}/workout-submissions",
             consumes = MediaType.APPLICATION_JSON_VALUE)
@@ -225,19 +225,18 @@ public class QuarterWorkoutController {
             Principal principal, @PathVariable UUID matchId,
             @Parameter(required = true, description = "재시도에 사용할 UUID 멱등 키", schema = @Schema(format = "uuid"))
             @RequestHeader(value = "Idempotency-Key", required = false) String key,
-            @Parameter(required = true, description = "최신 경기 ETag")
+            @Parameter(description = "기존 경기는 최신 ETag 필수. 미등록 iOS 경기는 생략 또는 초기 버전 \"1\"")
             @RequestHeader(value = HttpHeaders.IF_MATCH, required = false) String ifMatch,
             HttpServletRequest httpRequest) throws IOException {
         UUID actor = MatchController.actor(principal);
-        ownership.requireMatch(actor, matchId);
         UUID requestKey = MatchController.key(key);
         byte[] body = readUpload(httpRequest);
         String path = MatchController.PATH + "/" + matchId;
         var request = new MatchMutation.Request(actor, matchId, "POST", path + "/workout-submissions",
                 requestKey, ifMatch, body);
-        return replay(mutation.execute(request, LocalDateTime.now(ZoneOffset.UTC).plus(retention),
-                match -> {}, match -> {
-                    var entries = parseSubmission(body);
+        var entries = parseSubmission(body);
+        return replay(mutation.executeOrCreate(request, LocalDateTime.now(ZoneOffset.UTC).plus(retention),
+                () -> submission.create(actor, matchId, entries), match -> {
                     long version = submission.save(match, entries);
                     var meta = MatchApiResponse.Meta.create();
                     var response = new VersionedResponse<>(new SubmissionReceipt(matchId, entries.size()),
@@ -257,7 +256,7 @@ public class QuarterWorkoutController {
             throw new MatchSettings.InvalidSettings(List.of("quarters"));
         }
 
-        Map<UUID, MatchWorkoutSubmission.Entry> entries = new HashMap<>();
+        Map<UUID, MatchWorkoutSubmission.Entry> entries = new LinkedHashMap<>();
         int index = 0;
         for (var item : quarters) {
             String field = "quarters[" + index++ + "]";

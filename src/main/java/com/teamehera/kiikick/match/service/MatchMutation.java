@@ -71,7 +71,12 @@ public class MatchMutation {
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public Response execute(Request request, LocalDateTime expiresAt, Consumer<Match> checkAccess,
                             Consumer<Match> checkNewRequest, Function<Match, Response> change) {
-        Match match = lockMatch(request);
+        return executeLocked(request, expiresAt, lockMatch(request), checkAccess, checkNewRequest, change);
+    }
+
+    private Response executeLocked(Request request, LocalDateTime expiresAt, Match match,
+                                   Consumer<Match> checkAccess, Consumer<Match> checkNewRequest,
+                                   Function<Match, Response> change) {
         checkAccess.accept(match);
         return executeOnce(request, expiresAt, () -> {
             checkNewRequest.accept(match);
@@ -82,6 +87,35 @@ public class MatchMutation {
                 throw new Rejected(412, "VERSION_CONFLICT", match.version());
             }
         }, () -> {
+            Response response = change.apply(match);
+            var updated = matches.findByIdAndOwnerId(request.matchId(), request.actorUserId());
+            if (updated.isEmpty() || updated.orElseThrow().version() != Math.addExact(match.version(), 1)) {
+                throw new IllegalStateException("A successful mutation must increment the match version once");
+            }
+            return response;
+        });
+    }
+
+    /** Accepts a client-created match while preserving version checks for existing matches. */
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public Response executeOrCreate(Request request, LocalDateTime expiresAt,
+                                    Supplier<Match> create, Function<Match, Response> change) {
+        lockOwner(request.actorUserId());
+        var existing = matches.findByIdAndOwnerIdForUpdate(request.matchId(), request.actorUserId());
+        if (existing.isPresent()) {
+            return executeLocked(request, expiresAt, existing.orElseThrow(), match -> {}, match -> {}, change);
+        }
+        // An ID owned by another user must never be imported or reassigned.
+        if (matches.existsById(request.matchId())) {
+            throw new Rejected(404, "RESOURCE_NOT_FOUND", null);
+        }
+        return executeOnce(request, expiresAt, () -> {
+            // A local match has no server ETag yet; optionally accept the initial version.
+            if (request.ifMatch() != null && !etag(1).equals(request.ifMatch())) {
+                throw new Rejected(412, "VERSION_CONFLICT", 1L);
+            }
+        }, () -> {
+            Match match = create.get();
             Response response = change.apply(match);
             var updated = matches.findByIdAndOwnerId(request.matchId(), request.actorUserId());
             if (updated.isEmpty() || updated.orElseThrow().version() != Math.addExact(match.version(), 1)) {
