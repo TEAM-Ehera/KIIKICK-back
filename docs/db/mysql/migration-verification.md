@@ -89,4 +89,4 @@ FROM heartRateSamples ORDER BY workoutPayloadId, sampleSeq;
 
 검증: 8개 핀의 서로 다른 소수 좌표를 저장한 뒤 상세·목록에서 값이 그대로 조회되는지, PATCH로 보정 좌표 전체 교체와 원본 개별 삭제가 되는지 확인한다. H2 통합 테스트는 갱신된 `src/test/resources/schema.sql`을 사용한다. 실제 MySQL 적용 전에는 대상 DB 백업과 별도 검증 DB에서 V004 적용 확인이 필요하다.
 
-2026-11-09 검증: 격리 MySQL 8.4.11에 기존 스키마와 V001~V004를 순서대로 적용했다. 실제 JDBC Repository에서 8개 핀의 Double 정밀도, 목록·상세 매핑, 보정 핀 교체·원본 NULL 삭제와 기존 좌표 없는 경기장 테스트 2개가 통과했다. develop 기반 전체 H2 테스트 275개와 bootJar 빌드도 통과했다.
+2026-11-09 검증: 격리 MySQL 8.4.11에 기존 스키마와 V001~V004를 순서대로 적용했다. 실제 JDBC Repository에서 8개 핀의 Double 정밀도, 목록·상세 매핑, 보정 핀 교체·원본 NULL 삭제와 기존 좌표 없는 경기장 테스트 3개가 통과했다. develop 기반 전체 H2 테스트 275개와 bootJar 빌드도 통과했다.
