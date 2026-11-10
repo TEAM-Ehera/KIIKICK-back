@@ -2,6 +2,7 @@ package com.teamehera.kiikick.auth.email;
 
 import com.teamehera.kiikick.auth.config.EmailVerificationProperties;
 import com.teamehera.kiikick.auth.service.VerificationApiException;
+import jakarta.mail.Multipart;
 import jakarta.mail.Session;
 import jakarta.mail.internet.MimeMessage;
 import org.junit.jupiter.api.Test;
@@ -26,17 +27,45 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class SmtpVerificationEmailSenderTest {
 
     @Test
-    void 실제_SMTP_프로토콜로_인증번호_메일을_전송한다() throws Exception {
+    void 실제_SMTP로_HTML_인증메일과_텍스트_대체_본문을_전송한다() throws Exception {
         try (TestSmtpServer server = new TestSmtpServer()) {
             SmtpVerificationEmailSender sender = sender(server.port());
 
-            sender.sendSignUpCode("receiver@example.com", "123456", 3);
+            sender.sendSignUpCode("receiver@example.com", "012345", 3);
 
             MimeMessage received = server.awaitMessage(Duration.ofSeconds(5));
             assertThat(received.getAllRecipients()[0].toString())
                     .isEqualTo("receiver@example.com");
-            assertThat(received.getSubject()).isEqualTo("[KIIKICK] 이메일 인증번호");
-            assertThat(received.getContent().toString()).contains("123456", "3분");
+            assertThat(received.getSubject()).isEqualTo("[KIIKICK] 회원 인증 메일");
+            var root = (Multipart) received.getContent();
+            var body = (Multipart) root.getBodyPart(0).getContent();
+            assertThat(body.getContentType()).startsWith("multipart/alternative");
+            assertThat(body.getBodyPart(0).getContentType()).startsWith("text/plain");
+            assertThat(body.getBodyPart(0).getContent().toString()).contains("012345", "3분");
+            assertThat(body.getBodyPart(1).getContentType()).startsWith("text/html");
+            assertThat(body.getBodyPart(1).getContent().toString())
+                    .contains("[KIIKICK] 회원 인증 메일",
+                            "본 이메일 인증은 KIIKICK(키킥) 계정 설정을 위한 필수사항이에요.",
+                            "아래 인증코드 6자리를 확인해 주세요.",
+                            "012345",
+                            "인증코드는 발급 후 3분 동안 유효해요.",
+                            "KIIKICK 앱으로 돌아가 인증코드를 입력해 주세요.",
+                            "본인이 요청하지 않은 이메일이라면 무시해 주세요.",
+                            "#00DAC3")
+                    .doesNotContain("{{code}}", "{{expiresInMinutes}}");
+        }
+    }
+
+    @Test
+    void HTML에서_인증코드_특수문자를_이스케이프하고_전달된_유효시간을_표시한다() throws Exception {
+        try (TestSmtpServer server = new TestSmtpServer()) {
+            sender(server.port()).sendSignUpCode("receiver@example.com", "<123>&", 7);
+
+            var root = (Multipart) server.awaitMessage(Duration.ofSeconds(5)).getContent();
+            var body = (Multipart) root.getBodyPart(0).getContent();
+            assertThat(body.getBodyPart(1).getContent().toString())
+                    .contains("&lt;123&gt;&amp;", "발급 후 7분 동안")
+                    .doesNotContain("<123>&");
         }
     }
 

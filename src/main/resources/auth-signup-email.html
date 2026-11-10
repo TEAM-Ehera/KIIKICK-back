@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>[KIIKICK] 회원 인증 메일</title>
+  <style>
+    @media screen and (max-width: 620px) {
+      .outer-pad { padding:16px 12px !important; }
+      .card-pad { padding:28px 16px !important; }
+      .heading, .body-copy, .footer-copy { height:auto !important; }
+      .heading, .heading span { font-size:22px !important; }
+      .body-copy, .body-copy span { font-size:15px !important; }
+      .footer-copy, .footer-copy span { font-size:12px !important; }
+      .code, .code span { font-size:32px !important; }
+      .top-gap { height:28px !important; line-height:28px !important; }
+      .section-gap { height:32px !important; line-height:32px !important; }
+      .bottom-gap { height:24px !important; line-height:24px !important; }
+    }
+    @media screen and (max-width: 340px) {
+      .code { padding:12px 8px !important; }
+      .heading, .heading span { font-size:20px !important; }
+    }
+  </style>
+</head>
+<body style="margin:0;padding:0;background-color:#FFFFFF;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="#FFFFFF" style="width:100%;background-color:#FFFFFF;">
+    <tr><td class="outer-pad" align="center" style="padding:20px 12px;background-color:#FFFFFF;">
+      <table id="card" role="presentation" align="center" width="100%" cellspacing="0" cellpadding="0" border="0" bgcolor="#F5F5F5"
+             style="width:100%;max-width:600px;margin:0 auto;background-color:#F5F5F5;border:1px solid #404040;border-radius:11px;">
+        <tr><td class="card-pad" align="center" style="padding:36px 24px;">
+          <table id="content" role="presentation" align="center" width="100%" cellspacing="0" cellpadding="0" border="0"
+                 style="width:100%;max-width:540px;margin:0 auto;">
+            <tr><td align="center">
+              <table role="presentation" align="center" width="100%" cellspacing="0" cellpadding="0" border="0"
+                     style="width:100%;max-width:220px;margin:0 auto;">
+                <tr><td align="center" valign="middle">
+                  <img src="cid:kiikick-logo" alt="KIIKICK" width="220" border="0"
+                       style="display:block;width:100%;max-width:220px;height:auto;margin:0 auto;color:#00DAC3;font-family:Pretendard,Arial,sans-serif;font-size:24px;font-weight:700;">
+                </td></tr>
+              </table>
+            </td></tr>
+            <tr><td class="top-gap" height="32" style="height:32px;font-size:1px;line-height:32px;">&nbsp;</td></tr>
+            <tr><td align="center">
+              <table role="presentation" align="center" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:540px;margin:0 auto;">
+                <tr><td class="heading" align="center" valign="middle"
+                    style="font-family:Pretendard,'Apple SD Gothic Neo','Malgun Gothic','맑은 고딕',Arial,sans-serif;font-size:24px;font-weight:700;line-height:140%;text-align:center;letter-spacing:-0.015em;color:#121212;">
+                  <span style="font-size:24px;font-weight:700;">[KIIKICK] 회원 인증 메일</span>
+                </td></tr>
+              </table>
+            </td></tr>
+            <tr><td class="top-gap" height="32" style="height:32px;font-size:1px;line-height:32px;">&nbsp;</td></tr>
+            <tr><td align="center">
+              <table role="presentation" align="center" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:540px;margin:0 auto;">
+                <tr><td class="body-copy" align="center" valign="middle" style="font-family:Pretendard,'Apple SD Gothic Neo','Malgun Gothic','맑은 고딕',Arial,sans-serif;font-size:16px;font-weight:400;line-height:150%;text-align:center;word-break:keep-all;overflow-wrap:break-word;color:#121212;">
+                  <span style="font-size:16px;font-weight:400;">본 이메일 인증은 KIIKICK(키킥) 계정 설정을 위한 필수사항이에요.<br>아래 인증코드 6자리를 확인해 주세요.</span></td></tr>
+              </table>
+            </td></tr>
+            <tr><td class="section-gap" height="40" style="height:40px;font-size:1px;line-height:40px;">&nbsp;</td></tr>
+            <tr><td align="center">
+              <table id="code-box" role="presentation" align="center" width="200" cellspacing="0" cellpadding="0" border="0"
+                     style="width:200px;max-width:100%;margin:0 auto;border:3px solid #00DAC3;border-radius:16px;">
+                <tr><td class="code" align="center" valign="middle" style="padding:16px 12px;font-family:Pretendard,'Apple SD Gothic Neo','Malgun Gothic','맑은 고딕',Arial,sans-serif;font-size:36px;font-weight:700;line-height:140%;text-align:center;letter-spacing:0.08em;white-space:nowrap;color:#121212;">
+                  <span style="font-size:36px;font-weight:700;">{{code}}</span>
+                </td></tr>
+              </table>
+            </td></tr>
+            <tr><td class="section-gap" height="40" style="height:40px;font-size:1px;line-height:40px;">&nbsp;</td></tr>
+            <tr><td align="center">
+              <table role="presentation" align="center" width="100%" cellspacing="0" cellpadding="0" border="0" style="width:100%;max-width:540px;margin:0 auto;">
+                <tr><td class="body-copy" align="center" valign="middle" style="font-family:Pretendard,'Apple SD Gothic Neo','Malgun Gothic','맑은 고딕',Arial,sans-serif;font-size:16px;font-weight:400;line-height:150%;text-align:center;word-break:keep-all;overflow-wrap:break-word;color:#121212;">
+                  <span class="expiry-line" style="font-size:16px;font-weight:400;">인증코드는 발급 후 {{expiresInMinutes}}분 동안 유효해요.</span><br>
+                  <span class="expiry-line" style="font-size:16px;font-weight:400;">KIIKICK 앱으로 돌아가 인증코드를 입력해 주세요.</span>
+                </td></tr>
+              </table>
+            </td></tr>
+            <tr><td class="bottom-gap" height="28" style="height:28px;font-size:1px;line-height:28px;">&nbsp;</td></tr>
+            <tr><td height="1" bgcolor="#404040" style="height:1px;background-color:#404040;font-size:1px;line-height:1px;">&nbsp;</td></tr>
+            <tr><td class="bottom-gap" height="28" style="height:28px;font-size:1px;line-height:28px;">&nbsp;</td></tr>
+            <tr><td class="footer-copy" align="center" valign="middle" style="font-family:Pretendard,'Apple SD Gothic Neo','Malgun Gothic','맑은 고딕',Arial,sans-serif;font-size:13px;font-weight:400;line-height:150%;text-align:center;word-break:keep-all;color:#121212;">
+              <span style="font-size:13px;font-weight:400;">본인이 요청하지 않은 이메일이라면 무시해 주세요.</span>
+            </td></tr>
+          </table>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>
