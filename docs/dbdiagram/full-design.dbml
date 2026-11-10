@@ -502,3 +502,16 @@ Table match_comments {
 }
 Ref fk_match_comment_match: match_comments.match_id > matches.id [delete: cascade]
 Ref fk_match_comment_author: match_comments.author_id > users.id
+
+Table "quarter_friends" {
+  Note: '경기 소유자가 쿼터별로 기록한 함께 뛴 친구. 친구 해제 후에도 이력 유지. 기록 공유 권한은 부여하지 않음.'
+  "quarter_id" BINARY(16) [not null]
+  "friend_user_id" BINARY(16) [not null]
+  "created_at" DATETIME(6) [not null]
+  Indexes {
+    (quarter_id, friend_user_id) [pk]
+  }
+}
+
+Ref "fk_quarter_friend_quarter":"quarters"."id" < "quarter_friends"."quarter_id" [delete: cascade]
+Ref "fk_quarter_friend_user":"users"."id" < "quarter_friends"."friend_user_id" [delete: cascade]

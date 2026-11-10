@@ -376,3 +376,12 @@ CREATE TABLE match_comments (
     CONSTRAINT fk_match_comment_author FOREIGN KEY (author_id) REFERENCES users(id)
 );
 CREATE INDEX idx_match_comments_page ON match_comments (match_id, created_at DESC, id DESC);
+
+CREATE TABLE quarter_friends (
+    quarter_id BINARY(16) NOT NULL,
+    friend_user_id BINARY(16) NOT NULL,
+    created_at TIMESTAMP(6) NOT NULL,
+    PRIMARY KEY (quarter_id, friend_user_id),
+    CONSTRAINT fk_quarter_friend_quarter FOREIGN KEY (quarter_id) REFERENCES quarters(id) ON DELETE CASCADE,
+    CONSTRAINT fk_quarter_friend_user FOREIGN KEY (friend_user_id) REFERENCES users(id) ON DELETE CASCADE
+);

@@ -33,7 +33,7 @@
 
 **현재 기술 제안:** 쿼터당 운동 파일 하나, Bearer 인증, 중복 방지 키, 경기 버전 검사. iOS 적용 방식은 협의가 필요하다. 상세 미확정 사항은 [협의표](api/ios-integration.md)에 구분했다.
 
-팀 배정·홈/어웨이 점수·참가자 목록·개별 득점 시각은 사용하지 않는다. 사용자는 자기 경기만 수정하고, 친구 전용 경로에서 수락된 친구의 경기·쿼터 결과를 조회하고 경기별 댓글을 주고받는다. 원본 GPS·심박 샘플은 소유자 전용이다.
+팀 배정·홈/어웨이 점수·개별 득점 시각은 사용하지 않는다. [쿼터별 함께 뛴 친구](api/quarter-friends.md)는 경기 소유자가 별도로 기록한다. 사용자는 자기 경기만 수정하고, 친구 전용 경로에서 수락된 친구의 경기·쿼터 결과를 조회하고 경기별 댓글을 주고받는다. 원본 GPS·심박 샘플은 소유자 전용이다.
 
 <a id="flow"></a>
 ## 2. 화면별로 호출하는 순서
@@ -412,6 +412,9 @@ v0.5는 구현된 이메일 인증번호 발송·검증과 회원가입 완료 A
 
 댓글은 `GET/POST /matches/{matchId}/comments`, `DELETE /matches/{matchId}/comments/{commentId}`를 사용한다. 현재 친구 관계를 매번 확인하며 경기 수정 권한은 소유자 전용이다.
 
+## 쿼터별 함께 뛴 친구
+
+[상세 계약](api/quarter-friends.md): `GET /matches/{matchId}/quarters/{quarterId}/friends`, `PUT /matches/{matchId}/quarters/{quarterId}/friends/{friendUserId}`, `DELETE /matches/{matchId}/quarters/{quarterId}/friends/{friendUserId}`.
 ### 활성 계정 닉네임 중복 금지 (#125)
 
 온보딩·프로필 수정에서 활성 계정이 사용 중인 닉네임은 `409 NICKNAME_ALREADY_EXISTS`와 “이미 사용 중인 닉네임입니다.”를 반환한다. 삭제된 계정의 닉네임 재사용과 본인의 현재 닉네임 유지는 허용한다. [상세 계약](api/auth.md#활성-닉네임-유일성-2026-11-10).
