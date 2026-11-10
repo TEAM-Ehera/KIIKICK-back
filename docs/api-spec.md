@@ -415,3 +415,6 @@ v0.5는 구현된 이메일 인증번호 발송·검증과 회원가입 완료 A
 ## 쿼터별 함께 뛴 친구
 
 [상세 계약](api/quarter-friends.md): `GET /matches/{matchId}/quarters/{quarterId}/friends`, `PUT /matches/{matchId}/quarters/{quarterId}/friends/{friendUserId}`, `DELETE /matches/{matchId}/quarters/{quarterId}/friends/{friendUserId}`.
+### 활성 계정 닉네임 중복 금지 (#125)
+
+온보딩·프로필 수정에서 활성 계정이 사용 중인 닉네임은 `409 NICKNAME_ALREADY_EXISTS`와 “이미 사용 중인 닉네임입니다.”를 반환한다. 삭제된 계정의 닉네임 재사용과 본인의 현재 닉네임 유지는 허용한다. [상세 계약](api/auth.md#활성-닉네임-유일성-2026-11-10).

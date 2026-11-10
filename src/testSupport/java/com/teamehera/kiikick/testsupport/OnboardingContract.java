@@ -56,7 +56,7 @@ public abstract class OnboardingContract {
         }
     }
     Fixture fixture() {
-        UUID id = UUID.randomUUID(); owned.add(id); users.save(id, "before");
+        UUID id = UUID.randomUUID(); owned.add(id); users.save(id, owned.size() == 1 ? "before" : "before" + owned.size());
         jdbc.update("UPDATE users SET created_at=? WHERE id=?", CREATED, uuidToBytes(id));
         return new Fixture(id, access.issue(id, UUID.randomUUID()).token());
     }
@@ -77,7 +77,7 @@ public abstract class OnboardingContract {
     long count(String table, Fixture f) { return jdbc.queryForObject("SELECT COUNT(*) FROM " + table + " WHERE user_id=?", Long.class, uuidToBytes(f.id)); }
     void unchanged(Fixture f) {
         var user = users.findById(f.id).orElseThrow();
-        assertThat(user.nickname()).isEqualTo("before"); assertThat(user.onboardingCompletedAt()).isNull();
+        assertThat(user.nickname()).isEqualTo(owned.indexOf(f.id) == 0 ? "before" : "before" + (owned.indexOf(f.id) + 1)); assertThat(user.onboardingCompletedAt()).isNull();
         assertThat(count("user_consents", f)).isZero(); assertThat(count("idempotency_records", f)).isZero();
     }
     @Test void 두목적동의와_본인응답_완료시각_마이크로초와_서울오프셋을_보존한다() throws Exception {
@@ -116,9 +116,10 @@ public abstract class OnboardingContract {
         var f = fixture(); request(f, body("준킥", choice("GPS_COLLECTION", "1.0", true))).andExpect(status().isOk());
         assertThat(count("user_consents", f)).isEqualTo(1); assertThat(consents.findLatest(f.id, "HEALTH_DATA")).isEmpty();
     }
-    @Test void 닉네임16자와_중복을허용하고_원문을유지한다() throws Exception {
+    @Test void 닉네임16자를허용하고_중복을거절하며_원문을유지한다() throws Exception {
         var a = fixture(); var b = fixture(); String nickname = "가".repeat(16);
-        request(a, body(nickname)).andExpect(status().isOk()); request(b, body(nickname)).andExpect(status().isOk());
+        request(a, body(nickname)).andExpect(status().isOk()); request(b, body(nickname)).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("NICKNAME_ALREADY_EXISTS"));
         var c = fixture(); request(c, body(" 준 ")).andExpect(status().isOk()).andExpect(jsonPath("$.data.nickname").value(" 준 "));
     }
     @Test void 잘못된JSON_누락_null_타입_읽기전용필드를422로거부한다() throws Exception {
@@ -175,7 +176,7 @@ public abstract class OnboardingContract {
     @Test void 다른사용자는_같은멱등키를_독립적으로사용한다() throws Exception {
         var a = fixture(); var b = fixture(); String key = UUID.randomUUID().toString();
         request(a, EMPTY, key).andExpect(status().isOk()).andExpect(jsonPath("$.data.id").value(a.id.toString()));
-        request(b, EMPTY, key).andExpect(status().isOk()).andExpect(jsonPath("$.data.id").value(b.id.toString()));
+        request(b, body("다른준킥"), key).andExpect(status().isOk()).andExpect(jsonPath("$.data.id").value(b.id.toString()));
     }
     @Test void 미인증과_만료JWT는401이며_저장하지않는다() throws Exception {
         var f = fixture(); request(null, EMPTY).andExpect(status().isUnauthorized()).andExpect(header().string("WWW-Authenticate", "Bearer"));

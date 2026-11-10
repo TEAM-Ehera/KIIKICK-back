@@ -8,7 +8,7 @@ import java.util.Set;
 
 @Schema(description = "최소 한 필드 필요. 누락은 유지, nickname null은 거부, avatarUrl null은 제거", additionalProperties = Schema.AdditionalPropertiesValue.FALSE, minProperties = 1)
 public record ProfilePatchRequest(
-        @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED, nullable = false, minLength = 1, maxLength = 16, description = "기존 CRUD와 동일한 Java UTF-16 길이 최대 16자. 공백만 입력 불가, 중복 허용, 자동 trim 없음", example = "준킥") String nickname,
+        @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED, nullable = false, minLength = 1, maxLength = 16, description = "기존 CRUD와 동일한 Java UTF-16 길이 최대 16자. 공백만 입력 불가, 활성 계정 간 중복 불가, 삭제된 계정 닉네임 재사용 가능, 자동 trim 없음", example = "준킥") String nickname,
         @Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED, nullable = true, description = "누락은 기존 값 유지, null은 이미지 제거. KIIKICK 이미지 도메인의 URL은 전용 업로드 API에서 발급", example = "https://example.com/avatar.png") String avatarUrl,
         @Schema(hidden = true) boolean nicknamePresent,
         @Schema(hidden = true) boolean avatarPresent

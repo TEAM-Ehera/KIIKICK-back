@@ -8,6 +8,10 @@ Table "users" {
   "created_at" DATETIME(6) [not null]
   "updated_at" DATETIME(6) [not null]
   "deleted_at" DATETIME(6)
+  "active_nickname" VARBINARY(64) [note: 'STORED GENERATED: deleted_at IS NULL이면 nickname 원문 바이트, 아니면 NULL. 직접 쓰지 않음.']
+  Indexes {
+    active_nickname [unique, name: "uk_users_active_nickname"]
+  }
 }
 
 Table "auth_identities" {
