@@ -70,9 +70,18 @@ class AuthOpenApiTest {
             assertThat(ids.add(operation(api).path("operationId").asText())).isTrue();
             assertThat(response(api).isMissingNode()).isFalse();
         }
-        for (String absent : List.of("/api/v1/users/me/consents", "/api/v1/users/me/deletion-requests", "/api/v1/auth/password-reset"))
+        for (String absent : List.of("/api/v1/users/me/deletion-requests/{deletionId}", "/api/v1/auth/password-reset"))
             assertThat(document.path("paths").has(absent)).isFalse();
     }
+    @Test void 탈퇴접수가_OpenAPI에_등록된다() {
+        var deletion = new Api("/api/v1/users/me/deletion-requests", "post", "202", false);
+        assertThat(response(deletion).isMissingNode()).isFalse();
+        assertThat(input(deletion).path("properties").path("currentPassword").path("writeOnly").asBoolean()).isTrue();
+        assertThat(required(input(deletion), "currentPassword")).isTrue();
+        assertThat(operation(deletion).path("security").toString()).contains("bearerAuth");
+        assertThat(operation(deletion).path("parameters").toString()).contains("Idempotency-Key");
+    }
+
     @Test void 공개5개는_전역Bearer를_해제하고_보호3개는_Bearer를_요구한다() {
         var scheme = document.at("/components/securitySchemes/bearerAuth");
         assertThat(scheme.path("scheme").asText()).isEqualTo("bearer");

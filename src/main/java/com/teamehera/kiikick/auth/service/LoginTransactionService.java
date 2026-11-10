@@ -68,7 +68,9 @@ public class LoginTransactionService {
         boolean matches = passwordEncoder.matches(acceptable ? password : "",
                 credential == null ? dummyPasswordHash : credential.passwordHash());
         User user = credential != null && matches && acceptable
-                ? users.findById(credential.userId()).orElse(null) : null;
+                ? users.findByIdForUpdate(credential.userId())
+                        .filter(found -> found.deletionRequestedAt() == null).orElse(null)
+                : null;
         if (user == null) {
             now = now();
             attempts.recordFailure(email, utc(now));

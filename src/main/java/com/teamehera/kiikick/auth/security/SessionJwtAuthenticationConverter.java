@@ -1,6 +1,8 @@
 package com.teamehera.kiikick.auth.security;
 
+import com.teamehera.kiikick.user.repository.UserRepository;
 import org.springframework.core.convert.converter.Converter;
+import org.springframework.dao.DataAccessException;
 import org.springframework.security.authentication.AbstractAuthenticationToken;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
@@ -17,12 +19,27 @@ public class SessionJwtAuthenticationConverter
             "invalid_token", "유효하지 않은 인증 정보입니다.", null
     );
 
+    private final UserRepository users;
+
+    public SessionJwtAuthenticationConverter(UserRepository users) {
+        this.users = users;
+    }
+
     @Override
     public AbstractAuthenticationToken convert(Jwt jwt) {
         UUID userId = parseUuid(jwt.getClaimAsString(AccessTokenService.USER_ID_CLAIM));
         UUID sessionId = parseUuid(jwt.getClaimAsString(AccessTokenService.SESSION_ID_CLAIM));
 
-        // Access Token은 짧게 유지하고, 보호 API에서는 DB 세션 조회 없이 JWT 클레임만 사용한다.
+        // 세션 대신 사용자 상태를 확인해 탈퇴 전에 발급된 Access Token도 차단한다.
+        boolean active;
+        try {
+            active = users.isActiveForAuthentication(userId);
+        } catch (DataAccessException exception) {
+            throw new OAuth2AuthenticationException(INVALID_TOKEN, exception);
+        }
+        if (!active) {
+            throw new OAuth2AuthenticationException(INVALID_TOKEN);
+        }
         AuthenticatedUser principal = new AuthenticatedUser(userId, sessionId);
         return UsernamePasswordAuthenticationToken.authenticated(
                 principal, jwt, List.of()

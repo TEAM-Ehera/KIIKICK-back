@@ -89,6 +89,13 @@ public class AuthSessionRepository {
                 revokedAt, uuidToBytes(id), uuidToBytes(userId)
         );
     }
+    public int revokeAllByUserId(UUID userId, LocalDateTime revokedAt) {
+        return jdbcTemplate.update("""
+                UPDATE auth_sessions SET revoked_at = ?
+                WHERE user_id = ? AND revoked_at IS NULL
+                """, revokedAt, uuidToBytes(userId));
+    }
+
     public Optional<UUID> findSessionIdForRefresh(String hash) {
         return jdbcTemplate.query("""
                 SELECT id FROM auth_sessions WHERE refresh_token_hash = ?

@@ -49,7 +49,8 @@ public class RefreshTransactionService {
             // 예외 대신 결과를 반환해야 재사용에 따른 세션 폐기가 커밋된다.
             return new Attempt(null,true);
         }
-        var user=users.findById(session.userId()).orElse(null);
+        var user=users.findById(session.userId())
+                .filter(found -> found.deletionRequestedAt() == null).orElse(null);
         if (user==null) return new Attempt(null,false);
         var refresh=refreshTokens.issue(session.expiresAt().toInstant(ZoneOffset.UTC));
         history.save(hash,id,session.refreshGeneration(),utc,session.expiresAt());

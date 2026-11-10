@@ -10,7 +10,6 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static com.teamehera.kiikick.global.jdbc.JdbcValueConverter.bytesToUuid;
-import static com.teamehera.kiikick.global.jdbc.JdbcValueConverter.nullableDateTime;
 import static com.teamehera.kiikick.global.jdbc.JdbcValueConverter.uuidToBytes;
 
 @Repository
@@ -20,8 +19,8 @@ public class AccountDeletionRequestRepository {
     private final RowMapper<AccountDeletionRequest> rowMapper = (rs, rowNum) ->
             new AccountDeletionRequest(
                     bytesToUuid(rs.getBytes("id")), bytesToUuid(rs.getBytes("user_id")),
-                    rs.getString("status"), rs.getTimestamp("requested_at").toLocalDateTime(),
-                    nullableDateTime(rs, "completed_at"), rs.getString("failure_code")
+                    rs.getString("status"), rs.getObject("requested_at", LocalDateTime.class),
+                    rs.getObject("completed_at", LocalDateTime.class), rs.getString("failure_code")
             );
 
     public AccountDeletionRequestRepository(JdbcTemplate jdbcTemplate) {

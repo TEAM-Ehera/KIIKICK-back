@@ -1,7 +1,9 @@
 package com.teamehera.kiikick.auth.security;
 
 import com.teamehera.kiikick.auth.repository.AuthSessionRepository;
+import com.teamehera.kiikick.user.repository.UserRepository;
 import org.junit.jupiter.api.Test;
+import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -29,6 +31,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -54,9 +57,13 @@ class SecurityAuthenticationTest {
     @MockitoBean
     private AuthSessionRepository authSessionRepository;
 
+    @MockitoBean
+    private UserRepository users;
+
     @Test
     void 유효한_JWT는_세션_조회_없이_인증_Principal을_제공한다() throws Exception {
         UUID userId = UUID.randomUUID();
+        when(users.isActiveForAuthentication(userId)).thenReturn(true);
         UUID sessionId = UUID.randomUUID();
 
         String token = accessTokenService.issue(userId, sessionId).token();
@@ -73,6 +80,7 @@ class SecurityAuthenticationTest {
     @Test
     void servlet_Principal_이름은_검증된_사용자_UUID이다() throws Exception {
         UUID userId = UUID.randomUUID();
+        when(users.isActiveForAuthentication(userId)).thenReturn(true);
         String token = accessTokenService.issue(userId, UUID.randomUUID()).token();
         mockMvc.perform(get("/api/v1/security-test/name")
                         .header("Authorization", "Bearer " + token))
@@ -84,6 +92,7 @@ class SecurityAuthenticationTest {
     @Test
     void 세션이_폐기되어도_발급된_JWT는_만료_전까지_유효할_수_있다() throws Exception {
         UUID userId = UUID.randomUUID();
+        when(users.isActiveForAuthentication(userId)).thenReturn(true);
         UUID sessionId = UUID.randomUUID();
 
         mockMvc.perform(get("/api/v1/security-test")
@@ -91,6 +100,30 @@ class SecurityAuthenticationTest {
                                 + accessTokenService.issue(userId, sessionId).token()))
                 .andExpect(status().isOk());
 
+        verifyNoInteractions(authSessionRepository);
+    }
+
+    @Test
+    void signedTokenWithUnknownUserIsRejected() throws Exception {
+        UUID userId = UUID.randomUUID();
+        String token = accessTokenService.issue(userId, UUID.randomUUID()).token();
+        mockMvc.perform(get("/api/v1/security-test").header("Authorization", "Bearer " + token))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code").value("UNAUTHENTICATED"));
+        verify(users).isActiveForAuthentication(userId);
+        verifyNoInteractions(authSessionRepository);
+    }
+
+    @Test
+    void accountStateLookupFailureDoesNotAuthenticate() throws Exception {
+        UUID userId = UUID.randomUUID();
+        when(users.isActiveForAuthentication(userId))
+                .thenThrow(new DataAccessResourceFailureException("private DB details"));
+        String token = accessTokenService.issue(userId, UUID.randomUUID()).token();
+        var response = mockMvc.perform(get("/api/v1/security-test").header("Authorization", "Bearer " + token))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code").value("UNAUTHENTICATED")).andReturn().getResponse();
+        assertThat(response.getContentAsString()).doesNotContain("private DB details");
         verifyNoInteractions(authSessionRepository);
     }
 
@@ -175,6 +208,7 @@ class SecurityAuthenticationTest {
                 .andExpect(jsonPath("$.error.code").value("TOKEN_EXPIRED"));
 
         verify(authSessionRepository, never()).findActiveById(any(), any());
+        verifyNoInteractions(users);
     }
 
     @Test

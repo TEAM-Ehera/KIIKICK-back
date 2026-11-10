@@ -19,6 +19,7 @@ public class LoginAttemptRepository {
 
     private static final String ACTION = "EMAIL_PASSWORD_LOGIN";
     private static final String ACCOUNT = "ACCOUNT";
+    private static final String WITHDRAWAL = "ACCOUNT_DELETION_PASSWORD";
     private static final int FAILURE_LIMIT = 10;
     private static final Duration WINDOW = Duration.ofMinutes(15);
     private final JdbcTemplate jdbc;
@@ -51,11 +52,19 @@ public class LoginAttemptRepository {
     }
 
     public LocalDateTime blockedUntil(String email, LocalDateTime now) {
+        return blockedUntil(ACTION, email, now);
+    }
+
+    public LocalDateTime deletionBlockedUntil(UUID userId, LocalDateTime now) {
+        return blockedUntil(WITHDRAWAL, userId.toString(), now);
+    }
+
+    private LocalDateTime blockedUntil(String action, String key, LocalDateTime now) {
         List<LocalDateTime> failures = jdbc.query("""
                 SELECT occurred_at FROM auth_rate_limit_events
                 WHERE rate_action = ? AND limit_type = ? AND key_value = ?
                 ORDER BY occurred_at DESC, id DESC LIMIT 10
-                """, (rs, rowNum) -> rs.getObject("occurred_at", LocalDateTime.class), ACTION, ACCOUNT, email);
+                """, (rs, rowNum) -> rs.getObject("occurred_at", LocalDateTime.class), action, ACCOUNT, key);
         if (failures.size() < FAILURE_LIMIT) return null;
         LocalDateTime latest = failures.get(0);
         // 열 번째 실패 이후 초기 실패가 집계 창에서 빠져도 제한은 15분간 유지한다.
@@ -65,10 +74,25 @@ public class LoginAttemptRepository {
     }
 
     public void recordFailure(String email, LocalDateTime now) {
+        recordFailure(ACTION, email, now);
+    }
+
+    public void recordDeletionFailure(UUID userId, LocalDateTime now) {
+        String key = userId.toString();
+        // 탈퇴는 이미 사용자 행을 잠그므로 별도 트랜잭션 없이 실패 키를 만든다.
+        jdbc.update("""
+                INSERT INTO auth_rate_limit_keys (rate_action, limit_type, key_value, created_at)
+                VALUES (?, ?, ?, ?)
+                ON DUPLICATE KEY UPDATE created_at = auth_rate_limit_keys.created_at
+                """, WITHDRAWAL, ACCOUNT, key, now);
+        recordFailure(WITHDRAWAL, key, now);
+    }
+
+    private void recordFailure(String action, String key, LocalDateTime now) {
         jdbc.update("""
                 INSERT INTO auth_rate_limit_events (id, rate_action, limit_type, key_value, occurred_at)
                 VALUES (?, ?, ?, ?, ?)
-                """, uuidToBytes(UUID.randomUUID()), ACTION, ACCOUNT, email, now);
+                """, uuidToBytes(UUID.randomUUID()), action, ACCOUNT, key, now);
     }
 
     public void resetFailures(String email) {

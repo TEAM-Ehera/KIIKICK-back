@@ -58,6 +58,15 @@ public class EmailCredentialRepository {
         ).stream().findFirst();
     }
 
+    public Optional<EmailCredential> findByUserId(UUID userId) {
+        return jdbcTemplate.query("SELECT * FROM email_credentials WHERE user_id = ?",
+                rowMapper, uuidToBytes(userId)).stream().findFirst();
+    }
+
+    public int deleteByUserId(UUID userId) {
+        return jdbcTemplate.update("DELETE FROM email_credentials WHERE user_id = ?", uuidToBytes(userId));
+    }
+
     public int updatePassword(UUID userId, String passwordHash, LocalDateTime changedAt) {
         return jdbcTemplate.update(
                 """
