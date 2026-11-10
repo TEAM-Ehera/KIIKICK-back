@@ -19,7 +19,7 @@ public class UserConsentRepository {
     private final RowMapper<UserConsent> rowMapper = (rs, rowNum) -> new UserConsent(
             bytesToUuid(rs.getBytes("id")), bytesToUuid(rs.getBytes("user_id")),
             rs.getString("purpose"), rs.getString("policy_version"),
-            rs.getBoolean("granted"), rs.getTimestamp("recorded_at").toLocalDateTime()
+            rs.getBoolean("granted"), rs.getObject("recorded_at", java.time.LocalDateTime.class)
     );
 
     public UserConsentRepository(JdbcTemplate jdbcTemplate) {
@@ -45,6 +45,19 @@ public class UserConsentRepository {
                 SELECT * FROM user_consents
                 WHERE user_id = ? AND purpose = ?
                 ORDER BY recorded_at DESC, id DESC LIMIT 1
+                """,
+                rowMapper, uuidToBytes(userId), purpose
+        ).stream().findFirst();
+    }
+
+    public Optional<UserConsent> findLatestForActiveUser(UUID userId, String purpose) {
+        return jdbcTemplate.query(
+                """
+                SELECT c.* FROM user_consents c
+                JOIN users u ON u.id = c.user_id
+                WHERE c.user_id = ? AND c.purpose = ?
+                  AND u.deleted_at IS NULL AND u.deletion_requested_at IS NULL
+                ORDER BY c.recorded_at DESC, c.id DESC LIMIT 1
                 """,
                 rowMapper, uuidToBytes(userId), purpose
         ).stream().findFirst();

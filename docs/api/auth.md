@@ -24,8 +24,8 @@ Auth 날짜 응답과 성공·오류 메타는 ISO 8601 Asia/Seoul `+09:00` 문�
 | [AUTH-04](#auth-04) | 내 프로필 조회 | `GET` | `/users/me` | 구현 (#65) |
 | [AUTH-05](#auth-05) | 내 프로필 수정 | `PATCH` | `/users/me` | 구현 (#65) |
 | [AUTH-06](#auth-06) | 온보딩 완료 | `PUT` | `/users/me/onboarding` | 구현 · 검증 완료 (#66) |
-| [AUTH-07](#auth-07) | 현재 동의 목록 조회 | `GET` | `/users/me/consents` | 예정 (#68) |
-| [AUTH-08](#auth-08) | 동의 부여·철회 | `PUT` | `/users/me/consents/{purpose}` | 예정 (#68) |
+| [AUTH-07](#auth-07) | 현재 동의 목록 조회 | `GET` | `/users/me/consents` | GET 구현 (#68 부분) |
+| [AUTH-08](#auth-08) | 동의 부여·철회 | `PUT` | `/users/me/consents/{purpose}` | 부여·철회 테스트 전용 (#68) |
 | [AUTH-09](#auth-09) | 회원 탈퇴 요청 | `POST` | `/users/me/deletion-requests` | 예정 (#69) |
 | [AUTH-10](#auth-10) | 탈퇴 처리 상태 조회 | `GET` | `/users/me/deletion-requests/{deletionId}` | 예정 (#69) |
 
@@ -796,7 +796,7 @@ Content-Type: application/json
 ---
 
 <a id="auth-07"></a>
-## AUTH-07 · 현재 동의 목록 조회 (예정 · #68)
+## AUTH-07 · 현재 동의 목록 조회 (GET 구현 · #68 부분)
 
 마이페이지 동의 설정을 표시한다.
 
@@ -826,7 +826,11 @@ Request body: 없음.
 ### 처리 규칙
 
 1. 각 purpose의 최신 이력만 반환한다. 과거 동의 원문 전체를 노출하는 감사 API가 아니다.
-2. 정책에 정의된 유한한 목적 목록으로 응답하며 cursor 페이지네이션을 사용하지 않는다. purpose 오름차순.
+2. GPS_COLLECTION·HEALTH_DATA의 기존 이력만 purpose 오름차순으로 반환하며 cursor 페이지네이션을 사용하지 않는다. FRIEND_COMPARISON 등 다른 목적의 DB 이력은 삭제하지 않고 응답에서만 제외한다.
+3. 이력이 없으면 data는 빈 배열이다. 미제출 목적의 false 이력이나 기록 시각을 임의 생성하지 않는다. 저장된 실제 policyVersion·granted를 반환하며 현재 버전 1.0으로 덮어쓰거나 과거 버전 이력을 숨기지 않는다. 유효 업로드 권한·삭제 완료 상태를 나타내는 API가 아니다.
+4. 사용자 존재·탈퇴 요청/삭제 상태를 확인하고 읽기 전용 트랜잭션으로 조회한다. GET은 사용자·동의·멱등 기록을 변경하지 않는다.
+5. DB UTC DATETIME(6)을 JVM 시간대와 무관하게 읽고 recordedAt과 meta.serverTime은 Asia/Seoul +09:00으로 표현한다. 미존재·탈퇴 요청·삭제 사용자는 401, DB 오류는 내부 정보 없이 503이다.
+6. PUT 동의 부여·철회 이력 저장은 테스트 전용이다. 기본 설정에서는 PUT 경로가 비활성화된다. 업로드 차단·파기 추적·삭제·재계산 연동 검증 전까지 운영 활성화를 보류한다.
 
 ### 요청 예시
 
@@ -842,14 +846,15 @@ Authorization: Bearer <accessToken>
 
 | 필드 | 타입 | 필수 | null | 기본값 / 예시 | 설명 |
 | --- | --- | :---: | :---: | --- | --- |
-| `purpose` | string | O | 불가 | — | 동의 목적 코드. 목록 P11 미정 |
-| `policyVersion` | string | O | 불가 | — | 동의한 약관/정책 버전 |
-| `granted` | boolean | O | 불가 | — | true 부여, false 철회 |
+| `purpose` | string | O | 불가 | — | GPS_COLLECTION 또는 HEALTH_DATA |
+| `policyVersion` | string | O | 불가 | — | 저장된 실제 안내문 버전 |
+| `granted` | boolean | O | 불가 | — | 최신 이력의 실제 승인·거절/철회 값 |
 | `recordedAt` | timestamp | O | 불가 | — | 서버가 기록한 시각 |
 
 ```http
 HTTP/1.1 200 OK
 X-Request-Id: req-example
+Cache-Control: no-store
 Content-Type: application/json
 ```
 
@@ -857,8 +862,8 @@ Content-Type: application/json
 {
   "data": [
     {
-      "purpose": "FRIEND_COMPARISON",
-      "policyVersion": "2026-11-01",
+      "purpose": "GPS_COLLECTION",
+      "policyVersion": "1.0",
       "granted": true,
       "recordedAt": "2026-11-02T10:00:00+09:00"
     }
@@ -874,7 +879,8 @@ Content-Type: application/json
 
 | HTTP | code | 발생 조건 | 앱 대응 |
 | --- | --- | --- | --- |
-| 401 | `UNAUTHENTICATED / TOKEN_EXPIRED` | access token 없음·만료 | 토큰 갱신/로그인 |
+| 401 | `UNAUTHENTICATED / TOKEN_EXPIRED` | JWT 오류·만료 또는 사용자 미존재·탈퇴 요청·삭제 | 토큰/계정 상태 확인 |
+| 503 | `SERVICE_UNAVAILABLE` | DB 조회 실패 | 재시도 안내 |
 
 [공통 오류](common.md)에 정의한 400·403·429·500·503도 적용된다. 네트워크 응답 유실 시 저장 여부는 알 수 없으므로 새 ID로 재등록하지 않는다.
 
@@ -884,9 +890,9 @@ Content-Type: application/json
 ---
 
 <a id="auth-08"></a>
-## AUTH-08 · 동의 부여·철회 (예정 · #68)
+## AUTH-08 · 동의 부여·철회 (#68)
 
-특정 목적의 동의를 변경한다.
+특정 목적의 동의를 변경한다. 동의 부여·철회는 테스트에서만 검증할 수 있으며 기본 설정에서는 PUT 경로가 등록되지 않는다. 운영 활성화는 철회 연동과 재동의 정책 확정 후 진행한다.
 
 | 항목 | 내용 |
 | --- | --- |
@@ -910,7 +916,7 @@ Content-Type: application/json
 
 | 필드 | 타입 | 필수 | null | 기본값 / 예시 | 설명 |
 | --- | --- | :---: | :---: | --- | --- |
-| `purpose` | string | O | 불가 | FRIEND_COMPARISON | 정책에 등록된 동의 목적 코드. P11 미정 |
+| `purpose` | string | O | 불가 | GPS_COLLECTION | GPS_COLLECTION 또는 HEALTH_DATA |
 
 Query parameter: 없음.
 
@@ -918,28 +924,28 @@ Query parameter: 없음.
 
 | 필드 | 타입 | 필수 | null | 기본값 / 예시 | 설명 |
 | --- | --- | :---: | :---: | --- | --- |
-| `policyVersion` | string | O | 불가 | — | 해당 목적에 대해 허용된 정책 버전 |
-| `granted` | boolean | O | 불가 | — | false면 동의 철회 |
+| `policyVersion` | string | O | 불가 | 1.0 | 두 목적의 현재 지원 버전 |
+| `granted` | boolean | O | 불가 | true | 테스트 경로에서 true는 부여, false는 철회 이력 저장 |
 
 중첩 필드의 필수 O는 부모 객체/배열을 제출했을 때 적용한다. PATCH의 누락·null 규칙은 [공통 계약](common.md)을 따른다.
 
 ### 처리 규칙
 
-1. 이력은 append-only로 추가한다. 최신 동의가 false이면 공개 조회 권한과 캐시를 즉시 재평가한다.
-2. 동일 멱등 요청은 한 이력만 만든다. 필수 동의 철회 시 서비스 이용 처리 정책은 P11 확정 필요.
+1. 동의 부여·철회 이력과 멱등 성공 응답을 한 트랜잭션에서 저장한다. 같은 멱등 요청은 최초 응답을 반환한다.
+2. 현재 테스트 경로의 철회 `200 Consent`는 이력 저장과 최신 동의 상태 반영을 뜻한다. 파기 작업 접수·완료는 포함하지 않는다.
 
 ### 요청 예시
 
 ```http
-PUT /api/v1/users/me/consents/FRIEND_COMPARISON HTTP/1.1
+PUT /api/v1/users/me/consents/GPS_COLLECTION HTTP/1.1
 Accept: application/json
 Authorization: Bearer <accessToken>
 Idempotency-Key: 00000016-0000-4000-8000-000000000016
 Content-Type: application/json
 
 {
-  "policyVersion": "2026-11-01",
-  "granted": false
+  "policyVersion": "1.0",
+  "granted": true
 }
 ```
 
@@ -949,9 +955,9 @@ Content-Type: application/json
 
 | 필드 | 타입 | 필수 | null | 기본값 / 예시 | 설명 |
 | --- | --- | :---: | :---: | --- | --- |
-| `purpose` | string | O | 불가 | — | 동의 목적 코드. 목록 P11 미정 |
+| `purpose` | string | O | 불가 | — | GPS_COLLECTION 또는 HEALTH_DATA |
 | `policyVersion` | string | O | 불가 | — | 동의한 약관/정책 버전 |
-| `granted` | boolean | O | 불가 | — | true 부여, false 철회 |
+| `granted` | boolean | O | 불가 | — | 부여 성공 시 true, 철회 이력 저장 시 false |
 | `recordedAt` | timestamp | O | 불가 | — | 서버가 기록한 시각 |
 
 ```http
@@ -963,9 +969,9 @@ Content-Type: application/json
 ```json
 {
   "data": {
-    "purpose": "FRIEND_COMPARISON",
-    "policyVersion": "2026-11-01",
-    "granted": false,
+    "purpose": "GPS_COLLECTION",
+    "policyVersion": "1.0",
+    "granted": true,
     "recordedAt": "2026-11-02T10:00:00+09:00"
   },
   "meta": {
