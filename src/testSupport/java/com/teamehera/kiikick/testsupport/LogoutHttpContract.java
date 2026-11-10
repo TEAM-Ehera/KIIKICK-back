@@ -45,7 +45,7 @@ public abstract class LogoutHttpContract {
         jdbc.update("DELETE FROM users WHERE id=?",uuidToBytes(user));
     }}
     record Fixture(UUID user,UUID session,String refresh,String access){}
-    Fixture fixture(){UUID user=UUID.randomUUID();owned.add(user);users.save(user,"logout-http");return session(user);}
+    Fixture fixture(){UUID user=UUID.randomUUID();owned.add(user);users.save(user,"logout-http"+owned.size());return session(user);}
     Fixture session(UUID user){
         UUID id=UUID.randomUUID();var token=issuer.issue();
         sessions.save(new AuthSession(id,user,null,token.tokenHash(),0,utc(token.expiresAt()),null,utc(clock.instant())));

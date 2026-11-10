@@ -6,7 +6,7 @@ import java.util.*;
 
 @Schema(description = "닉네임과 선택 동의. consents는 필수이며 빈 배열 가능")
 public record OnboardingRequest(
-        @Schema(requiredMode = Schema.RequiredMode.REQUIRED, minLength = 1, maxLength = 16) String nickname,
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED, minLength = 1, maxLength = 16, description = "활성 계정 간 중복 불가. 삭제된 계정 닉네임 재사용 가능") String nickname,
         @Schema(requiredMode = Schema.RequiredMode.REQUIRED) List<Consent> consents) {
     public record Consent(
             @Schema(requiredMode = Schema.RequiredMode.REQUIRED, allowableValues = {"GPS_COLLECTION", "HEALTH_DATA"}) String purpose,

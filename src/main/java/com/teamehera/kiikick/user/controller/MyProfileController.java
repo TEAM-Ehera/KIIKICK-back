@@ -13,6 +13,7 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import io.swagger.v3.oas.annotations.tags.Tag;
 
 import com.teamehera.kiikick.auth.controller.AuthApiResponseFactory;
+import com.teamehera.kiikick.global.exception.DuplicateNicknameException;
 import com.teamehera.kiikick.auth.dto.AuthApiErrorResponse;
 import com.teamehera.kiikick.auth.dto.AuthApiResponse;
 import com.teamehera.kiikick.auth.security.AuthenticatedUser;
@@ -54,13 +55,13 @@ public class MyProfileController {
         return ResponseEntity.ok().header("X-Request-Id", body.meta().requestId()).cacheControl(CacheControl.noStore()).body(body);
     }
 
-    @Operation(operationId = "patchMyProfile", summary = "내 프로필 수정", description = "최소 한 필드 필요. 누락은 유지, nickname null 거부, avatarUrl null은 제거. 닉네임 Java UTF-16 최대 16자·중복 허용. 읽기 전용 필드 거부. 동일 키·원문 요청은 최초 JSON/meta 재생. If-Match 사용 안 함. 멱등 보존 1일은 임시 설정.")
+    @Operation(operationId = "patchMyProfile", summary = "내 프로필 수정", description = "최소 한 필드 필요. 누락은 유지, nickname null 거부, avatarUrl null은 제거. 닉네임 Java UTF-16 최대 16자·활성 계정 간 중복 불가, 삭제된 계정의 닉네임 재사용 가능. 읽기 전용 필드 거부. 동일 키·원문 요청은 최초 JSON/meta 재생. If-Match 사용 안 함. 멱등 보존 1일은 임시 설정.")
     @SecurityRequirement(name = "bearerAuth")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "성공: data와 meta", content = @Content(mediaType = "application/json", schema = @Schema(implementation = UserSelfResponse.OpenApiResponse.class), examples = @ExampleObject(value = "{\"data\":{\"id\":\"00000001-0000-4000-8000-000000000001\",\"nickname\":\"준킥\",\"avatarUrl\":null,\"onboardingStatus\":\"REQUIRED\",\"comparisonConsent\":false,\"createdAt\":\"2026-11-06T12:00:00.123456+09:00\"},\"meta\":{\"requestId\":\"req-example\",\"serverTime\":\"2026-11-06T12:00:00.123456+09:00\"}}")), headers = @Header(name = "X-Request-Id", schema = @Schema(type = "string"))),
         @ApiResponse(responseCode = "400", description = "INVALID_REQUEST: 신규 요청의 If-Match 미지원", content = @Content(mediaType = "application/json", schema = @Schema(implementation = AuthApiErrorResponse.class), examples = @ExampleObject(value = "{\"error\":{\"code\":\"INVALID_REQUEST\",\"message\":\"요청을 처리할 수 없습니다.\",\"retryable\":false,\"persistence\":\"NOT_SAVED\",\"details\":{}},\"meta\":{\"requestId\":\"req-error-example\",\"serverTime\":\"2026-11-06T12:00:00.123456+09:00\"}}"))),
         @ApiResponse(responseCode = "401", description = "UNAUTHENTICATED / TOKEN_EXPIRED", content = @Content(mediaType = "application/json", schema = @Schema(implementation = AuthApiErrorResponse.class), examples = @ExampleObject(value = "{\"error\":{\"code\":\"UNAUTHENTICATED\",\"message\":\"요청을 처리할 수 없습니다.\",\"retryable\":false,\"persistence\":\"NOT_SAVED\",\"details\":{}},\"meta\":{\"requestId\":\"req-error-example\",\"serverTime\":\"2026-11-06T12:00:00.123456+09:00\"}}")), headers = @Header(name = "WWW-Authenticate", schema = @Schema(type = "string", example = "Bearer"))),
-        @ApiResponse(responseCode = "409", description = "IDEMPOTENCY_KEY_REUSED / REQUEST_IN_PROGRESS", content = @Content(mediaType = "application/json", schema = @Schema(implementation = AuthApiErrorResponse.class), examples = @ExampleObject(value = "{\"error\":{\"code\":\"IDEMPOTENCY_KEY_REUSED\",\"message\":\"요청을 처리할 수 없습니다.\",\"retryable\":false,\"persistence\":\"NOT_SAVED\",\"details\":{}},\"meta\":{\"requestId\":\"req-error-example\",\"serverTime\":\"2026-11-06T12:00:00.123456+09:00\"}}"))),
+        @ApiResponse(responseCode = "409", description = "NICKNAME_ALREADY_EXISTS / IDEMPOTENCY_KEY_REUSED / REQUEST_IN_PROGRESS", content = @Content(mediaType = "application/json", schema = @Schema(implementation = AuthApiErrorResponse.class), examples = @ExampleObject(value = "{\"error\":{\"code\":\"IDEMPOTENCY_KEY_REUSED\",\"message\":\"요청을 처리할 수 없습니다.\",\"retryable\":false,\"persistence\":\"NOT_SAVED\",\"details\":{}},\"meta\":{\"requestId\":\"req-error-example\",\"serverTime\":\"2026-11-06T12:00:00.123456+09:00\"}}"))),
         @ApiResponse(responseCode = "415", description = "application/json 필요", content = @Content),
         @ApiResponse(responseCode = "422", description = "VALIDATION_FAILED: 필드·누락/null·길이·멱등 키 오류", content = @Content(mediaType = "application/json", schema = @Schema(implementation = AuthApiErrorResponse.class), examples = @ExampleObject(value = "{\"error\":{\"code\":\"VALIDATION_FAILED\",\"message\":\"요청을 처리할 수 없습니다.\",\"retryable\":false,\"persistence\":\"NOT_SAVED\",\"details\":{}},\"meta\":{\"requestId\":\"req-error-example\",\"serverTime\":\"2026-11-06T12:00:00.123456+09:00\"}}"))),
         @ApiResponse(responseCode = "503", description = "SERVICE_UNAVAILABLE: 프로필·멱등 저장 롤백", content = @Content(mediaType = "application/json", schema = @Schema(implementation = AuthApiErrorResponse.class), examples = @ExampleObject(value = "{\"error\":{\"code\":\"SERVICE_UNAVAILABLE\",\"message\":\"요청을 처리할 수 없습니다.\",\"retryable\":true,\"persistence\":\"NOT_SAVED\",\"details\":{}},\"meta\":{\"requestId\":\"req-error-example\",\"serverTime\":\"2026-11-06T12:00:00.123456+09:00\"}}")))
@@ -104,6 +105,10 @@ public class MyProfileController {
     public ResponseEntity<AuthApiErrorResponse> rejected(MatchMutation.Rejected e) {
         return error(e.status(), e.getMessage(), "REQUEST_IN_PROGRESS".equals(e.getMessage()), Map.of());
     }
+    @ExceptionHandler(DuplicateNicknameException.class)
+    public ResponseEntity<AuthApiErrorResponse> duplicateNickname() {
+        return error(409, DuplicateNicknameException.CODE, false, Map.of("fields", List.of("nickname")));
+    }
     @ExceptionHandler(DataAccessException.class)
     public ResponseEntity<AuthApiErrorResponse> unavailable() { return error(503, "SERVICE_UNAVAILABLE", true, Map.of()); }
     private ResponseEntity<AuthApiErrorResponse> error(int status, String code, boolean retryable, Map<String, Object> details) {
@@ -111,6 +116,6 @@ public class MyProfileController {
         var response = ResponseEntity.status(status).header("X-Request-Id", meta.requestId()).cacheControl(CacheControl.noStore());
         if (status == 401) response.header(HttpHeaders.WWW_AUTHENTICATE, "Bearer");
         return response.body(new AuthApiErrorResponse(new AuthApiErrorResponse.AuthApiError(code,
-                "프로필 요청을 처리할 수 없습니다.", retryable, "NOT_SAVED", details), meta));
+                DuplicateNicknameException.CODE.equals(code) ? DuplicateNicknameException.MESSAGE : "프로필 요청을 처리할 수 없습니다.", retryable, "NOT_SAVED", details), meta));
     }
 }

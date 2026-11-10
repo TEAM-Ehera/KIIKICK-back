@@ -48,7 +48,7 @@ public abstract class RefreshRotationContract {
     }
     protected record Fixture(UUID userId,UUID sessionId,String token,Instant expiry) { }
     protected Fixture fixture() {
-        UUID user=UUID.randomUUID(); owned.add(user); users.save(user,"refresh");
+        UUID user=UUID.randomUUID(); owned.add(user); users.save(user,"refresh"+owned.size());
         return session(user);
     }
     protected Fixture session(UUID user) {

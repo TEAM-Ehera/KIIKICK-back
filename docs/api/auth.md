@@ -526,7 +526,7 @@ Query parameter: 없음.
 
 | 필드 | 타입 | 필수 | null | 기본값 / 예시 | 설명 |
 | --- | --- | :---: | :---: | --- | --- |
-| `nickname` | string | X | 불가 | — | 공백·null 거절. #65는 기존 CRUD와 동일한 최대 16자·중복 허용 적용(아래 정책 참고) |
+| `nickname` | string | X | 불가 | — | 공백·null 거절. Java UTF-16 최대 16자. 활성 계정 간 중복 불가, 삭제 계정 닉네임 재사용 가능 |
 | `avatarUrl` | string | X | 허용 | — | 기존 외부 이미지 URL. null은 이미지 제거. KIIKICK 이미지 도메인의 URL은 사진 업로드 API에서 발급 |
 
 중첩 필드의 필수 O는 부모 객체/배열을 제출했을 때 적용한다. PATCH의 누락·null 규칙은 [공통 계약](common.md)을 따른다.
@@ -535,7 +535,7 @@ Query parameter: 없음.
 
 1. 수정 필드가 최소 1개 필요하다. 새 프로필 사진은 [사진 업로드 API](#프로필-사진-업로드와-삭제)로 등록한다.
 2. id, comparisonConsent, onboardingStatus 등 읽기 전용 필드와 알 수 없는 필드는 422. `nickname: null`은 422, `avatarUrl: null`은 제거이며 생략한 필드는 유지한다. 서버는 제출한 avatarUrl에 접속하거나 이미지를 업로드하지 않는다.
-3. #65 승인 정책: 닉네임은 기존 `UserUpdateRequest`와 동일한 Java 문자열 길이(UTF-16 코드 단위) 최대 16자이고 중복을 허용한다. UNIQUE·중복 검사·자동 공백 제거를 추가하지 않는다. 이는 #65에 기존 정책을 적용한 결정이며 향후 P01/P07 정책 확정 시 재검토한다.
+3. 닉네임은 Java UTF-16 최대 16자이며 현재 계정 본인이 유지하는 값은 허용한다. 다른 활성 계정(`deleted_at IS NULL`)이 사용 중이면 `409 NICKNAME_ALREADY_EXISTS`, 메시지는 “이미 사용 중인 닉네임입니다.”다. 삭제된 계정의 닉네임은 재사용할 수 있다. 원문 UTF-8 바이트로 비교하며 대소문자 변환·자동 trim·Unicode 정규화는 수행하지 않는다.
 4. 공통 멱등 트랜잭션의 사용자 행 잠금 안에서 현재 값 조회 → 제출 필드 병합 → 프로필 수정 → 응답 저장을 수행한다. 실패하면 프로필과 멱등 기록을 함께 롤백한다. 같은 키의 원문 본문/If-Match가 다르면 409이며 동일 요청은 최초 본문·meta·X-Request-Id를 재생한다. If-Match는 신규 요청에서 사용하지 않는다(제출하면 400).
 5. 멱등 키는 사용자·메서드·경로별로 구분한다. 기존 `kiikick.match.idempotency-retention=P1D` 설정을 재사용하며 Auth의 확정 보존 정책으로 취급하지 않는다. 같은 범위·키의 만료 기록은 재요청 시 제거하고 미사용 기록의 일괄 정리는 후속 검토한다.
 
@@ -688,7 +688,7 @@ Query parameter: 없음.
 
 | 필드 | 타입 | 필수 | null | 기본값 / 예시 | 설명 |
 | --- | --- | :---: | :---: | --- | --- |
-| `nickname` | string | O | 불가 | — | 공백만 입력 불가, 기존 Java 길이 최대 16자·중복 허용, 자동 trim 없음 |
+| `nickname` | string | O | 불가 | — | 공백만 입력 불가, Java UTF-16 최대 16자·활성 계정 중복 불가, 삭제 계정 닉네임 재사용 가능. 자동 trim 없음 |
 | `consents` | array<object> | O | 불가 | — | 선택 동의 목록. 빈 배열 허용; 필드 누락·null 불가 |
 | `consents[].purpose` | string | O | 불가 | — | GPS_COLLECTION 또는 HEALTH_DATA |
 | `consents[].policyVersion` | string | O | 불가 | 1.0 | 각 목적의 안내문과 일치하는 버전 1.0 |
@@ -1222,3 +1222,12 @@ Content-Type: application/json
 ```
 
 [이 문서 위로](#api-바로가기) · [전체 API 목차](../api-spec.md)
+
+
+### 활성 닉네임 유일성 (2026-11-10)
+
+온보딩·프로필 수정·기존 사용자 CRUD 모두 DB의 `uk_users_active_nickname`으로 유일성을 보장한다. 동시에 같은 닉네임을 요청하면 하나만 성공하고 나머지는 409다. 온보딩 전 `nickname=null`은 여러 계정에 허용한다. 삭제 요청만 있고 `deleted_at`이 null이면 닉네임을 계속 점유한다. 물리 삭제 또는 소프트 삭제(`deleted_at` 설정) 후에는 재사용 가능하다.
+
+중복 응답은 `error.code=NICKNAME_ALREADY_EXISTS`, `error.message="이미 사용 중인 닉네임입니다."`, `error.details.fields=["nickname"]`, `error.persistence=NOT_SAVED`이며 닉네임·아바타·온보딩 완료·동의·멱등 기록은 롤백된다. 기존 CRUD의 오류는 기존 형식을 따라 `{code, message}`다.
+
+배포 전 [V007__active_nickname_unique.sql](../db/mysql/migrations/V007__active_nickname_unique.sql)의 사전 조회로 활성 계정의 중복을 확인한다. 기존 중복 계정을 자동 수정하거나 삭제하지 않으며 중복이 남으면 제약 추가가 실패한다. 중복 조정 후 마이그레이션을 먼저 적용하고 애플리케이션을 배포한다.

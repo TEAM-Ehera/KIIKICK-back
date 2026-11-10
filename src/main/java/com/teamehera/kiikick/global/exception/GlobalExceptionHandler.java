@@ -11,6 +11,12 @@ import java.util.Map;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    @ExceptionHandler(DuplicateNicknameException.class)
+    public ResponseEntity<Map<String, String>> handleDuplicateNickname(DuplicateNicknameException exception) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(Map.of("code", DuplicateNicknameException.CODE, "message", DuplicateNicknameException.MESSAGE));
+    }
+
     // 사용자가 존재하지 않거나 이미 삭제된 경우 HTTP 404를 반환한다.
     @ExceptionHandler(UserNotFoundException.class)
     public ResponseEntity<Map<String, String>> handleNotFound(

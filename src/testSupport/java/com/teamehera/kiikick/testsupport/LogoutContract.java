@@ -50,7 +50,7 @@ public abstract class LogoutContract {
     record Fixture(UUID user,UUID session,String token) {
         AuthenticatedUser actor(){return new AuthenticatedUser(user,session);}
     }
-    Fixture fixture() {UUID user=UUID.randomUUID();owned.add(user);users.save(user,"logout");return session(user);}
+    Fixture fixture() {UUID user=UUID.randomUUID();owned.add(user);users.save(user,"logout"+owned.size());return session(user);}
     Fixture session(UUID user) {
         UUID session=UUID.randomUUID();var token=issuer.issue();
         sessions.save(new AuthSession(session,user,null,token.tokenHash(),0,utc(token.expiresAt()),null,utc(clock.instant())));
