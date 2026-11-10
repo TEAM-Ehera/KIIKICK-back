@@ -6,7 +6,10 @@ CREATE TABLE users (
     deletion_requested_at TIMESTAMP(6),
     created_at TIMESTAMP(6) NOT NULL,
     updated_at TIMESTAMP(6) NOT NULL,
-    deleted_at TIMESTAMP(6)
+    deleted_at TIMESTAMP(6),
+    active_nickname VARBINARY(64) GENERATED ALWAYS AS
+        (CASE WHEN deleted_at IS NULL THEN nickname ELSE NULL END),
+    CONSTRAINT uk_users_active_nickname UNIQUE (active_nickname)
 );
 
 CREATE TABLE venues (

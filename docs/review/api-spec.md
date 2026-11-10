@@ -449,3 +449,8 @@ Authorization: Bearer <accessToken>
 ### 친구 경기 및 댓글 (#120)
 
 수락된 친구는 `GET /api/v1/friends/{userId}/matches`에서 경기 목록을 보고, `/{matchId}`, `/{matchId}/quarters`, `/{matchId}/result`, `/{matchId}/result/quarters`에서 상세·쿼터·결과를 조회한다. 댓글 작성·조회는 `POST/GET /api/v1/matches/{matchId}/comments`, 삭제는 `DELETE /api/v1/matches/{matchId}/comments/{commentId}`(본인 댓글만)이다. 친구 해제·차단 시 접근을 회수한다. 경기 수정 및 원본 GPS·심박 샘플 조회는 소유자 전용이다. [상세 계약](../api/friends.md).
+
+
+### 닉네임 중복 응답 (2026-11-10)
+
+온보딩·프로필 수정에서 활성 계정의 닉네임이 중복이면 `409 NICKNAME_ALREADY_EXISTS`, “이미 사용 중인 닉네임입니다.”를 표시하고 다른 닉네임을 입력한다. 삭제된 계정의 닉네임은 재사용 가능하다. 본인의 현재 닉네임 유지도 가능하다. 최대 16자(기존 Java UTF-16 길이)이며 자동 trim·대소문자 변환은 없다. 저장 실패 시 온보딩/프로필과 멱등 결과는 함께 롤백한다.

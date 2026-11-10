@@ -49,6 +49,11 @@ class AvatarApiTest {
         registry.add("spring.datasource.url", () -> "jdbc:h2:mem:avatars;MODE=MySQL;DB_CLOSE_DELAY=-1");
     }
 
+    @org.junit.jupiter.api.AfterEach
+    void releaseNickname() {
+        users.softDelete(userId);
+    }
+
     @BeforeEach
     void createUser() {
         userId = UUID.randomUUID();

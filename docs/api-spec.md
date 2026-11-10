@@ -411,3 +411,7 @@ v0.5는 구현된 이메일 인증번호 발송·검증과 회원가입 완료 A
 [친구 경기·댓글 계약](api/friends.md#친구-경기-조회--friend-1115): `GET /friends/{userId}/matches`, `GET /friends/{userId}/matches/{matchId}`, `GET /friends/{userId}/matches/{matchId}/quarters`, `GET /friends/{userId}/matches/{matchId}/result`, `GET /friends/{userId}/matches/{matchId}/result/quarters`.
 
 댓글은 `GET/POST /matches/{matchId}/comments`, `DELETE /matches/{matchId}/comments/{commentId}`를 사용한다. 현재 친구 관계를 매번 확인하며 경기 수정 권한은 소유자 전용이다.
+
+### 활성 계정 닉네임 중복 금지 (#125)
+
+온보딩·프로필 수정에서 활성 계정이 사용 중인 닉네임은 `409 NICKNAME_ALREADY_EXISTS`와 “이미 사용 중인 닉네임입니다.”를 반환한다. 삭제된 계정의 닉네임 재사용과 본인의 현재 닉네임 유지는 허용한다. [상세 계약](api/auth.md#활성-닉네임-유일성-2026-11-10).

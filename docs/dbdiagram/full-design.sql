@@ -21,6 +21,9 @@ CREATE TABLE `users` (
     `created_at` DATETIME(6) NOT NULL,
     `updated_at` DATETIME(6) NOT NULL,
     `deleted_at` DATETIME(6) NULL,
+    `active_nickname` VARBINARY(64)
+        GENERATED ALWAYS AS (CASE WHEN `deleted_at` IS NULL THEN `nickname` ELSE NULL END) STORED,
+    UNIQUE KEY `uk_users_active_nickname` (`active_nickname`),
     PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

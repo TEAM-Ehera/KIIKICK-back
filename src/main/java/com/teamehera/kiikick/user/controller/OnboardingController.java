@@ -1,6 +1,7 @@
 package com.teamehera.kiikick.user.controller;
 
 import com.teamehera.kiikick.auth.controller.AuthApiResponseFactory;
+import com.teamehera.kiikick.global.exception.DuplicateNicknameException;
 import com.teamehera.kiikick.auth.dto.AuthApiErrorResponse;
 import com.teamehera.kiikick.auth.security.AuthenticatedUser;
 import com.teamehera.kiikick.match.service.MatchMutation;
@@ -36,13 +37,13 @@ public class OnboardingController {
     }
 
     @Operation(operationId = "completeOnboarding", summary = "온보딩 완료",
-            description = "닉네임 최대 16자·중복 허용. GPS_COLLECTION·HEALTH_DATA / 1.0만 허용하며 모두 선택입니다. 빈 배열·모두 거부도 완료합니다. 미제출 항목은 저장하지 않습니다. 동일 키·원문 요청은 최초 응답을 재생하고 완료 후 새 요청은 409입니다. If-Match는 사용하지 않습니다.")
+            description = "닉네임 최대 16자·활성 계정 간 중복 불가, 삭제된 계정의 닉네임 재사용 가능. GPS_COLLECTION·HEALTH_DATA / 1.0만 허용하며 모두 선택입니다. 빈 배열·모두 거부도 완료합니다. 미제출 항목은 저장하지 않습니다. 동일 키·원문 요청은 최초 응답을 재생하고 완료 후 새 요청은 409입니다. If-Match는 사용하지 않습니다.")
     @SecurityRequirement(name = "bearerAuth")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "온보딩 완료 또는 같은 멱등 요청 재생", content = @Content(mediaType = "application/json", schema = @Schema(implementation = UserSelfResponse.OpenApiResponse.class))),
         @ApiResponse(responseCode = "400", description = "INVALID_REQUEST: If-Match 미지원", content = @Content(mediaType = "application/json", schema = @Schema(implementation = AuthApiErrorResponse.class))),
         @ApiResponse(responseCode = "401", description = "UNAUTHENTICATED / TOKEN_EXPIRED", content = @Content(mediaType = "application/json", schema = @Schema(implementation = AuthApiErrorResponse.class))),
-        @ApiResponse(responseCode = "409", description = "INVALID_STATE / IDEMPOTENCY_KEY_REUSED / REQUEST_IN_PROGRESS", content = @Content(mediaType = "application/json", schema = @Schema(implementation = AuthApiErrorResponse.class))),
+        @ApiResponse(responseCode = "409", description = "NICKNAME_ALREADY_EXISTS / INVALID_STATE / IDEMPOTENCY_KEY_REUSED / REQUEST_IN_PROGRESS", content = @Content(mediaType = "application/json", schema = @Schema(implementation = AuthApiErrorResponse.class))),
         @ApiResponse(responseCode = "422", description = "VALIDATION_FAILED: 입력·목적·버전·중복 목적·멱등 키 오류", content = @Content(mediaType = "application/json", schema = @Schema(implementation = AuthApiErrorResponse.class))),
         @ApiResponse(responseCode = "503", description = "SERVICE_UNAVAILABLE: 저장 실패, 전체 롤백", content = @Content(mediaType = "application/json", schema = @Schema(implementation = AuthApiErrorResponse.class)))
     })
@@ -87,6 +88,10 @@ public class OnboardingController {
     public ResponseEntity<AuthApiErrorResponse> rejected(MatchMutation.Rejected e) {
         return error(e.status(), e.getMessage(), "REQUEST_IN_PROGRESS".equals(e.getMessage()), Map.of());
     }
+    @ExceptionHandler(DuplicateNicknameException.class)
+    public ResponseEntity<AuthApiErrorResponse> duplicateNickname() {
+        return error(409, DuplicateNicknameException.CODE, false, Map.of("fields", List.of("nickname")));
+    }
     @ExceptionHandler(DataAccessException.class)
     public ResponseEntity<AuthApiErrorResponse> unavailable() { return error(503, "SERVICE_UNAVAILABLE", true, Map.of()); }
     private ResponseEntity<AuthApiErrorResponse> error(int status, String code, boolean retryable, Map<String, Object> details) {
@@ -94,6 +99,6 @@ public class OnboardingController {
         var result = ResponseEntity.status(status).header("X-Request-Id", meta.requestId()).cacheControl(CacheControl.noStore());
         if (status == 401) result.header(HttpHeaders.WWW_AUTHENTICATE, "Bearer");
         return result.body(new AuthApiErrorResponse(new AuthApiErrorResponse.AuthApiError(code,
-                "온보딩 요청을 처리할 수 없습니다.", retryable, "NOT_SAVED", details), meta));
+                DuplicateNicknameException.CODE.equals(code) ? DuplicateNicknameException.MESSAGE : "온보딩 요청을 처리할 수 없습니다.", retryable, "NOT_SAVED", details), meta));
     }
 }

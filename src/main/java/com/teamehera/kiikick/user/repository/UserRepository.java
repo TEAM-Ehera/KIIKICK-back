@@ -1,6 +1,8 @@
 package com.teamehera.kiikick.user.repository;
 
 import com.teamehera.kiikick.user.domain.User;
+import com.teamehera.kiikick.global.exception.DuplicateNicknameException;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
@@ -35,7 +37,7 @@ public class UserRepository {
     }
 
     public void save(UUID id, String nickname) {
-        jdbcTemplate.update(
+        writeNickname(
                 """
                 INSERT INTO users (id, nickname, created_at, updated_at)
                 VALUES (?, ?, CURRENT_TIMESTAMP(6), CURRENT_TIMESTAMP(6))
@@ -95,7 +97,7 @@ public class UserRepository {
     }
 
     public int updateNickname(UUID id, String nickname) {
-        return jdbcTemplate.update(
+        return writeNickname(
                 """
                 UPDATE users
                 SET nickname = ?, updated_at = CURRENT_TIMESTAMP(6)
@@ -117,7 +119,7 @@ public class UserRepository {
     }
 
     public int updateProfile(UUID id, String nickname, String avatarUrl) {
-        return jdbcTemplate.update(
+        return writeNickname(
                 """
                 UPDATE users
                 SET nickname = ?, avatar_url = ?, updated_at = CURRENT_TIMESTAMP(6)
@@ -128,7 +130,7 @@ public class UserRepository {
     }
 
     public int completeOnboarding(UUID id, String nickname, LocalDateTime completedAt) {
-        return jdbcTemplate.update(
+        return writeNickname(
                 """
                 UPDATE users
                 SET nickname = ?, onboarding_completed_at = ?,
@@ -162,6 +164,19 @@ public class UserRepository {
                 """,
                 uuidToBytes(id)
         );
+    }
+
+    private int writeNickname(String sql, Object... arguments) {
+        try {
+            return jdbcTemplate.update(sql, arguments);
+        } catch (DuplicateKeyException exception) {
+            // 사전 조회만으로는 동시 요청을 막을 수 없으므로 DB의 활성 닉네임 유일키를 기준으로 변환한다.
+            String message = exception.getMostSpecificCause().getMessage();
+            if (message != null && message.toLowerCase(java.util.Locale.ROOT).contains("uk_users_active_nickname")) {
+                throw new DuplicateNicknameException(exception);
+            }
+            throw exception;
+        }
     }
 
     private static String escapeLike(String value) {

@@ -32,6 +32,7 @@
 | created_at | DATETIME(6) | NOT NULL |  |
 | updated_at | DATETIME(6) | NOT NULL |  |
 | deleted_at | DATETIME(6) | NULL |  |
+| active_nickname | VARBINARY(64) | NULL | 생성 컬럼·UNIQUE uk_users_active_nickname |
 
 인덱스: `PRIMARY KEY (`id`)`.
 
@@ -536,3 +537,8 @@ BINARY(16) UUID와 DATETIME(6) UTC를 사용한다. UTC 저장은 DB 타입만�
 | created_at | DATETIME(6) | NOT NULL | UTC |
 
 목록 인덱스: `(match_id, created_at DESC, id DESC)`. 친구 삭제 시 댓글을 보존하고 접근을 제한한다. 차단 관계의 작성자 댓글은 양방향 숨김 처리한다. 기존 DB에는 `V006__match_comments.sql`을 적용한다.
+
+
+### 활성 닉네임 제약 (2026-11-10)
+
+`users.active_nickname`은 활성 계정일 때만 `nickname`의 원문 UTF-8 바이트를 반환하는 STORED 생성 컬럼이다. UNIQUE `uk_users_active_nickname`은 활성 계정의 동일 닉네임만 거절한다. 삭제된 계정과 온보딩 전 null 닉네임은 NULL 키이므로 여러 행을 허용한다. 기존 정적 ERD 이미지에는 이 생성 컬럼이 없으므로 SQL·DBML 정의를 기준으로 확인한다. 기존 DB에는 V007을 적용한다.

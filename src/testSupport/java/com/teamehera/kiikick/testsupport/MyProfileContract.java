@@ -118,10 +118,14 @@ public abstract class MyProfileContract {
         assertThat(users.findById(f.id).orElseThrow().avatarUrl()).isNull();
         assertThat(body.at("/data/nickname").asText()).isEqualTo("before");
     }
-    @Test void 닉네임16자를_허용하고_중복도_허용한다() throws Exception {
+    @Test void 닉네임16자를_허용하고_활성계정중복은_거절한다() throws Exception {
         String nickname = "가".repeat(16); var f = fixture("before"); var other = fixture(nickname);
-        patch(f, json.writeValueAsString(Map.of("nickname", nickname))).andExpect(status().isOk()).andExpect(jsonPath("$.data.nickname").value(nickname));
+        patch(f, json.writeValueAsString(Map.of("nickname", nickname))).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("NICKNAME_ALREADY_EXISTS"));
         assertThat(users.findById(other.id).orElseThrow().nickname()).isEqualTo(nickname);
+        users.softDelete(other.id);
+        patch(f, json.writeValueAsString(Map.of("nickname", nickname))).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.nickname").value(nickname));
         patch(f, json.writeValueAsString(Map.of("nickname", "😀".repeat(8)))).andExpect(status().isOk());
         patch(f, json.writeValueAsString(Map.of("nickname", "😀".repeat(9)))).andExpect(status().isUnprocessableEntity());
     }
