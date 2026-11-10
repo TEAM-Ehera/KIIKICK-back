@@ -342,6 +342,8 @@ Authorization: Bearer <accessToken>
 
 ### [친구](api/friends.md)
 
+친구 프로필의 경기·경기장·상세 스탯·히트맵 연결은 [친구 기록 연동 가이드](api/friend-records.md)를 참고한다.
+
 | API ID | 기능 | Method | 경로 | 성공 |
 | --- | --- | --- | --- | --- |
 | [FRIEND-01](api/friends.md#friend-01) | 친구 검색 | `GET` | `/users/search` | 200 |

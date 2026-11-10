@@ -1024,7 +1024,7 @@ X-Request-Id: req-example
 [이 문서 위로](#api-바로가기) · [전체 API 목차](../api-spec.md)
 
 
-## 친구 경기 조회 · FRIEND-11~15
+## 친구 경기 조회 · FRIEND-11~18
 
 공개 프로필의 `relationship=FRIEND` 또는 친구 목록의 `profile.id`를 `userId`로 사용한다. 모든 경로는 Bearer 인증이 필요하며, 현재 수락된 친구 관계와 양방향 차단·공개 프로필 상태를 매번 검사한다. 대상이 없거나 접근할 수 없으면 `404 RESOURCE_NOT_FOUND`다. 본인 경기는 기존 `/matches` 경로를 사용한다.
 
@@ -1035,6 +1035,11 @@ X-Request-Id: req-example
 | FRIEND-13 | GET | `/friends/{userId}/matches/{matchId}/quarters` | 기존 쿼터 Page, ETag |
 | FRIEND-14 | GET | `/friends/{userId}/matches/{matchId}/result` | 기존 MatchResult, ETag |
 | FRIEND-15 | GET | `/friends/{userId}/matches/{matchId}/result/quarters` | 기존 QuarterResults, ETag |
+| FRIEND-16 | GET | `/friends/{userId}/matches/{matchId}/venue` | 경기 당시 이름·주소 및 현재 필드 좌표 |
+| FRIEND-17 | GET | `/friends/{userId}/matches/{matchId}/quarters/{quarterId}/result` | 개별 QuarterResult |
+| FRIEND-18 | GET | `/friends/{userId}/matches/{matchId}/quarters/{quarterId}/heatmap` | GPS 격자별 활동 분포 |
+
+친구 수락만으로 양쪽 모두 조회할 수 있으며 비교 분석 동의는 요구하지 않는다. 신규 응답·히트맵 상태·앱 호출 순서는 [친구 기록 연동 가이드](friend-records.md)를 따른다.
 
 목록은 `cursor`, `limit`(기본 20, 1~100)을 받고 경기 목록은 `status`도 받는다. 커서는 기존 경기/쿼터 목록 계약을 따른다. 결과 경로는 COMPLETED 경기만 허용하고 준비 전에는 기존 `409 RESULT_NOT_READY`를 반환한다. 모든 `matchId`는 해당 `userId`의 소유 경기여야 한다. 빈 목록은 `data: []`, 마지막 페이지는 `hasNext: false`, `nextCursor: null`이다.
 
