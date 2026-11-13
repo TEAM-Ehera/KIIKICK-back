@@ -1,9 +1,12 @@
 package com.teamehera.kiikick.auth.security;
 
 import com.nimbusds.jose.jwk.source.ImmutableSecret;
+import com.teamehera.kiikick.auth.repository.AdminUserRepository;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.security.authorization.AuthorizationDecision;
+import org.springframework.security.authorization.AuthorizationManager;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -21,6 +24,7 @@ import org.springframework.security.oauth2.jwt.JwtTimestampValidator;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.access.intercept.RequestAuthorizationContext;
 
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
@@ -40,8 +44,15 @@ public class SecurityConfig {
             HttpSecurity http,
             SessionJwtAuthenticationConverter authenticationConverter,
             AuthAuthenticationEntryPoint authenticationEntryPoint,
-            AuthAccessDeniedHandler accessDeniedHandler
+            AuthAccessDeniedHandler accessDeniedHandler,
+            AdminUserRepository adminUsers
     ) throws Exception {
+        AuthorizationManager<RequestAuthorizationContext> adminOnly = (authentication, context) -> {
+            var current = authentication.get();
+            return new AuthorizationDecision(current.isAuthenticated()
+                    && current.getPrincipal() instanceof AuthenticatedUser user
+                    && adminUsers.isActiveAdmin(user.userId()));
+        };
         return http
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(session -> session
@@ -57,6 +68,8 @@ public class SecurityConfig {
                                 "/swagger-ui/**",
                                 "/v3/api-docs/**"
                         ).permitAll()
+                        .requestMatchers("/api/v1/admin/comment-reports", "/api/v1/admin/comment-reports/**")
+                        .access(adminOnly)
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(resourceServer -> resourceServer
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(authenticationConverter))

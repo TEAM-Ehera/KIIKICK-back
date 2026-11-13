@@ -1047,7 +1047,7 @@ X-Request-Id: req-example
 
 ## 경기 댓글 · COMMENT-01~03
 
-경기 소유자와 현재 수락된 친구가 경기별 댓글을 주고받는다. 다른 친구가 작성한 댓글도 해당 경기 접근 권한이 있으면 조회할 수 있다. 조회자와 양방향 차단 관계인 작성자의 댓글은 숨긴다. 친구 해제·차단 후 해당 친구는 목록 조회, 새 댓글 작성/삭제 및 과거 성공 요청 재전송에 접근할 수 없다. 기존 댓글은 보존한다.
+경기 소유자와 현재 수락된 친구가 경기별 댓글을 주고받는다. 다른 친구가 작성한 댓글도 해당 경기 접근 권한이 있으면 조회할 수 있다. 조회자와 양방향 차단 관계인 작성자의 댓글과 관리자가 숨긴 댓글은 목록에서 제외한다. 친구 해제·차단 후 해당 친구는 목록 조회, 새 댓글 작성/삭제 및 과거 성공 요청 재전송에 접근할 수 없다. 기존 댓글은 보존한다.
 
 | ID | Method | 경로 (`/api/v1` 기준) | 성공 |
 | --- | --- | --- | --- |
@@ -1062,3 +1062,24 @@ POST 본문은 `{"content":"좋은 경기였어!"}`다. `content`는 문자열, 
 POST/DELETE는 UUID `Idempotency-Key`가 필수이고 `If-Match`를 사용하지 않는다. 댓글은 경기 버전을 변경하지 않는다. 동일 키·동일 요청은 최초 응답을 재생하고 다른 본문은 `409 IDEMPOTENCY_KEY_REUSED`다. 접근 및 소유권 실패는 `404 RESOURCE_NOT_FOUND`, 잘못된 커서는 `400 INVALID_CURSOR`, 인증 없이는 401이다. DELETE 본문은 보내지 않는다.
 
 배포 전 [V006__match_comments.sql](../db/mysql/migrations/V006__match_comments.sql)을 적용한다.
+
+## 경기 댓글 신고
+
+| Method | 경로 (`/api/v1` 기준) | 요청 및 성공 |
+| --- | --- | --- |
+| POST | `/matches/{matchId}/comments/{commentId}/reports` | `reason` 필수, `detail` 선택 · 201, 신고 접수 |
+| GET | `/admin/comment-reports` | `status`는 `ALL`, `PENDING`(기본값), `PROCESSED` · 200, 신고 목록 |
+| GET | `/admin/comment-reports/{reportId}` | 200, 신고 상세 |
+| PATCH | `/admin/comment-reports/{reportId}` | `resolution` 필수 · 200, 처리 후 신고 상세 |
+
+신고 사유는 `SPAM`, `ABUSE`, `PERSONAL_INFORMATION`, `OTHER`다. 상세 설명은 Unicode 코드 포인트 기준 최대 1000자이며 공백뿐이면 저장값은 null이다. 신고자와 처리자는 인증 사용자로 결정한다. 신고 POST와 관리자 PATCH에는 `Idempotency-Key`와 `If-Match`가 필요 없다.
+
+관리자 목록은 `cursor`, `limit`(기본 20, 1~100)을 받고 접수 시각·신고 ID 내림차순으로 조회한다. 커서는 같은 필터에 사용한다. 성공 응답은 `data/meta`, 목록은 `meta.pagination`을 사용한다. 필드는 [응답 필드 사전](schemas.md#댓글-신고), 요청·응답 예시는 Swagger를 참고한다.
+
+| API | 오류 |
+| --- | --- |
+| 신고 POST | 400 `INVALID_REQUEST`, 401 `UNAUTHENTICATED`·`TOKEN_EXPIRED`, 404 `RESOURCE_NOT_FOUND`(접근 불가·삭제·숨김 포함), 409 `COMMENT_ALREADY_REPORTED`, 422 `SELF_REPORT_NOT_ALLOWED`·`VALIDATION_FAILED` |
+| 관리자 공통 | 400 `INVALID_REQUEST`, 401 `UNAUTHENTICATED`·`TOKEN_EXPIRED`, 403 `FORBIDDEN` |
+| 관리자 목록 | 400 `INVALID_CURSOR` |
+| 관리자 상세·처리 | 404 `RESOURCE_NOT_FOUND` |
+| 관리자 처리 | 409 `REPORT_ALREADY_PROCESSED`·`COMMENT_ALREADY_DELETED`, 422 `VALIDATION_FAILED` |

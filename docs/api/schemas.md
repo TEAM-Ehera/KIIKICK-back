@@ -395,3 +395,13 @@ MatchEvent는 `{type: "goal" | "assist", location: TrackPointInput}`이다. loca
 | matchVersion | integer | nullable | 작업 후 경기 버전 |
 | error | object | nullable | 공통 error 형식 |
 | processedAt | timestamp | 필수 | 처리 시각 |
+
+## 댓글 신고
+
+| 응답 | `data` 필드 |
+| --- | --- |
+| 신고 접수 | `id`(신고 ID), `commentId`, `reportedAt` |
+| 관리자 목록의 각 항목 | `id`, `reporterId`, `commentId`, `reason`, `reportedAt`, `status`(`PENDING` 또는 `PROCESSED`) |
+| 관리자 상세·처리 | 목록 항목의 필드와 `commentAuthorId`, `commentContent`(신고 당시 원문), `detail`, `processedAt`, `processedBy`, `resolution` |
+
+ID는 UUID, 시각은 +09:00으로 반환한다. `detail`은 선택이며 미처리 신고의 처리 시각·처리자·결과는 null이다. 목록은 `meta.pagination`의 `nextCursor`와 `hasNext`를 반환한다.
