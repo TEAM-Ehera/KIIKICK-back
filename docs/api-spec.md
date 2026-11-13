@@ -420,3 +420,7 @@ v0.5는 구현된 이메일 인증번호 발송·검증과 회원가입 완료 A
 ### 활성 계정 닉네임 중복 금지 (#125)
 
 온보딩·프로필 수정에서 활성 계정이 사용 중인 닉네임은 `409 NICKNAME_ALREADY_EXISTS`와 “이미 사용 중인 닉네임입니다.”를 반환한다. 삭제된 계정의 닉네임 재사용과 본인의 현재 닉네임 유지는 허용한다. [상세 계약](api/auth.md#활성-닉네임-유일성-2026-11-10).
+
+### 경기 댓글 신고
+
+사용자는 `POST /matches/{matchId}/comments/{commentId}/reports`로 신고한다. 관리자는 `GET /admin/comment-reports`에서 목록을, `GET /admin/comment-reports/{reportId}`에서 상세를 조회하고 `PATCH /admin/comment-reports/{reportId}`로 처리한다. 관리자 숨김 댓글은 일반 목록에서 제외한다. 상세 계약은 [경기 댓글 신고](api/friends.md#경기-댓글-신고)를 따른다.
