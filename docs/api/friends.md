@@ -1047,39 +1047,81 @@ X-Request-Id: req-example
 
 ## 경기 댓글 · COMMENT-01~03
 
-경기 소유자와 현재 수락된 친구가 경기별 댓글을 주고받는다. 다른 친구가 작성한 댓글도 해당 경기 접근 권한이 있으면 조회할 수 있다. 조회자와 양방향 차단 관계인 작성자의 댓글과 관리자가 숨긴 댓글은 목록에서 제외한다. 친구 해제·차단 후 해당 친구는 목록 조회, 새 댓글 작성/삭제 및 과거 성공 요청 재전송에 접근할 수 없다. 기존 댓글은 보존한다.
+경기 소유자와 현재 수락된 친구가 Bearer JWT로 댓글과 답글에 접근한다. 양방향 차단 관계인 작성자의 댓글은 표시하지 않으며, 부모가 차단으로 숨겨지면 그 답글도 표시하지 않는다. 경기 접근 권한은 멱등 재요청 시에도 확인한다.
 
 | ID | Method | 경로 (`/api/v1` 기준) | 성공 |
 | --- | --- | --- | --- |
 | COMMENT-01 | GET | `/matches/{matchId}/comments` | 200, 댓글 Page |
 | COMMENT-02 | POST | `/matches/{matchId}/comments` | 201, 댓글 Success, Location |
-| COMMENT-03 | DELETE | `/matches/{matchId}/comments/{commentId}` | 204, 본인 작성 댓글만 삭제 |
+| COMMENT-03 | DELETE | `/matches/{matchId}/comments/{commentId}` | 204, 응답 본문 없음 |
 
-GET은 `cursor`, `limit`(기본 20, 1~100)을 받는다. `createdAt/id` 내림차순이며 커서는 조회자·경기에 귀속된다. 공통 `meta.pagination`을 사용한다. 댓글 항목 필드는 `id`, `matchId`, `authorId`, `content`, `createdAt`(+09:00)이다.
+GET은 기본으로 최상위 댓글을 반환한다. `?parentCommentId={UUID}`를 지정하면 해당 부모의 답글을 반환한다. 조회 가능한 답글이 없으면 `data: []`를 반환한다. `limit`은 기본 20, 범위 1~100이며 `createdAt`, `id` 내림차순이다. 다음 페이지는 `meta.pagination.nextCursor`를 `cursor`로 보내고 같은 조회자·경기·목록 유형을 유지한다. 답글 목록은 같은 부모 ID도 유지한다.
 
-POST 본문은 `{"content":"좋은 경기였어!"}`다. `content`는 문자열, 공백만 제출 불가, Unicode 코드 포인트 기준 최대 1000자이며 앞뒤 공백은 저장 전에 제거한다. 누락·null·타입 오류·알 수 없는 필드는 `422 VALIDATION_FAILED`다. `authorId`는 인증 사용자로 결정한다.
+POST 본문 예시는 다음과 같다.
 
-POST/DELETE는 UUID `Idempotency-Key`가 필수이고 `If-Match`를 사용하지 않는다. 댓글은 경기 버전을 변경하지 않는다. 동일 키·동일 요청은 최초 응답을 재생하고 다른 본문은 `409 IDEMPOTENCY_KEY_REUSED`다. 접근 및 소유권 실패는 `404 RESOURCE_NOT_FOUND`, 잘못된 커서는 `400 INVALID_CURSOR`, 인증 없이는 401이다. DELETE 본문은 보내지 않는다.
+```json
+{"content":"다음 경기에도 같이 뛰어요!","parentCommentId":"00000000-0000-0000-0000-000000000002"}
+```
 
-배포 전 [V006__match_comments.sql](../db/mysql/migrations/V006__match_comments.sql)을 적용한다.
+`parentCommentId`가 없거나 `null`이면 최상위 댓글을 작성한다. 같은 경기의 삭제되지 않은 최상위 댓글에만 답글을 작성할 수 있다. 답글에 답글을 달 수 없다. `content`는 문자열이며 공백만 입력할 수 없다. 최대 Unicode 코드 포인트 1000자이고 앞뒤 공백은 저장 전에 제거한다. `authorId`는 인증 사용자로 결정한다.
+
+응답 항목에는 `id`, `matchId`, `authorId`, `content`, `createdAt`(+09:00)이 있다. `parentCommentId`는 답글에만 포함된다. `deletedAt`은 저장소 내부 필드다. 작성 성공 응답의 `data` 예시는 다음과 같다.
+
+```json
+{
+  "id": "00000000-0000-0000-0000-000000000003",
+  "matchId": "00000000-0000-0000-0000-000000000001",
+  "authorId": "00000000-0000-0000-0000-000000000004",
+  "content": "다음 경기에도 같이 뛰어요!",
+  "createdAt": "2026-11-16T19:00:00+09:00",
+  "parentCommentId": "00000000-0000-0000-0000-000000000002"
+}
+```
+
+DELETE는 본인이 작성한 댓글을 소프트 삭제한다. 삭제된 최상위 댓글은 조회 시 `[삭제된 댓글입니다]`로 표시되며 기존 답글은 유지된다. 새 답글 작성은 거절된다. 답글을 삭제하면 해당 답글만 목록에서 제외된다.
+
+POST·DELETE에는 UUID `Idempotency-Key`가 필요하다. `If-Match`는 허용되지 않으며 DELETE에는 요청 본문을 보내지 않는다. 댓글은 경기 버전을 변경하지 않는다. 같은 키로 동일 요청을 재전송하면 최초 상태·본문·헤더를 재생한다.
+
+| 상태 | 코드 및 조건 |
+| --- | --- |
+| 400 | `INVALID_REQUEST` — 잘못된 요청 형식·헤더 또는 범위를 벗어난 `limit`. `INVALID_CURSOR` — 잘못된 커서 형식·범위 |
+| 401 | `UNAUTHENTICATED`, `TOKEN_EXPIRED` |
+| 404 | `RESOURCE_NOT_FOUND` — 경기 접근 실패, 답글 작성에 사용할 수 없는 부모, 삭제할 댓글 없음·이미 삭제됨·작성자 불일치 |
+| 409 | `IDEMPOTENCY_KEY_REUSED` — 같은 키에 다른 요청. `REQUEST_IN_PROGRESS` — 기존 요청 처리 중 |
+| 415 | POST에 `application/json` 필요 |
+| 422 | `VALIDATION_FAILED` — POST의 `content`·`parentCommentId` 검증 실패 또는 알 수 없는 필드 |
+
+통합 배포 전 [마이그레이션 적용 순서](../db/mysql/migration-verification.md#경기-댓글-답글-및-신고)를 확인한다.
 
 ## 경기 댓글 신고
 
 | Method | 경로 (`/api/v1` 기준) | 요청 및 성공 |
 | --- | --- | --- |
 | POST | `/matches/{matchId}/comments/{commentId}/reports` | `reason` 필수, `detail` 선택 · 201, 신고 접수 |
-| GET | `/admin/comment-reports` | `status`는 `ALL`, `PENDING`(기본값), `PROCESSED` · 200, 신고 목록 |
+| GET | `/admin/comment-reports` | `status`, `cursor`, `limit` · 200, 신고 목록 |
 | GET | `/admin/comment-reports/{reportId}` | 200, 신고 상세 |
 | PATCH | `/admin/comment-reports/{reportId}` | `resolution` 필수 · 200, 처리 후 신고 상세 |
 
-신고 사유는 `SPAM`, `ABUSE`, `PERSONAL_INFORMATION`, `OTHER`다. 상세 설명은 Unicode 코드 포인트 기준 최대 1000자이며 공백뿐이면 저장값은 null이다. 신고자와 처리자는 인증 사용자로 결정한다. 신고 POST와 관리자 PATCH에는 `Idempotency-Key`와 `If-Match`가 필요 없다.
+모든 경로에 Bearer JWT가 필요하다. 신고는 현재 경기 접근 권한이 있는 사용자에게 허용된다. 관리자 경로는 활성 관리자만 접근할 수 있으며 미인증 요청은 401, 인증된 비관리자는 403을 받는다. 신고 POST와 관리자 PATCH에 `Idempotency-Key`나 `If-Match`는 필요하지 않다.
 
-관리자 목록은 `cursor`, `limit`(기본 20, 1~100)을 받고 접수 시각·신고 ID 내림차순으로 조회한다. 커서는 같은 필터에 사용한다. 성공 응답은 `data/meta`, 목록은 `meta.pagination`을 사용한다. 필드는 [응답 필드 사전](schemas.md#댓글-신고), 요청·응답 예시는 Swagger를 참고한다.
+일반 댓글과 답글 모두 각자의 `commentId`로 신고한다. 본인 댓글과 동일 신고자의 중복 신고는 거절한다. 대상 자체가 삭제·숨김 상태이거나 차단 관계로 볼 수 없으면 신고할 수 없다. 삭제된 부모의 기존 답글은 신고할 수 있다. 숨겨졌거나 차단으로 볼 수 없는 부모의 하위 답글은 신고할 수 없다.
+
+신고 요청 예시는 `{"reason":"SPAM","detail":"같은 광고를 반복 게시했습니다."}`이다. 사유는 `SPAM`, `ABUSE`, `PERSONAL_INFORMATION`, `OTHER` 중 하나다. `detail`은 Unicode 코드 포인트 1000자까지 허용하며 공백뿐이면 null로 저장한다.
+
+관리자 목록의 `status`는 `ALL`, `PENDING`(기본값), `PROCESSED`를 받는다. 접수 시각·신고 ID 내림차순으로 정렬한다. `limit`은 기본 20, 범위 1~100이며 커서는 발급받은 `status`에서만 유효하다. 응답 필드는 [댓글 신고 필드 사전](schemas.md#댓글-신고)을 참조한다.
+
+관리자 처리 요청 예시는 `{"resolution":"DELETED"}`이다.
+
+- `NO_ACTION`은 신고만 처리한다.
+- `HIDDEN`은 댓글과 하위 답글을 일반 조회·신고에서 제외한다. 댓글 행을 보존하며 삭제된 대상에 적용하면 신고를 미처리 상태로 유지하고 409를 반환한다.
+- `DELETED`는 소프트 삭제한다. 기존 답글과 신고 당시 원문 스냅샷을 보존한다. 이미 숨긴 스레드의 숨김 상태를 유지하며, 이미 삭제됐거나 없는 대상의 신고도 처리할 수 있다.
 
 | API | 오류 |
 | --- | --- |
-| 신고 POST | 400 `INVALID_REQUEST`, 401 `UNAUTHENTICATED`·`TOKEN_EXPIRED`, 404 `RESOURCE_NOT_FOUND`(접근 불가·삭제·숨김 포함), 409 `COMMENT_ALREADY_REPORTED`, 422 `SELF_REPORT_NOT_ALLOWED`·`VALIDATION_FAILED` |
-| 관리자 공통 | 400 `INVALID_REQUEST`, 401 `UNAUTHENTICATED`·`TOKEN_EXPIRED`, 403 `FORBIDDEN` |
+| 공통 | 400 `INVALID_REQUEST`, 401 `UNAUTHENTICATED`·`TOKEN_EXPIRED` |
+| 신고 POST | 404 `RESOURCE_NOT_FOUND`(경기 접근 불가 또는 대상 비가시), 409 `COMMENT_ALREADY_REPORTED`, 422 `SELF_REPORT_NOT_ALLOWED`·`VALIDATION_FAILED` |
+| 관리자 공통 | 403 `FORBIDDEN` |
 | 관리자 목록 | 400 `INVALID_CURSOR` |
 | 관리자 상세·처리 | 404 `RESOURCE_NOT_FOUND` |
 | 관리자 처리 | 409 `REPORT_ALREADY_PROCESSED`·`COMMENT_ALREADY_DELETED`, 422 `VALIDATION_FAILED` |
+| 신고 POST·관리자 PATCH | 415 (`application/json` 필요) |

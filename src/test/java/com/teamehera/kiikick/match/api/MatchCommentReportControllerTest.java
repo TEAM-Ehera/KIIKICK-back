@@ -127,6 +127,48 @@ class MatchCommentReportControllerTest {
                 .andExpect(jsonPath("$.error.details.fields[0]").value("reporterId"));
     }
 
+    @Test
+    void repliesRemainReportableAfterParentDeletion() throws Exception {
+        var reply = UUID.randomUUID();
+        comments.save(new Comment(reply, match, author, "답글 원문", NOW, comment, null));
+        mvc.perform(request(reply, VALID_BODY).with(bearer(tokens, author)))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.error.code").value("SELF_REPORT_NOT_ALLOWED"));
+
+        comments.softDelete(match, comment, author, NOW.plusSeconds(1));
+        mvc.perform(request(comment, VALID_BODY).with(bearer(tokens, reporter)))
+                .andExpect(status().isNotFound());
+        String body = mvc.perform(request(reply, VALID_BODY).with(bearer(tokens, reporter)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.commentId").value(reply.toString()))
+                .andReturn().getResponse().getContentAsString();
+        UUID reportId = UUID.fromString(json.readTree(body).at("/data/id").stringValue());
+        assertThat(reports.findById(reportId).orElseThrow().commentContent()).isEqualTo("답글 원문");
+        mvc.perform(request(reply, VALID_BODY).with(bearer(tokens, reporter)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("COMMENT_ALREADY_REPORTED"));
+        comments.softDelete(match, reply, author, NOW.plusSeconds(2));
+        mvc.perform(request(reply, VALID_BODY).with(bearer(tokens, reporter)))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void hiddenParentAndHiddenReplyCannotBeReported() throws Exception {
+        var hiddenReply = UUID.randomUUID();
+        var visibleReply = UUID.randomUUID();
+        comments.save(new Comment(hiddenReply, match, author, "숨길 답글", NOW, comment, null));
+        comments.save(new Comment(visibleReply, match, author, "일반 답글", NOW, comment, null));
+        comments.hide(hiddenReply, NOW.plusSeconds(1));
+        mvc.perform(request(hiddenReply, VALID_BODY).with(bearer(tokens, reporter)))
+                .andExpect(status().isNotFound());
+
+        comments.hide(comment, NOW.plusSeconds(2));
+        mvc.perform(request(comment, VALID_BODY).with(bearer(tokens, reporter)))
+                .andExpect(status().isNotFound());
+        mvc.perform(request(visibleReply, VALID_BODY).with(bearer(tokens, reporter)))
+                .andExpect(status().isNotFound());
+    }
+
     private MockHttpServletRequestBuilder request(UUID commentId, String body) {
         return post(PATH, match, commentId).contentType("application/json").content(body);
     }

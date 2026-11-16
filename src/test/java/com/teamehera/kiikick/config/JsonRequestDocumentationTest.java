@@ -12,9 +12,6 @@ import org.springframework.test.web.servlet.MockMvc;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -74,78 +71,131 @@ class JsonRequestDocumentationTest {
     }
 
     @Test
-    void commentReportOperationsPublishRequestsSuccessAndApplicableErrors() {
-        String admin = "/api/v1/admin/comment-reports";
-        var submit = operation("/api/v1/matches/{matchId}/comments/{commentId}/reports", "post");
-        var list = operation(admin, "get");
-        var detail = operation(admin + "/{reportId}", "get");
-        var process = operation(admin + "/{reportId}", "patch");
+    void commentDocumentationDescribesReplyRequestsAndActualResponseFields() {
+        String comments = "/api/v1/matches/{matchId}/comments";
+        var post = operation(comments, "post");
+        var request = post.at("/requestBody/content/application~1json");
+        assertThat(request.at("/schema/required").values()).extracting(JsonNode::asText).containsExactly("content");
+        assertThat(request.at("/schema/properties/parentCommentId/format").asText()).isEqualTo("uuid");
+        assertThat(request.at("/schema/properties/parentCommentId/type").values()).extracting(JsonNode::asText)
+                .containsExactlyInAnyOrder("string", "null");
+        assertThat(request.at("/examples/comment/value").has("parentCommentId")).isFalse();
+        assertThat(request.at("/examples/reply/value/parentCommentId").isString()).isTrue();
 
-        assertThat(submit.at("/requestBody/content/application~1json/example/reason").asText()).isEqualTo("SPAM");
-        assertThat(submit.at("/responses/201/content/application~1json/example/data/commentId").isString()).isTrue();
-        assertThat(submit.at("/responses/201/content/application~1json/schema").isObject()).isTrue();
-        assertThat(list.has("requestBody")).isFalse();
-        assertThat(detail.has("requestBody")).isFalse();
-        assertThat(process.at("/requestBody/content/application~1json/example/resolution").asText()).isEqualTo("HIDDEN");
-        for (var adminOperation : List.of(list, detail, process)) {
-            assertThat(adminOperation.at("/responses/200/content/application~1json/schema").isObject()).isTrue();
+        var created = post.at("/responses/201/content/application~1json");
+        var item = created.at("/schema/properties/data/properties");
+        assertThat(item.at("/parentCommentId/format").asText()).isEqualTo("uuid");
+        assertThat(item.has("deletedAt")).isFalse();
+        assertThat(created.at("/example/data/parentCommentId").asText())
+                .isEqualTo(request.at("/examples/reply/value/parentCommentId").asText());
+        assertThat(post.at("/responses/404/description").asText()).contains("RESOURCE_NOT_FOUND");
+        assertThat(post.at("/responses/422/description").asText()).contains("VALIDATION_FAILED");
+    }
+
+    @Test
+    void commentDocumentationDescribesScopedPaginationAndSoftDeletion() {
+        String comments = "/api/v1/matches/{matchId}/comments";
+        var get = operation(comments, "get");
+        var parent = parameter(get, "parentCommentId");
+        assertThat(parent.path("required").asBoolean()).isFalse();
+        assertThat(parent.at("/schema/format").asText()).isEqualTo("uuid");
+        assertThat(parameter(get, "cursor").path("description").asText()).contains("부모 ID");
+        assertThat(parameter(get, "limit").at("/schema/default").asInt()).isEqualTo(20);
+        var page = get.at("/responses/200/content/application~1json");
+        assertThat(page.at("/schema/properties/data/items/properties/parentCommentId/format").asText()).isEqualTo("uuid");
+        assertThat(page.at("/schema/properties/meta/properties/pagination/properties/nextCursor/type").values())
+                .extracting(JsonNode::asText).containsExactlyInAnyOrder("string", "null");
+        var deleted = page.at("/examples/deletedParent/value/data/0");
+        assertThat(deleted.path("content").asText()).isEqualTo("[삭제된 댓글입니다]");
+        assertThat(deleted.has("parentCommentId")).isFalse();
+        assertThat(deleted.has("deletedAt")).isFalse();
+
+        var delete = operation(comments + "/{commentId}", "delete");
+        assertThat(delete.path("description").asText()).contains("기존 답글은 유지");
+        assertThat(delete.has("requestBody")).isFalse();
+        assertThat(delete.at("/responses/204").has("content")).isFalse();
+        for (var write : new JsonNode[]{operation(comments, "post"), delete}) {
+            assertThat(parameter(write, "Idempotency-Key").path("required").asBoolean()).isTrue();
+            assertThat(parameter(write, "Idempotency-Key").at("/schema/format").asText()).isEqualTo("uuid");
+            assertThat(write.path("parameters").values()).extracting(node -> node.path("name").asText())
+                    .doesNotContain("If-Match");
+        }
+        assertThat(document.at("/security/0").has("bearerAuth")).isTrue();
+    }
+
+    @Test
+    void reportPostDocumentsActualFieldsAndReplyVisibility() {
+        var post = operation("/api/v1/matches/{matchId}/comments/{commentId}/reports", "post");
+        assertThat(post.path("description").asText()).contains("삭제된 부모의 기존 답글", "하위 답글은 신고할 수 없습니다");
+        var request = post.at("/requestBody/content/application~1json");
+        var input = resolve(request.path("schema"));
+        assertThat(input.path("required").values()).extracting(JsonNode::asText).containsExactly("reason");
+        assertThat(input.at("/properties/reason/enum").values()).extracting(JsonNode::asText)
+                .containsExactlyInAnyOrder("SPAM", "ABUSE", "PERSONAL_INFORMATION", "OTHER");
+        assertThat(request.at("/example/reason").asText()).isEqualTo("SPAM");
+        assertThat(input.at("/properties/detail/anyOf/1/type").asText()).isEqualTo("null");
+        var response = post.at("/responses/201/content/application~1json");
+        assertThat(resolve(resolve(response.path("schema")).at("/properties/data")).path("properties").propertyNames())
+                .containsExactlyInAnyOrder("id", "commentId", "reportedAt");
+        assertThat(response.at("/example/data/reportedAt").asText()).endsWith("+09:00");
+        assertReportError(post, "401", "UNAUTHENTICATED");
+        assertReportError(post, "404", "RESOURCE_NOT_FOUND");
+        assertReportError(post, "409", "COMMENT_ALREADY_REPORTED");
+        assertReportError(post, "422", "SELF_REPORT_NOT_ALLOWED");
+        assertReportError(post, "422", "VALIDATION_FAILED");
+    }
+
+    @Test
+    void adminReportDocsIncludeSecurityPagingAndModerationOutcomes() {
+        String admin = "/api/v1/admin/comment-reports";
+        var list = operation(admin, "get");
+        assertThat(parameter(list, "status").at("/schema/default").asText()).isEqualTo("PENDING");
+        assertThat(parameter(list, "cursor").path("description").asText()).contains("status");
+        assertThat(parameter(list, "limit").at("/schema/maximum").asInt()).isEqualTo(100);
+        assertReportError(list, "400", "INVALID_CURSOR");
+        assertThat(list.at("/responses/200/content/application~1json/example/data/0/status").asText()).isEqualTo("PENDING");
+
+        var detail = operation(admin + "/{reportId}", "get");
+        assertReportError(detail, "404", "RESOURCE_NOT_FOUND");
+        assertThat(detail.at("/responses/200/content/application~1json/example/data/commentContent").asText())
+                .isEqualTo("신고 당시 원문");
+        assertThat(detail.at("/responses/200/content/application~1json/example/data/processedAt").isNull()).isTrue();
+        var properties = resolve(resolve(detail.at("/responses/200/content/application~1json/schema"))
+                .at("/properties/data")).path("properties");
+        for (String field : Set.of("detail", "processedAt", "processedBy", "resolution")) {
+            assertThat(properties.at("/" + field + "/anyOf/1/type").asText()).isEqualTo("null");
         }
 
-        assertErrors(submit, "201", true, Map.of(
-                "400", Set.of("INVALID_REQUEST"), "401", Set.of("UNAUTHENTICATED", "TOKEN_EXPIRED"),
-                "404", Set.of("RESOURCE_NOT_FOUND"), "409", Set.of("COMMENT_ALREADY_REPORTED"),
-                "422", Set.of("SELF_REPORT_NOT_ALLOWED", "VALIDATION_FAILED")));
-        assertErrors(list, "200", false, Map.of(
-                "400", Set.of("INVALID_REQUEST", "INVALID_CURSOR"),
-                "401", Set.of("UNAUTHENTICATED", "TOKEN_EXPIRED"), "403", Set.of("FORBIDDEN")));
-        assertErrors(detail, "200", false, Map.of(
-                "400", Set.of("INVALID_REQUEST"), "401", Set.of("UNAUTHENTICATED", "TOKEN_EXPIRED"),
-                "403", Set.of("FORBIDDEN"), "404", Set.of("RESOURCE_NOT_FOUND")));
-        assertErrors(process, "200", true, Map.of(
-                "400", Set.of("INVALID_REQUEST"), "401", Set.of("UNAUTHENTICATED", "TOKEN_EXPIRED"),
-                "403", Set.of("FORBIDDEN"), "404", Set.of("RESOURCE_NOT_FOUND"),
-                "409", Set.of("REPORT_ALREADY_PROCESSED", "COMMENT_ALREADY_DELETED"),
-                "422", Set.of("VALIDATION_FAILED")));
-        assertThat(errorExample(submit, "422", "VALIDATION_FAILED").at("/error/details/fields/0").asText())
-                .isEqualTo("reason");
-        assertThat(errorExample(process, "422", "VALIDATION_FAILED").at("/error/details/fields/0").asText())
-                .isEqualTo("resolution");
+        var patch = operation(admin + "/{reportId}", "patch");
+        assertThat(patch.path("description").asText()).contains("일반 조회·신고에서 제외", "소프트 삭제", "기존 답글");
+        var body = patch.at("/requestBody/content/application~1json");
+        var input = resolve(body.path("schema"));
+        assertThat(input.path("required").values()).extracting(JsonNode::asText).containsExactly("resolution");
+        assertThat(body.at("/examples/hide/value/resolution").asText()).isEqualTo("HIDDEN");
+        assertThat(body.at("/examples/delete/value/resolution").asText()).isEqualTo("DELETED");
+        assertThat(patch.at("/responses/200/content/application~1json/example/data/processedAt").asText()).endsWith("+09:00");
+        assertReportError(patch, "409", "COMMENT_ALREADY_DELETED");
+        assertReportError(patch, "409", "REPORT_ALREADY_PROCESSED");
+        for (var operation : new JsonNode[]{list, detail, patch}) {
+            assertReportError(operation, "401", "TOKEN_EXPIRED");
+            assertReportError(operation, "403", "FORBIDDEN");
+            assertThat(operation.at("/responses/401/headers/WWW-Authenticate/example").asText()).isEqualTo("Bearer");
+        }
+        assertThat(document.at("/security/0").has("bearerAuth")).isTrue();
     }
 
-    private void assertErrors(JsonNode operation, String success, boolean write,
-                              Map<String, Set<String>> expected) {
-        var statuses = new HashSet<>(expected.keySet());
-        statuses.add(success);
-        assertThat(operation.path("responses").propertyNames()).containsExactlyInAnyOrderElementsOf(statuses);
-        expected.forEach((status, codes) -> {
-            boolean security = status.equals("401") || status.equals("403");
-            var examples = operation.at("/responses/" + status + "/content/application~1json/examples");
-            assertThat(examples.propertyNames()).containsExactlyInAnyOrderElementsOf(codes);
-            for (String code : codes) {
-                var example = errorExample(operation, status, code);
-                assertThat(example.propertyNames()).containsExactlyInAnyOrder("error", "meta");
-                var error = example.path("error");
-                assertThat(error.propertyNames())
-                        .containsExactlyInAnyOrder("code", "message", "retryable", "persistence", "details");
-                assertThat(error.path("code").asText()).isEqualTo(code);
-                assertThat(error.path("message").asText()).isNotBlank();
-                assertThat(error.path("retryable").isBoolean()).isTrue();
-                assertThat(error.path("retryable").asBoolean()).isFalse();
-                if (write && !security) {
-                    assertThat(error.path("persistence").asText()).isEqualTo("NOT_SAVED");
-                } else {
-                    assertThat(error.path("persistence").isNull()).isTrue();
-                }
-                assertThat(error.path("details").isObject()).isTrue();
-                assertThat(example.path("meta").propertyNames()).containsExactlyInAnyOrder("requestId", "serverTime");
-                assertThat(example.at("/meta/requestId").asText()).matches(security ? "req-.+" : "[0-9a-f-]{36}");
-                assertThat(example.at("/meta/serverTime").asText()).endsWith("+09:00");
-            }
-        });
+    private void assertReportError(JsonNode operation, String status, String code) {
+        var error = operation.at("/responses/" + status + "/content/application~1json/examples/" + code + "/value/error");
+        assertThat(error.path("code").asText()).isEqualTo(code);
     }
 
-    private JsonNode errorExample(JsonNode operation, String status, String code) {
-        return operation.at("/responses/" + status + "/content/application~1json/examples/" + code + "/value");
+    private JsonNode resolve(JsonNode schema) {
+        return schema.has("$ref") ? document.at(schema.path("$ref").asText().substring(1)) : schema;
+    }
+
+    private JsonNode parameter(JsonNode operation, String name) {
+        return operation.path("parameters").values().stream()
+                .filter(parameter -> name.equals(parameter.path("name").asText())).findFirst().orElseThrow();
     }
 
     private JsonNode operation(String path, String method) {

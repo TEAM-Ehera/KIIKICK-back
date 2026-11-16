@@ -61,6 +61,7 @@ class CommentReportMySqlIntegrationTest {
     private final UUID admin = UUID.randomUUID();
     private final UUID match = UUID.randomUUID();
     private final UUID comment = UUID.randomUUID();
+    private final UUID reply = UUID.randomUUID();
 
     @BeforeEach
     void seed() {
@@ -75,7 +76,9 @@ class CommentReportMySqlIntegrationTest {
 
     @AfterEach
     void cleanFixtures() {
-        jdbc.update("DELETE FROM match_comment_reports WHERE comment_id = ?", uuidToBytes(comment));
+        jdbc.update("DELETE FROM match_comment_reports WHERE comment_id IN (?, ?)",
+                uuidToBytes(comment), uuidToBytes(reply));
+        jdbc.update("DELETE FROM match_comments WHERE match_id = ? AND parent_comment_id IS NOT NULL", uuidToBytes(match));
         jdbc.update("DELETE FROM matches WHERE id = ?", uuidToBytes(match));
         jdbc.update("DELETE FROM users WHERE id IN (?, ?, ?)", uuidToBytes(author), uuidToBytes(reporter), uuidToBytes(admin));
     }
@@ -122,7 +125,7 @@ class CommentReportMySqlIntegrationTest {
     }
 
     @Test
-    void hidesAndDeletesCommentsWhilePreservingReports() {
+    void hidingThenSoftDeletingPreservesHiddenStateAndReportSnapshots() {
         var hidden = report(reporter);
         var remaining = report(admin);
         reports.save(hidden);
@@ -132,9 +135,31 @@ class CommentReportMySqlIntegrationTest {
         assertThat(comments.page(match, reporter, null, null, 10)).isEmpty();
         assertThat(reports.findById(remaining.id())).contains(remaining);
         assertThat(moderation.process(remaining.id(), admin, Resolution.DELETED).resolution()).isEqualTo(Resolution.DELETED);
-        assertThat(comments.findByIdForUpdate(comment)).isEmpty();
+        var deleted = comments.findByIdForUpdate(comment).orElseThrow();
+        assertThat(deleted.deletedAt()).isNotNull();
+        assertThat(deleted.hiddenAt()).isNotNull();
+        assertThat(deleted.content()).isNull();
         assertThat(reports.findById(hidden.id()).orElseThrow().commentContent()).isEqualTo(hidden.commentContent());
         assertThat(reports.findById(remaining.id()).orElseThrow().commentContent()).isEqualTo(remaining.commentContent());
+    }
+
+    @Test
+    void softDeletedParentKeepsExistingRepliesVisibleAndReportable() {
+        var pending = report(reporter);
+        reports.save(pending);
+        comments.save(new Comment(reply, match, author, "답글 원문", NOW, comment, null));
+
+        assertThat(moderation.process(pending.id(), admin, Resolution.DELETED).resolution()).isEqualTo(Resolution.DELETED);
+        assertThat(comments.pageTopLevel(match, reporter, null, null, 10)).singleElement().satisfies(parent -> {
+            assertThat(parent.deletedAt()).isNotNull();
+            assertThat(parent.hiddenAt()).isNull();
+            assertThat(parent.content()).isNull();
+        });
+        assertThat(comments.findReplyParentForUpdate(match, comment, reporter)).isEmpty();
+        assertThat(comments.pageReplies(match, comment, reporter, null, null, 10))
+                .extracting(Comment::id).containsExactly(reply);
+        assertThat(submissions.submit(reporter, match, reply, "SPAM", null).commentContent()).isEqualTo("답글 원문");
+        assertThat(reports.findById(pending.id()).orElseThrow().commentContent()).isEqualTo(pending.commentContent());
     }
 
     @Test

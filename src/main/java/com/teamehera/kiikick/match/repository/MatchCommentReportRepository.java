@@ -10,7 +10,8 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-import static com.teamehera.kiikick.global.jdbc.JdbcValueConverter.*;
+import static com.teamehera.kiikick.global.jdbc.JdbcValueConverter.bytesToUuid;
+import static com.teamehera.kiikick.global.jdbc.JdbcValueConverter.uuidToBytes;
 
 @Repository
 public class MatchCommentReportRepository {
@@ -21,7 +22,7 @@ public class MatchCommentReportRepository {
                 bytesToUuid(rs.getBytes("id")), bytesToUuid(rs.getBytes("reporter_id")),
                 bytesToUuid(rs.getBytes("comment_author_id")), bytesToUuid(rs.getBytes("comment_id")),
                 rs.getString("comment_content"), rs.getString("reason"), rs.getString("detail"),
-                rs.getTimestamp("reported_at").toLocalDateTime(), nullableDateTime(rs, "processed_at"),
+                rs.getObject("reported_at", LocalDateTime.class), rs.getObject("processed_at", LocalDateTime.class),
                 bytesToUuid(rs.getBytes("processed_by")),
                 resolution == null ? null : Resolution.valueOf(resolution)
         );
