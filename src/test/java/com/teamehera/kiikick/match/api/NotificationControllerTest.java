@@ -100,6 +100,34 @@ class NotificationControllerTest {
     }
 
     @Test
+    void deletedMatchNotificationsAreHiddenAndCannotBeMarkedReadOrReplayed() throws Exception {
+        UUID removed = createMatch(actor);
+        UUID active = createMatch(actor);
+        var now = LocalDateTime.of(2026, 11, 4, 0, 0);
+        UUID visible = notify(actor, active, now);
+        UUID unread = notify(actor, removed, now.plusSeconds(1));
+        UUID read = notify(actor, removed, now.plusSeconds(2));
+        String readPath = NOTIFICATIONS + "/" + read + "/read";
+        UUID readKey = UUID.randomUUID();
+        mvc.perform(put(readPath).with(bearer(accessTokens, actor)).header("Idempotency-Key", readKey))
+                .andExpect(status().isOk());
+        assertCount(2);
+
+        mvc.perform(write(delete("/api/v1/matches/" + removed), actor).header("If-Match", "\"1\""))
+                .andExpect(status().isNoContent());
+
+        mvc.perform(get(NOTIFICATIONS).with(bearer(accessTokens, actor)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.length()").value(1))
+                .andExpect(jsonPath("$.data[0].id").value(visible.toString()));
+        assertCount(1);
+        mvc.perform(write(put(NOTIFICATIONS + "/" + unread + "/read"), actor))
+                .andExpect(status().isNotFound());
+        mvc.perform(put(readPath).with(bearer(accessTokens, actor)).header("Idempotency-Key", readKey))
+                .andExpect(status().isNotFound());
+        assertNull(notifications.findByIdAndRecipientId(unread, actor).orElseThrow().readAt());
+    }
+
+    @Test
     void blockedFriendRequestNotificationCannotBeReplayed() throws Exception {
         var time = LocalDateTime.of(2026, 11, 4, 0, 0);
         UUID request = UUID.randomUUID();

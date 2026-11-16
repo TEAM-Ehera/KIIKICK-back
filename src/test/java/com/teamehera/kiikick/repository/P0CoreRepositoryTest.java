@@ -15,14 +15,20 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.jdbc.test.autoconfigure.JdbcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
+import static com.teamehera.kiikick.global.jdbc.JdbcValueConverter.uuidToBytes;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @JdbcTest
 @Import({
@@ -35,6 +41,83 @@ class P0CoreRepositoryTest {
     @Autowired VenueRepository venueRepository;
     @Autowired MatchRepository matchRepository;
     @Autowired QuarterRepository quarterRepository;
+    @Autowired JdbcTemplate jdbc;
+
+    @Test
+    void softDeleteRequiresOwnerAndVersionAndPreservesTheMatchRow() {
+        UUID owner = UUID.randomUUID();
+        UUID other = UUID.randomUUID();
+        UUID venue = UUID.randomUUID();
+        UUID id = UUID.randomUUID();
+        LocalDateTime time = LocalDateTime.of(2026, 11, 4, 0, 0);
+        userRepository.save(owner, null);
+        userRepository.save(other, null);
+        venueRepository.save(new Venue(venue, owner, "풋살장", null, time, time));
+        var match = new Match(id, owner, venue, null, null, null,
+                null, "DRAFT", null, null, 7, time, time);
+        matchRepository.save(match);
+
+        assertTrue(matchRepository.findDeletionStateForUpdate(id, other).isEmpty());
+        assertEquals(0, matchRepository.softDelete(id, other, 7));
+        assertEquals(0, matchRepository.softDelete(id, owner, 6));
+        assertEquals(new MatchRepository.DeletionState(7, null),
+                matchRepository.findDeletionStateForUpdate(id, owner).orElseThrow());
+
+        assertEquals(1, matchRepository.softDelete(id, owner, 7));
+        var deleted = matchRepository.findDeletionStateForUpdate(id, owner).orElseThrow();
+        assertNotNull(deleted.deletedAt());
+        assertEquals(8, deleted.version());
+        assertEquals(deleted.deletedAt(), jdbc.queryForObject(
+                "SELECT updated_at FROM matches WHERE id = ?", LocalDateTime.class, uuidToBytes(id)));
+        assertAll(
+                () -> assertTrue(matchRepository.existsById(id)),
+                () -> assertFalse(matchRepository.existsById(UUID.randomUUID())),
+                () -> assertTrue(matchRepository.findById(id).isEmpty()),
+                () -> assertTrue(matchRepository.findByIdAndOwnerId(id, owner).isEmpty()),
+                () -> assertTrue(matchRepository.findByIdAndOwnerIdForUpdate(id, owner).isEmpty()),
+                () -> assertEquals(0, matchRepository.softDelete(id, owner, 8)),
+                () -> assertEquals(0, matchRepository.updateSettings(match, 8)),
+                () -> assertEquals(0, matchRepository.updateStatus(id, owner, 8, "DRAFT", "READY", null, null)),
+                () -> assertEquals(0, matchRepository.incrementVersion(id, owner, 8))
+        );
+        matchRepository.detachVenue(venue);
+        assertEquals(deleted, matchRepository.findDeletionStateForUpdate(id, owner).orElseThrow());
+    }
+
+    @Test
+    void deletedCompletedMatchIsSkippedByPagesAndQuarterLookups() {
+        UUID owner = UUID.randomUUID();
+        UUID newest = UUID.randomUUID();
+        UUID removed = UUID.randomUUID();
+        UUID oldest = UUID.randomUUID();
+        UUID quarter = UUID.randomUUID();
+        LocalDateTime time = LocalDateTime.of(2026, 11, 4, 0, 0);
+        userRepository.save(owner, null);
+        matchRepository.save(new Match(newest, owner, null, null, null, null,
+                null, "COMPLETED", null, null, 1, time.plusDays(1), time.plusDays(1)));
+        matchRepository.save(new Match(removed, owner, null, null, null, null,
+                null, "COMPLETED", null, null, 1, time, time));
+        matchRepository.save(new Match(oldest, owner, null, null, null, null,
+                null, "COMPLETED", null, null, 1, time.minusDays(1), time.minusDays(1)));
+        var savedQuarter = new Quarter(quarter, removed, 1, 60, "COMPLETED", null, null, time, time);
+        quarterRepository.save(savedQuarter);
+        assertEquals(savedQuarter, quarterRepository.findByIdAndOwnerId(quarter, owner).orElseThrow());
+
+        assertEquals(1, matchRepository.softDelete(removed, owner, 1));
+        assertEquals(List.of(newest, oldest), matchRepository.findPageByOwnerId(owner, null, 2)
+                .stream().map(Match::id).toList());
+        assertEquals(List.of(oldest),
+                matchRepository.findPageByOwnerId(owner, "COMPLETED", time.plusDays(1), newest, 1)
+                        .stream().map(Match::id).toList());
+        assertAll(
+                () -> assertTrue(quarterRepository.findByIdAndOwnerId(quarter, owner).isEmpty()),
+                () -> assertTrue(quarterRepository.findByIdAndMatchId(quarter, removed).isEmpty()),
+                () -> assertTrue(quarterRepository.findByMatchId(removed, 10).isEmpty()),
+                () -> assertTrue(quarterRepository.findPageAfter(removed, 0, quarter, 10).isEmpty()),
+                () -> assertEquals(1, jdbc.queryForObject(
+                        "SELECT COUNT(*) FROM quarters WHERE id = ?", Integer.class, uuidToBytes(quarter)))
+        );
+    }
 
     @Test
     void matchListUsesOwnerStatusAndBothCursorSortKeys() {

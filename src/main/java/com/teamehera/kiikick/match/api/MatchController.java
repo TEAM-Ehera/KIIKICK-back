@@ -11,6 +11,12 @@ import com.teamehera.kiikick.match.service.QuarterLifecycleService;
 import com.teamehera.kiikick.match.service.QuarterPositionService;
 import com.teamehera.kiikick.match.service.QuarterSettingsService;
 import com.teamehera.kiikick.match.service.QuarterStatsService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.headers.Header;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -112,6 +118,36 @@ public class MatchController {
                 PATH + "/" + matchId, key(key), ifMatch, body);
         return replay(mutation.execute(request, expiresAt(), match -> {}, match ->
                 serialize(settings.update(match, MatchSettings.parse(json, body)), 200)));
+    }
+
+    @Operation(summary = "내 경기 삭제",
+            description = "모든 상태의 경기를 삭제할 수 있습니다. 같은 키와 If-Match로 재시도하면 최초 204와 ETag를 반환합니다.",
+            responses = {
+                    @ApiResponse(responseCode = "204", description = "삭제 완료", content = @Content,
+                            headers = @Header(name = HttpHeaders.ETAG, description = "새 경기 버전",
+                                    schema = @Schema(type = "string"))),
+                    @ApiResponse(responseCode = "400", description = "잘못된 요청 또는 멱등 키"),
+                    @ApiResponse(responseCode = "401", description = "인증 필요"),
+                    @ApiResponse(responseCode = "404", description = "접근 가능한 경기를 찾을 수 없음"),
+                    @ApiResponse(responseCode = "409", description = "멱등 키 충돌"),
+                    @ApiResponse(responseCode = "412", description = "경기 버전 불일치"),
+                    @ApiResponse(responseCode = "428", description = "If-Match 누락")
+            })
+    @DeleteMapping("/{matchId}")
+    public ResponseEntity<String> deleteMatch(
+            Principal principal, @PathVariable UUID matchId,
+            @Parameter(required = true, schema = @Schema(format = "uuid"))
+            @RequestHeader(value = "Idempotency-Key", required = false) String key,
+            @Parameter(required = true)
+            @RequestHeader(value = HttpHeaders.IF_MATCH, required = false) String ifMatch,
+            @RequestBody(required = false) byte[] body) {
+        UUID actor = actor(principal);
+        if (body != null) {
+            throw new InvalidRequest();
+        }
+        var request = new MatchMutation.Request(actor, matchId, "DELETE", PATH + "/" + matchId,
+                key(key), ifMatch, null);
+        return replay(mutation.executeDelete(request, expiresAt(), this::noContent));
     }
 
     @PostMapping("/{matchId}/{action:ready|start|cancel|end}")
@@ -264,9 +300,13 @@ public class MatchController {
         return replay(mutation.execute(request, expiresAt(), match -> {},
                 match -> ownership.requireQuarter(actor, matchId, quarterId), match -> {
                     long version = quarters.delete(match, quarterId);
-                    return new MatchMutation.Response(204,
-                            json.writeValueAsString(Map.of(HttpHeaders.ETAG, MatchMutation.etag(version))), null);
+                    return noContent(version);
                 }));
+    }
+
+    private MatchMutation.Response noContent(long version) {
+        return new MatchMutation.Response(204,
+                json.writeValueAsString(Map.of(HttpHeaders.ETAG, MatchMutation.etag(version))), null);
     }
 
     private static String quarterPath(UUID matchId) {

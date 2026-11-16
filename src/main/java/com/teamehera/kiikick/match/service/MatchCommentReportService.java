@@ -3,6 +3,7 @@ package com.teamehera.kiikick.match.service;
 import com.teamehera.kiikick.match.repository.MatchCommentReportRepository;
 import com.teamehera.kiikick.match.repository.MatchCommentReportRepository.Report;
 import com.teamehera.kiikick.match.repository.MatchCommentRepository;
+import com.teamehera.kiikick.match.repository.MatchRepository;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,25 +20,30 @@ public class MatchCommentReportService {
     private static final String REPORTER_COMMENT_UNIQUE = "uq_match_comment_reports_reporter_comment";
 
     private final MatchSocialAccess access;
+    private final MatchRepository matches;
     private final MatchCommentRepository comments;
     private final MatchCommentReportRepository reports;
 
-    public MatchCommentReportService(MatchSocialAccess access, MatchCommentRepository comments,
-                                     MatchCommentReportRepository reports) {
+    public MatchCommentReportService(MatchSocialAccess access, MatchRepository matches,
+                                     MatchCommentRepository comments, MatchCommentReportRepository reports) {
         this.access = access;
+        this.matches = matches;
         this.comments = comments;
         this.reports = reports;
     }
 
     @Transactional
     public Report submit(UUID reporterId, UUID matchId, UUID commentId, String reason, String detail) {
-        access.requireVisibleMatch(reporterId, matchId);
+        var match = access.requireVisibleMatch(reporterId, matchId);
         Reason reportReason = parseReason(reason);
         if (detail != null && detail.codePointCount(0, detail.length()) > MAX_DETAIL_LENGTH) {
             throw new InvalidInput("detail");
         }
         String reportDetail = detail == null || detail.isBlank() ? null : detail;
 
+        // Recheck under the match lock before locking the comment so deletion and reporting are serialized.
+        matches.findByIdAndOwnerIdForUpdate(matchId, match.ownerId())
+                .orElseThrow(MatchOwnership.ResourceNotFound::new);
         var comment = comments.findReportableForUpdate(matchId, commentId, reporterId)
                 .orElseThrow(MatchOwnership.ResourceNotFound::new);
         if (reporterId.equals(comment.authorId())) {

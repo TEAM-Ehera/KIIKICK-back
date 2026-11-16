@@ -8,21 +8,30 @@ import com.teamehera.kiikick.match.repository.MatchCommentReportRepository;
 import com.teamehera.kiikick.match.repository.MatchCommentRepository;
 import com.teamehera.kiikick.match.repository.MatchCommentRepository.Comment;
 import com.teamehera.kiikick.match.repository.MatchRepository;
+import com.teamehera.kiikick.match.service.MatchSocialAccess;
 import com.teamehera.kiikick.user.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import static com.teamehera.kiikick.auth.security.TestJwtRequests.bearer;
+import static com.teamehera.kiikick.global.jdbc.JdbcValueConverter.uuidToBytes;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.doAnswer;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -43,6 +52,8 @@ class MatchCommentReportControllerTest {
     @Autowired MatchCommentRepository comments;
     @Autowired MatchCommentReportRepository reports;
     @Autowired FriendPairRepository friends;
+    @Autowired JdbcTemplate jdbc;
+    @MockitoSpyBean MatchSocialAccess access;
 
     private final UUID author = UUID.randomUUID();
     private final UUID reporter = UUID.randomUUID();
@@ -60,6 +71,34 @@ class MatchCommentReportControllerTest {
         matches.save(new Match(match, author, null, "친구 경기", null, null, null, "COMPLETED",
                 NOW, NOW.plusHours(1), 1, NOW, NOW));
         comments.save(new Comment(comment, match, author, "신고 대상 댓글", NOW));
+    }
+
+    @Test
+    void reportCannotBeCreatedIfMatchIsDeletedAfterInitialVisibilityCheck() throws Exception {
+        var visibilityChecked = new CountDownLatch(1);
+        var deletionFinished = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            var visible = invocation.callRealMethod();
+            visibilityChecked.countDown();
+            assertThat(deletionFinished.await(10, TimeUnit.SECONDS)).isTrue();
+            return visible;
+        }).when(access).requireVisibleMatch(reporter, match);
+
+        try (var executor = Executors.newSingleThreadExecutor()) {
+            var submission = executor.submit(() -> mvc.perform(request(comment, VALID_BODY).with(bearer(tokens, reporter)))
+                    .andReturn().getResponse().getStatus());
+            try {
+                assertThat(visibilityChecked.await(10, TimeUnit.SECONDS)).isTrue();
+                mvc.perform(delete("/api/v1/matches/{id}", match).with(bearer(tokens, author))
+                                .header("Idempotency-Key", UUID.randomUUID()).header("If-Match", "\"1\""))
+                        .andExpect(status().isNoContent());
+            } finally {
+                deletionFinished.countDown();
+            }
+            assertThat(submission.get(10, TimeUnit.SECONDS)).isEqualTo(404);
+        }
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM match_comment_reports WHERE comment_id = ?",
+                Integer.class, uuidToBytes(comment))).isZero();
     }
 
     @Test

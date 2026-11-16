@@ -47,7 +47,11 @@ public class QuarterRepository {
 
     public Optional<Quarter> findByIdAndMatchId(UUID id, UUID matchId) {
         return jdbcTemplate.query(
-                "SELECT * FROM quarters WHERE id = ? AND match_id = ?",
+                """
+                SELECT q.* FROM quarters q
+                JOIN matches m ON m.id = q.match_id
+                WHERE q.id = ? AND q.match_id = ? AND m.deleted_at IS NULL
+                """,
                 rowMapper, uuidToBytes(id), uuidToBytes(matchId)
         ).stream().findFirst();
     }
@@ -57,7 +61,7 @@ public class QuarterRepository {
                 """
                 SELECT q.* FROM quarters q
                 JOIN matches m ON m.id = q.match_id
-                WHERE q.id = ? AND m.owner_id = ?
+                WHERE q.id = ? AND m.owner_id = ? AND m.deleted_at IS NULL
                 """,
                 rowMapper, uuidToBytes(id), uuidToBytes(ownerId)
         ).stream().findFirst();
@@ -66,8 +70,10 @@ public class QuarterRepository {
     public List<Quarter> findByMatchId(UUID matchId, int limit) {
         return jdbcTemplate.query(
                 """
-                SELECT * FROM quarters WHERE match_id = ?
-                ORDER BY number ASC, id ASC LIMIT ?
+                SELECT q.* FROM quarters q
+                JOIN matches m ON m.id = q.match_id
+                WHERE q.match_id = ? AND m.deleted_at IS NULL
+                ORDER BY q.number ASC, q.id ASC LIMIT ?
                 """,
                 rowMapper, uuidToBytes(matchId), limit
         );
@@ -76,9 +82,11 @@ public class QuarterRepository {
     public List<Quarter> findPageAfter(UUID matchId, int number, UUID id, int limit) {
         return jdbcTemplate.query(
                 """
-                SELECT * FROM quarters WHERE match_id = ?
-                  AND (number > ? OR (number = ? AND id > ?))
-                ORDER BY number ASC, id ASC LIMIT ?
+                SELECT q.* FROM quarters q
+                JOIN matches m ON m.id = q.match_id
+                WHERE q.match_id = ? AND m.deleted_at IS NULL
+                  AND (q.number > ? OR (q.number = ? AND q.id > ?))
+                ORDER BY q.number ASC, q.id ASC LIMIT ?
                 """,
                 rowMapper, uuidToBytes(matchId), number, number, uuidToBytes(id), limit
         );

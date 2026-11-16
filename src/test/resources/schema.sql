@@ -57,6 +57,7 @@ CREATE TABLE matches (
     version BIGINT NOT NULL,
     created_at TIMESTAMP(6) NOT NULL,
     updated_at TIMESTAMP(6) NOT NULL,
+    deleted_at TIMESTAMP(6) NULL DEFAULT NULL,
     CONSTRAINT fk_match_user FOREIGN KEY (owner_id) REFERENCES users(id),
     CONSTRAINT fk_match_venue FOREIGN KEY (venue_id) REFERENCES venues(id) ON DELETE SET NULL
 );

@@ -19,6 +19,8 @@ import com.teamehera.kiikick.workout.repository.WorkoutPayloadRepository;
 import com.teamehera.kiikick.workout.service.QuarterSummaryCalculation;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -201,6 +203,69 @@ class MatchControllerTest {
         mvc.perform(write(patch(location), actor, UUID.randomUUID(), "{}").header("If-Match", "\"5\""))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.error.code").value("INVALID_STATE"));
+    }
+
+    @Test
+    void deletesOwnedMatchAndReplaysOnlyTheOriginalDelete() throws Exception {
+        String path = create(actor, "{}");
+        UUID patchKey = UUID.randomUUID();
+        UUID cancelKey = UUID.randomUUID();
+        UUID deleteKey = UUID.randomUUID();
+        String settings = "{\"title\":\"삭제 대상\"}";
+        mvc.perform(write(patch(path), actor, patchKey, settings).header("If-Match", tag(1)))
+                .andExpect(status().isOk());
+        mvc.perform(transition(path, "cancel", actor, cancelKey, 2)).andExpect(status().isOk());
+
+        mvc.perform(remove(path, deleteKey, 3))
+                .andExpect(status().isNoContent()).andExpect(header().string("ETag", tag(4)))
+                .andExpect(content().string(""));
+        mvc.perform(remove(path, deleteKey, 3))
+                .andExpect(status().isNoContent()).andExpect(header().string("ETag", tag(4)))
+                .andExpect(content().string(""));
+        mvc.perform(remove(path, deleteKey, 4)).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("IDEMPOTENCY_KEY_REUSED"));
+        mvc.perform(remove(path, UUID.randomUUID(), 4)).andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error.code").value("RESOURCE_NOT_FOUND"));
+        mvc.perform(delete(path).with(bearer(accessTokens, other))
+                        .header("Idempotency-Key", deleteKey.toString()).header("If-Match", tag(3)))
+                .andExpect(status().isNotFound());
+
+        mvc.perform(get(path).with(bearer(accessTokens, actor))).andExpect(status().isNotFound());
+        mvc.perform(get(MATCHES).with(bearer(accessTokens, actor)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data").isEmpty());
+        mvc.perform(write(patch(path), actor, patchKey, settings).header("If-Match", tag(1)))
+                .andExpect(status().isNotFound());
+        mvc.perform(transition(path, "cancel", actor, cancelKey, 2)).andExpect(status().isNotFound());
+        assertEquals(4, matches.findDeletionStateForUpdate(id(path), actor).orElseThrow().version());
+    }
+
+    @Test
+    void deleteRequiresJwtOwnershipKeyAndCurrentVersion() throws Exception {
+        String path = create(actor, "{}");
+        UUID key = UUID.randomUUID();
+        mvc.perform(delete(path)).andExpect(status().isUnauthorized());
+        mvc.perform(delete(path).with(bearer(accessTokens, other))
+                        .header("Idempotency-Key", key.toString()).header("If-Match", tag(1)))
+                .andExpect(status().isNotFound());
+        mvc.perform(delete(path).with(bearer(accessTokens, actor)).header("If-Match", tag(1)))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
+        mvc.perform(remove(path, key, 1).contentType("application/json").content("{}"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.error.code").value("INVALID_REQUEST"));
+        mvc.perform(delete(path).with(bearer(accessTokens, actor)).header("Idempotency-Key", key.toString()))
+                .andExpect(status().isPreconditionRequired())
+                .andExpect(jsonPath("$.error.code").value("PRECONDITION_REQUIRED"));
+        mvc.perform(remove(path, key, 2)).andExpect(status().isPreconditionFailed())
+                .andExpect(jsonPath("$.error.code").value("VERSION_CONFLICT"))
+                .andExpect(jsonPath("$.error.details.currentVersion").value(1));
+        mvc.perform(remove(path, key, 1)).andExpect(status().isNoContent());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"READY", "IN_PROGRESS"})
+    void deletesMatchesThatMayStillBePlayed(String matchStatus) throws Exception {
+        String path = create(actor, "{}");
+        assertEquals(1, matches.updateStatus(id(path), actor, 1, "DRAFT", matchStatus, null, null));
+        mvc.perform(remove(path, UUID.randomUUID(), 2)).andExpect(status().isNoContent());
     }
 
     @Test
@@ -788,6 +853,38 @@ class MatchControllerTest {
         mvc.perform(write(post(path), actor, key, body.replace("1500", "1600")))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.error.code").value("IDEMPOTENCY_KEY_REUSED"));
+    }
+
+    @Test
+    void deletedMatchRejectsWorkoutReplaysAndCannotBeReimported() throws Exception {
+        UUID matchId = UUID.randomUUID();
+        UUID quarterId = UUID.randomUUID();
+        UUID submissionKey = UUID.randomUUID();
+        UUID uploadKey = UUID.randomUUID();
+        String match = MATCHES + "/" + matchId;
+        String submission = match + "/workout-submissions";
+        String upload = "/api/v1/quarters/" + quarterId + "/workout-payloads";
+        String body = localSubmission(quarterId);
+
+        mvc.perform(write(post(submission), actor, submissionKey, body)).andExpect(status().isAccepted());
+        mvc.perform(workoutUpload(upload, actor, uploadKey, 2, WORKOUT)).andExpect(status().isOk())
+                .andExpect(header().string("ETag", tag(3)));
+        var originalWorkout = workouts.findByQuarterId(quarterId).orElseThrow().id();
+        var pending = pendingSummary(quarterId);
+        mvc.perform(remove(match, UUID.randomUUID(), 3)).andExpect(status().isNoContent());
+
+        assertFalse(summaries.findProcessing(100).stream().anyMatch(job -> job.matchId().equals(matchId)));
+        summaryCalculation.process(pending);
+        assertEquals(pending.summary(), summaries.findByQuarterId(quarterId).orElseThrow());
+        assertEquals(4, matches.findDeletionStateForUpdate(matchId, actor).orElseThrow().version());
+
+        mvc.perform(write(post(submission), actor, submissionKey, body)).andExpect(status().isNotFound());
+        mvc.perform(write(post(submission), actor, UUID.randomUUID(), body)).andExpect(status().isNotFound());
+        mvc.perform(workoutUpload(upload, actor, uploadKey, 2, WORKOUT)).andExpect(status().isNotFound());
+        mvc.perform(workoutUpload(upload, actor, UUID.randomUUID(), 4, WORKOUT)).andExpect(status().isNotFound());
+        assertTrue(matches.existsById(matchId));
+        assertTrue(matches.findById(matchId).isEmpty());
+        assertEquals(originalWorkout, workouts.findByQuarterId(quarterId).orElseThrow().id());
     }
 
     @Test
