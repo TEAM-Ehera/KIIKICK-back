@@ -31,10 +31,12 @@ import org.springframework.test.web.servlet.MockMvc;
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.LocalDateTime;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.hamcrest.Matchers.closeTo;
 import static org.hamcrest.Matchers.nullValue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -134,6 +136,40 @@ class AnalyticsControllerTest {
         mvc.perform(get(API + "/trends").with(bearer(accessTokens, actor))
                         .param("metric", "totalDistanceM").param("bucket", "MONTH").param("timeZone", "UTC"))
                 .andExpect(status().isUnprocessableContent());
+    }
+
+    @Test
+    void deletedMatchDoesNotContributeToAggregatesTrendsOrPreviousMatch() throws Exception {
+        var earlier = SEOUL_MIDNIGHT_UTC.minusDays(1);
+        UUID removed = match(actor, earlier);
+        UUID active = match(actor, SEOUL_MIDNIGHT_UTC);
+        UUID removedQuarter = quarter(removed, 1, earlier);
+        UUID activeQuarter = quarter(active, 1, SEOUL_MIDNIGHT_UTC);
+        positions.upsert(removedQuarter, "REMOVED", earlier);
+        positions.upsert(activeQuarter, "ACTIVE", SEOUL_MIDNIGHT_UTC);
+        summary(actor, removedQuarter, "v3", 700, 10, 100, 10, 180);
+        summary(actor, activeQuarter, "v3", 200, 10, 100, 10, 180);
+        assertEquals(1, matches.softDelete(removed, actor, 1));
+
+        mvc.perform(get(API + "/summary").with(bearer(accessTokens, actor)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.matchCount").value(1))
+                .andExpect(jsonPath("$.data.metrics.totalDistanceM.value").value(200.0));
+        mvc.perform(get(API + "/positions").with(bearer(accessTokens, actor)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.length()").value(1))
+                .andExpect(jsonPath("$.data[0].positionCode").value("ACTIVE"));
+        assertEquals(Map.of("ACTIVE", 1), positions.countByOwnerId(actor));
+        mvc.perform(get(API + "/trends").with(bearer(accessTokens, actor))
+                        .param("metric", "totalDistanceM").param("bucket", "DAY"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.length()").value(1))
+                .andExpect(jsonPath("$.data[0].bucketStart").value("2026-11-05T00:00:00+09:00"))
+                .andExpect(jsonPath("$.data[0].result.value").value(200.0));
+        mvc.perform(get(API + "/match-comparison").with(bearer(accessTokens, actor))
+                        .param("matchId", active.toString()).param("metric", "totalDistanceM"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.previous").value(nullValue()));
+        mvc.perform(get(API + "/match-comparison").with(bearer(accessTokens, actor))
+                        .param("matchId", active.toString()).param("previousMatchId", removed.toString())
+                        .param("metric", "totalDistanceM"))
+                .andExpect(status().isNotFound());
     }
 
     @Test

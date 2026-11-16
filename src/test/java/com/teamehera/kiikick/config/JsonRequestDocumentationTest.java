@@ -57,6 +57,16 @@ class JsonRequestDocumentationTest {
     }
 
     @Test
+    void matchDeleteDocumentsHeadersAndNoContent() {
+        var delete = operation("/api/v1/matches/{matchId}", "delete");
+        assertThat(delete.has("requestBody")).isFalse();
+        assertThat(delete.at("/responses/204").has("content")).isFalse();
+        assertThat(delete.at("/responses/204/headers").has("ETag")).isTrue();
+        assertThat(parameter(delete, "Idempotency-Key").path("required").asBoolean()).isTrue();
+        assertThat(parameter(delete, "If-Match").path("required").asBoolean()).isTrue();
+    }
+
+    @Test
     void examplesIncludeActualVenueCornersAndWorkoutContext() {
         var venue = operation("/api/v1/venues", "post").at("/requestBody/content/application~1json");
         assertThat(venue.at("/example/cornerA/latitude").isNumber()).isTrue();

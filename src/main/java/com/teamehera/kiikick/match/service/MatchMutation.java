@@ -19,6 +19,7 @@ import java.util.HexFormat;
 import java.util.UUID;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.LongFunction;
 import java.util.function.Supplier;
 
 @Service
@@ -74,18 +75,32 @@ public class MatchMutation {
         return executeLocked(request, expiresAt, lockMatch(request), checkAccess, checkNewRequest, change);
     }
 
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public Response executeDelete(Request request, LocalDateTime expiresAt, LongFunction<Response> response) {
+        lockOwner(request.actorUserId());
+        var state = matches.findDeletionStateForUpdate(request.matchId(), request.actorUserId())
+                .orElseThrow(() -> new Rejected(404, "RESOURCE_NOT_FOUND", null));
+        return executeOnce(request, expiresAt, () -> {
+            // Only a stored response for this DELETE can be replayed after deletion.
+            if (state.deletedAt() != null) {
+                throw new Rejected(404, "RESOURCE_NOT_FOUND", null);
+            }
+            requireVersion(request, state.version());
+        }, () -> {
+            if (matches.softDelete(request.matchId(), request.actorUserId(), state.version()) != 1) {
+                throw new IllegalStateException("Could not delete the locked match");
+            }
+            return response.apply(Math.addExact(state.version(), 1));
+        });
+    }
+
     private Response executeLocked(Request request, LocalDateTime expiresAt, Match match,
                                    Consumer<Match> checkAccess, Consumer<Match> checkNewRequest,
                                    Function<Match, Response> change) {
         checkAccess.accept(match);
         return executeOnce(request, expiresAt, () -> {
             checkNewRequest.accept(match);
-            if (request.ifMatch() == null) {
-                throw new Rejected(428, "PRECONDITION_REQUIRED", null);
-            }
-            if (!etag(match.version()).equals(request.ifMatch())) {
-                throw new Rejected(412, "VERSION_CONFLICT", match.version());
-            }
+            requireVersion(request, match.version());
         }, () -> {
             Response response = change.apply(match);
             var updated = matches.findByIdAndOwnerId(request.matchId(), request.actorUserId());
@@ -94,6 +109,15 @@ public class MatchMutation {
             }
             return response;
         });
+    }
+
+    private static void requireVersion(Request request, long version) {
+        if (request.ifMatch() == null) {
+            throw new Rejected(428, "PRECONDITION_REQUIRED", null);
+        }
+        if (!etag(version).equals(request.ifMatch())) {
+            throw new Rejected(412, "VERSION_CONFLICT", version);
+        }
     }
 
     /** Accepts a client-created match while preserving version checks for existing matches. */
@@ -105,7 +129,8 @@ public class MatchMutation {
         if (existing.isPresent()) {
             return executeLocked(request, expiresAt, existing.orElseThrow(), match -> {}, match -> {}, change);
         }
-        // An ID owned by another user must never be imported or reassigned.
+        // Reserve IDs for deleted matches as well as matches owned by someone else.
+        // Check before replaying a past workout submission.
         if (matches.existsById(request.matchId())) {
             throw new Rejected(404, "RESOURCE_NOT_FOUND", null);
         }

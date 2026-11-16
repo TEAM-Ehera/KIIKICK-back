@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.jdbc.test.autoconfigure.JdbcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,6 +24,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.doReturn;
 
 @JdbcTest
 @Import({MatchMutation.class, MatchRepository.class, IdempotencyRecordRepository.class, UserRepository.class})
@@ -31,7 +34,7 @@ class MatchMutationTest {
 
     @Autowired MatchMutation mutation;
     @Autowired MatchRepository matches;
-    @Autowired IdempotencyRecordRepository records;
+    @MockitoSpyBean IdempotencyRecordRepository records;
     @Autowired UserRepository users;
 
     private final UUID actor = UUID.randomUUID();
@@ -75,6 +78,27 @@ class MatchMutationTest {
         assertTrue(records.findByScope(actor, request.method(), request.canonicalPath(), key).isEmpty());
         assertEquals(200, mutation.execute(request, now.plusDays(1), match -> {}, this::update).status());
         assertEquals(2, version());
+    }
+
+    @Test
+    void failedDeleteResponsePersistenceRollsBackDeletionAndReservation() {
+        var request = new Request(actor, matchId, "DELETE", "/api/v1/matches/" + matchId,
+                key, MatchMutation.etag(1), null);
+        var response = new Response(204, "{\"ETag\":\"\\\"2\\\"\"}", null);
+        doReturn(0).doCallRealMethod().when(records).complete(any(), anyString(), eq(204), anyString(), isNull());
+
+        var failure = assertThrows(IllegalStateException.class,
+                () -> mutation.executeDelete(request, now.plusDays(1), version -> response));
+        assertEquals("Could not store the mutation response", failure.getMessage());
+        assertEquals(1, version());
+        assertNull(matches.findDeletionStateForUpdate(matchId, actor).orElseThrow().deletedAt());
+        assertTrue(records.findByScope(actor, request.method(), request.canonicalPath(), key).isEmpty());
+
+        assertEquals(response, mutation.executeDelete(request, now.plusDays(1), version -> {
+            assertEquals(2, version);
+            return response;
+        }));
+        assertNotNull(matches.findDeletionStateForUpdate(matchId, actor).orElseThrow().deletedAt());
     }
 
     @Test

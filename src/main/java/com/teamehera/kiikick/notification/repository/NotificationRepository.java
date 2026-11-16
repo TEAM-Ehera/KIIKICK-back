@@ -21,6 +21,7 @@ public class NotificationRepository {
             WHERE n.recipient_id = ?
               AND ((n.target_type = 'MATCH' AND EXISTS (
                     SELECT 1 FROM matches m WHERE m.id = n.target_id AND m.owner_id = n.recipient_id
+                      AND m.deleted_at IS NULL
                   )) OR (n.target_type = 'FRIEND_REQUEST' AND EXISTS (
                     SELECT 1 FROM friend_pairs p
                     JOIN users sender ON sender.id = p.requester_id AND sender.deleted_at IS NULL

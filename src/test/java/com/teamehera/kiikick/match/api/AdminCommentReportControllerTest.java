@@ -30,6 +30,7 @@ import static com.teamehera.kiikick.global.jdbc.JdbcValueConverter.uuidToBytes;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.endsWith;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -72,6 +73,57 @@ class AdminCommentReportControllerTest {
         matches.save(new Match(match, author, null, "경기", null, null, null, "COMPLETED",
                 NOW, NOW.plusHours(1), 1, NOW, NOW));
         comments.save(new Comment(comment, match, author, "원문", NOW));
+    }
+
+    @Test
+    void deletedMatchClosesItsCommentThreadAndKeepsModerationAvailable() throws Exception {
+        String matchPath = "/api/v1/matches/" + match;
+        String thread = matchPath + "/comments";
+        UUID report = seedReport(reporter, NOW);
+        UUID replyKey = UUID.randomUUID();
+        String replyBody = """
+                {"content":"보존할 답글","parentCommentId":"%s"}
+                """.formatted(comment);
+        String created = mvc.perform(auth(post(thread), reporter).header("Idempotency-Key", replyKey)
+                        .contentType("application/json").content(replyBody))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
+        UUID reply = UUID.fromString(json.readTree(created).at("/data/id").asText());
+
+        mvc.perform(auth(delete(matchPath), author)
+                        .header("Idempotency-Key", UUID.randomUUID()).header("If-Match", "\"1\""))
+                .andExpect(status().isNoContent());
+
+        mvc.perform(auth(get(thread), author)).andExpect(status().isNotFound());
+        mvc.perform(auth(get(thread).param("parentCommentId", comment.toString()), reporter))
+                .andExpect(status().isNotFound());
+        mvc.perform(auth(post(thread), author).header("Idempotency-Key", UUID.randomUUID())
+                        .contentType("application/json").content("{\"content\":\"새 댓글\"}"))
+                .andExpect(status().isNotFound());
+        mvc.perform(auth(post(thread), reporter).header("Idempotency-Key", UUID.randomUUID())
+                        .contentType("application/json").content(replyBody))
+                .andExpect(status().isNotFound());
+        mvc.perform(auth(post(thread), reporter).header("Idempotency-Key", replyKey)
+                        .contentType("application/json").content(replyBody))
+                .andExpect(status().isNotFound());
+        mvc.perform(auth(delete(thread + "/" + comment), author).header("Idempotency-Key", UUID.randomUUID()))
+                .andExpect(status().isNotFound());
+        mvc.perform(auth(delete(thread + "/" + reply), reporter).header("Idempotency-Key", UUID.randomUUID()))
+                .andExpect(status().isNotFound());
+        mvc.perform(auth(post(thread + "/" + reply + "/reports"), author)
+                        .contentType("application/json").content("{\"reason\":\"SPAM\"}"))
+                .andExpect(status().isNotFound());
+
+        assertThat(comments.findByIdForUpdate(comment).orElseThrow().content()).isEqualTo("원문");
+        var savedReply = comments.findByIdForUpdate(reply).orElseThrow();
+        assertThat(savedReply.content()).isEqualTo("보존할 답글");
+        assertThat(savedReply.parentCommentId()).isEqualTo(comment);
+        mvc.perform(auth(get(PATH), admin)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].id").value(report.toString()));
+        mvc.perform(auth(get(PATH + "/{id}", report), admin)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.commentContent").value("원문"));
+        process(report, admin, "HIDDEN").andExpect(status().isOk());
+        assertThat(comments.findByIdForUpdate(comment).orElseThrow().hiddenAt()).isNotNull();
+        assertThat(reports.findById(report).orElseThrow().commentContent()).isEqualTo("원문");
     }
 
     @Test

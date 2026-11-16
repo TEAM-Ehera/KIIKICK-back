@@ -81,6 +81,7 @@ public class QuarterPositionRepository {
                 LEFT JOIN quarter_positions p ON p.quarter_id = q.id
                 WHERE m.owner_id = ?
                   AND m.status = 'COMPLETED'
+                  AND m.deleted_at IS NULL
                   AND q.status = 'COMPLETED'
                 GROUP BY p.position_code
                 """,

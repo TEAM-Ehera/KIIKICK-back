@@ -32,6 +32,7 @@ import com.teamehera.kiikick.match.repository.MatchRepository;
 import com.teamehera.kiikick.match.repository.QuarterPlayerStatsRepository;
 import com.teamehera.kiikick.match.repository.QuarterPositionRepository;
 import com.teamehera.kiikick.match.repository.QuarterRepository;
+import com.teamehera.kiikick.match.service.MatchMutation;
 import com.teamehera.kiikick.notification.domain.Device;
 import com.teamehera.kiikick.notification.domain.Notification;
 import com.teamehera.kiikick.notification.repository.DeviceRepository;
@@ -87,6 +88,7 @@ import java.time.ZoneOffset;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Callable;
@@ -123,11 +125,20 @@ import static org.mockito.Mockito.when;
 class MySqlRepositoryIntegrationTest {
 
     private static final String SAFE_DATABASE = "kiikick_repository_test";
+    private static final Set<String> REQUIRED_TABLES = Set.of(
+            "users", "venues", "matches", "quarters", "quarter_player_stats", "quarter_positions",
+            "quarter_summaries", "workout_payloads", "track_points", "heart_rate_samples",
+            "workoutPayloads", "trackPoints", "heartRateSamples",
+            "auth_identities", "auth_sessions", "devices", "user_consents", "account_deletion_requests",
+            "email_credentials", "email_verification_flows", "auth_rate_limit_keys", "auth_rate_limit_events",
+            "friend_pairs", "user_blocks", "notifications", "idempotency_records", "sync_operations"
+    );
 
     @Autowired JdbcTemplate jdbc;
     @Autowired UserRepository users;
     @Autowired VenueRepository venues;
     @Autowired MatchRepository matches;
+    @Autowired MatchMutation matchMutation;
     @Autowired QuarterRepository quarters;
     @Autowired WorkoutPayloadRepository workouts;
     @Autowired WorkoutPayloadService legacyWorkoutUploads;
@@ -169,14 +180,51 @@ class MySqlRepositoryIntegrationTest {
     @BeforeAll
     void verifyIsolatedDatabaseBeforeAnyWrite() {
         assertEquals(SAFE_DATABASE, jdbc.queryForObject("SELECT DATABASE()", String.class));
-        Integer tableCount = jdbc.queryForObject(
+        var tables = Set.copyOf(jdbc.queryForList(
                 """
-                SELECT COUNT(*) FROM information_schema.tables
-                WHERE table_schema = DATABASE()
+                SELECT table_name FROM information_schema.tables
+                WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE'
                 """,
-                Integer.class
-        );
-        assertEquals(28, tableCount);
+                String.class
+        ));
+        var missing = REQUIRED_TABLES.stream().filter(table -> !tables.contains(table)).sorted().toList();
+        assertTrue(missing.isEmpty(), () -> "Missing MySQL test tables: " + missing);
+    }
+
+    @Test
+    void concurrentDeletesWithOneKeyReplayAndAdvanceVersionOnce() throws Exception {
+        UUID owner = UUID.randomUUID();
+        UUID match = UUID.randomUUID();
+        UUID quarter = UUID.randomUUID();
+        var now = LocalDateTime.now(ZoneOffset.UTC);
+        insertCommittedParents(owner, match, quarter, now);
+        var request = new MatchMutation.Request(owner, match, "DELETE", "/api/v1/matches/" + match,
+                UUID.randomUUID(), MatchMutation.etag(1), null);
+        var mutations = new AtomicInteger();
+        try {
+            assertEquals(4, concurrentCalls(() -> {
+                var response = matchMutation.executeDelete(request, now.plusDays(1), version -> {
+                    mutations.incrementAndGet();
+                    assertEquals(2, version);
+                    return new MatchMutation.Response(204, "{}", null);
+                });
+                assertEquals(204, response.status());
+                return true;
+            }));
+            assertEquals(1, mutations.get());
+            var state = matches.findDeletionStateForUpdate(match, owner).orElseThrow();
+            assertEquals(2, state.version());
+            assertNotNull(state.deletedAt());
+            assertTrue(matches.findById(match).isEmpty());
+            assertTrue(quarters.findByIdAndOwnerId(quarter, owner).isEmpty());
+            assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM quarters WHERE id = ?",
+                    Integer.class, uuidToBytes(quarter)));
+        } finally {
+            jdbc.update("DELETE FROM idempotency_records WHERE user_id = ?", uuidToBytes(owner));
+            jdbc.update("DELETE FROM quarters WHERE id = ?", uuidToBytes(quarter));
+            jdbc.update("DELETE FROM matches WHERE id = ?", uuidToBytes(match));
+            jdbc.update("DELETE FROM users WHERE id = ?", uuidToBytes(owner));
+        }
     }
 
     @Test

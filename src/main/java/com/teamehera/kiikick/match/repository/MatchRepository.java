@@ -51,10 +51,12 @@ public class MatchRepository {
     }
 
     public Optional<Match> findById(UUID id) {
-        return jdbcTemplate.query("SELECT * FROM matches WHERE id = ?", rowMapper, uuidToBytes(id))
-                .stream().findFirst();
+        return jdbcTemplate.query(
+                "SELECT * FROM matches WHERE id = ? AND deleted_at IS NULL", rowMapper, uuidToBytes(id)
+        ).stream().findFirst();
     }
 
+    /** Includes deleted matches so their IDs cannot be reused by workout imports. */
     public boolean existsById(UUID id) {
         return Boolean.TRUE.equals(jdbcTemplate.queryForObject(
                 "SELECT EXISTS (SELECT 1 FROM matches WHERE id = ?)", Boolean.class, uuidToBytes(id)));
@@ -62,15 +64,36 @@ public class MatchRepository {
 
     public Optional<Match> findByIdAndOwnerId(UUID id, UUID ownerId) {
         return queryOne(
-                "SELECT * FROM matches WHERE id = ? AND owner_id = ?",
+                "SELECT * FROM matches WHERE id = ? AND owner_id = ? AND deleted_at IS NULL",
                 id, ownerId
         );
     }
 
     public Optional<Match> findByIdAndOwnerIdForUpdate(UUID id, UUID ownerId) {
         return queryOne(
-                "SELECT * FROM matches WHERE id = ? AND owner_id = ? FOR UPDATE",
+                "SELECT * FROM matches WHERE id = ? AND owner_id = ? AND deleted_at IS NULL FOR UPDATE",
                 id, ownerId
+        );
+    }
+
+    public Optional<DeletionState> findDeletionStateForUpdate(UUID id, UUID ownerId) {
+        return jdbcTemplate.query(
+                "SELECT version, deleted_at FROM matches WHERE id = ? AND owner_id = ? FOR UPDATE",
+                (rs, rowNum) -> new DeletionState(rs.getLong("version"), nullableDateTime(rs, "deleted_at")),
+                uuidToBytes(id), uuidToBytes(ownerId)
+        ).stream().findFirst();
+    }
+
+    public record DeletionState(long version, LocalDateTime deletedAt) {}
+
+    public int softDelete(UUID id, UUID ownerId, long expectedVersion) {
+        return jdbcTemplate.update(
+                """
+                UPDATE matches
+                SET deleted_at = CURRENT_TIMESTAMP(6), version = version + 1, updated_at = CURRENT_TIMESTAMP(6)
+                WHERE id = ? AND owner_id = ? AND version = ? AND deleted_at IS NULL
+                """,
+                uuidToBytes(id), uuidToBytes(ownerId), expectedVersion
         );
     }
 
@@ -80,7 +103,7 @@ public class MatchRepository {
 
     public List<Match> findPageByOwnerId(UUID ownerId, String status, LocalDateTime beforeTime,
                                        UUID beforeId, int limit) {
-        var sql = new StringBuilder("SELECT * FROM matches WHERE owner_id = ?");
+        var sql = new StringBuilder("SELECT * FROM matches WHERE owner_id = ? AND deleted_at IS NULL");
         var args = new ArrayList<Object>();
         args.add(uuidToBytes(ownerId));
         if (status != null) {
@@ -105,7 +128,7 @@ public class MatchRepository {
                 SET venue_id = ?, title = ?, venue_name_snapshot = ?,
                     venue_address_snapshot = ?, scheduled_at = ?,
                     version = version + 1, updated_at = CURRENT_TIMESTAMP(6)
-                WHERE id = ? AND owner_id = ? AND version = ?
+                WHERE id = ? AND owner_id = ? AND version = ? AND deleted_at IS NULL
                   AND status IN ('DRAFT', 'READY')
                 """,
                 uuidToBytes(match.venueId()), match.title(), match.venueNameSnapshot(),
@@ -118,7 +141,7 @@ public class MatchRepository {
         return jdbcTemplate.update(
                 """
                 UPDATE matches SET version = version + 1, updated_at = CURRENT_TIMESTAMP(6)
-                WHERE id = ? AND owner_id = ? AND version = ?
+                WHERE id = ? AND owner_id = ? AND version = ? AND deleted_at IS NULL
                 """,
                 uuidToBytes(id), uuidToBytes(ownerId), expectedVersion
         );
@@ -135,7 +158,7 @@ public class MatchRepository {
                 SET status = ?, started_at = COALESCE(?, started_at),
                     ended_at = COALESCE(?, ended_at), version = version + 1,
                     updated_at = CURRENT_TIMESTAMP(6)
-                WHERE id = ? AND owner_id = ? AND version = ? AND status = ?
+                WHERE id = ? AND owner_id = ? AND version = ? AND status = ? AND deleted_at IS NULL
                 """,
                 nextStatus, startedAt, endedAt, uuidToBytes(id),
                 uuidToBytes(ownerId), expectedVersion, currentStatus
@@ -152,7 +175,7 @@ public class MatchRepository {
         jdbcTemplate.update(
                 """
                 UPDATE matches SET venue_id = NULL, version = version + 1, updated_at = CURRENT_TIMESTAMP(6)
-                WHERE venue_id = ?
+                WHERE venue_id = ? AND deleted_at IS NULL
                 """,
                 uuidToBytes(venueId)
         );

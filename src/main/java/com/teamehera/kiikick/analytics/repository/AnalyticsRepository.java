@@ -49,7 +49,7 @@ public class AnalyticsRepository {
                 LEFT JOIN quarter_player_stats stats ON stats.quarter_id = q.id
                 LEFT JOIN quarter_positions p ON p.quarter_id = q.id
                 LEFT JOIN quarter_summaries s ON s.quarter_id = q.id
-                WHERE m.owner_id = :owner AND m.status = 'COMPLETED'
+                WHERE m.owner_id = :owner AND m.status = 'COMPLETED' AND m.deleted_at IS NULL
                 """;
         var args = new MapSqlParameterSource("owner", uuidToBytes(owner));
         if (match != null) {
@@ -92,7 +92,8 @@ public class AnalyticsRepository {
         String sql = """
                 SELECT MIN(q.ended_at) AS first_end, MAX(q.ended_at) AS last_end
                 FROM matches m JOIN quarters q ON q.match_id = m.id
-                WHERE m.owner_id = :owner AND m.status = 'COMPLETED' AND q.status = 'COMPLETED'
+                WHERE m.owner_id = :owner AND m.status = 'COMPLETED' AND m.deleted_at IS NULL
+                  AND q.status = 'COMPLETED'
                 """;
         var args = new MapSqlParameterSource("owner", uuidToBytes(owner));
         if (from != null) {
@@ -112,7 +113,7 @@ public class AnalyticsRepository {
     public Optional<UUID> previous(UUID owner, UUID currentId, LocalDateTime endedAt) {
         return jdbc.query("""
                 SELECT id FROM matches
-                WHERE owner_id = :owner AND status = 'COMPLETED'
+                WHERE owner_id = :owner AND status = 'COMPLETED' AND deleted_at IS NULL
                   AND (ended_at < :ended OR (ended_at = :ended AND id < :id))
                 ORDER BY ended_at DESC, id DESC LIMIT 1
                 """,

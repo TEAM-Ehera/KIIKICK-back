@@ -167,7 +167,7 @@ public class QuarterSummaryRepository {
                 FROM quarter_summaries s
                 JOIN quarters q ON q.id = s.quarter_id
                 JOIN matches m ON m.id = q.match_id
-                WHERE s.calculation_status = 'PROCESSING'
+                WHERE s.calculation_status = 'PROCESSING' AND m.deleted_at IS NULL
                 ORDER BY s.updated_at, s.quarter_id
                 LIMIT ?
                 """,
