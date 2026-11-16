@@ -63,12 +63,13 @@ public class AdminCommentReportService {
             case NO_ACTION -> { }
             case HIDDEN -> {
                 var comment = comments.findByIdForUpdate(report.commentId())
+                        .filter(target -> target.deletedAt() == null)
                         .orElseThrow(CommentAlreadyDeleted::new);
                 if (comment.hiddenAt() == null) {
                     comments.hide(comment.id(), processedAt);
                 }
             }
-            case DELETED -> comments.deleteById(report.commentId());
+            case DELETED -> comments.softDeleteById(report.commentId(), processedAt);
         }
         return get(reportId);
     }

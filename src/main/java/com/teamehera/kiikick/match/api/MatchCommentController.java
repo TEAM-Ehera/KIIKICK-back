@@ -1,11 +1,16 @@
 package com.teamehera.kiikick.match.api;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.teamehera.kiikick.friend.service.FriendCommands;
 import com.teamehera.kiikick.match.repository.MatchCommentReportRepository.Report;
 import com.teamehera.kiikick.match.repository.MatchCommentRepository;
 import com.teamehera.kiikick.match.repository.MatchCommentRepository.Comment;
 import com.teamehera.kiikick.match.service.*;
+import com.teamehera.kiikick.match.service.MatchCommentReportService.Reason;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.ExampleObject;
+import io.swagger.v3.oas.annotations.media.Schema;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -52,10 +57,11 @@ public class MatchCommentController {
         this.retention = retention;
     }
 
-    @Operation(summary = "본인 또는 친구 경기 댓글 목록 조회")
+    @Operation(summary = "본인 또는 친구 경기의 최상위 댓글 또는 답글 목록 조회")
     @GetMapping
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public Page list(Principal principal, @PathVariable UUID matchId,
+                     @RequestParam(required = false) UUID parentCommentId,
                      @RequestParam(required = false) String cursor, @RequestParam(required = false) Integer limit) {
         UUID actor = MatchController.actor(principal);
         access.requireVisibleMatch(actor, matchId);
@@ -63,10 +69,14 @@ public class MatchCommentController {
         if (size < 1 || size > 100) {
             throw MatchListQuery.InvalidListRequest.of("INVALID_REQUEST");
         }
-        String scope = "1|comments|" + actor + "|" + matchId + "|";
+        String scope = (parentCommentId == null ? "1|comments|" : "1|comment-replies|" + parentCommentId + "|")
+                + actor + "|" + matchId + "|";
         var boundary = cursor == null ? null : decode(cursor, scope);
-        var rows = comments.page(matchId, actor, boundary == null ? null : boundary.time(),
-                boundary == null ? null : boundary.id(), size + 1);
+        var before = boundary == null ? null : boundary.time();
+        var beforeId = boundary == null ? null : boundary.id();
+        var rows = parentCommentId == null
+                ? comments.pageTopLevel(matchId, actor, before, beforeId, size + 1)
+                : comments.pageReplies(matchId, parentCommentId, actor, before, beforeId, size + 1);
         boolean hasNext = rows.size() > size;
         var page = rows.subList(0, Math.min(size, rows.size()));
         String next = null;
@@ -80,7 +90,7 @@ public class MatchCommentController {
                 new MatchListQuery.PageMeta(meta.requestId(), meta.serverTime(), new MatchListQuery.Pagination(next, hasNext)));
     }
 
-    @Operation(summary = "본인 또는 친구 경기에 댓글 작성")
+    @Operation(summary = "본인 또는 친구 경기에 댓글 또는 답글 작성")
     @PostMapping(consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<String> create(Principal principal, @PathVariable UUID matchId,
             @RequestHeader(value = "Idempotency-Key", required = false) String key,
@@ -94,14 +104,24 @@ public class MatchCommentController {
         return replay(commands.forUser(request, expiresAt(), match.ownerId(),
                 () -> access.requireVisibleMatch(actor, matchId), () -> {
                     var input = MatchSettings.readBody(json, body);
-                    MatchSettings.checkObject(input, "body", Set.of("content"));
+                    MatchSettings.checkObject(input, "body", Set.of("content", "parentCommentId"));
                     var content = input.path("content");
                     if (!content.isString() || content.stringValue().isBlank()
                             || content.stringValue().codePointCount(0, content.stringValue().length()) > 1000) {
                         throw new MatchSettings.InvalidSettings(List.of("content"));
                     }
+                    var parent = input.get("parentCommentId");
+                    UUID parentCommentId = null;
+                    if (parent != null && !parent.isNull()) {
+                        if (!parent.isString()) {
+                            throw new MatchSettings.InvalidSettings(List.of("parentCommentId"));
+                        }
+                        parentCommentId = MatchSettings.uuid(parent.stringValue(), "parentCommentId");
+                        comments.findReplyParentForUpdate(matchId, parentCommentId, actor)
+                                .orElseThrow(MatchOwnership.ResourceNotFound::new);
+                    }
                     var comment = new Comment(UUID.randomUUID(), matchId, actor, content.stringValue().strip(),
-                            LocalDateTime.now(ZoneOffset.UTC).truncatedTo(ChronoUnit.MICROS));
+                            LocalDateTime.now(ZoneOffset.UTC).truncatedTo(ChronoUnit.MICROS), parentCommentId, null);
                     comments.save(comment);
                     var meta = MatchApiResponse.Meta.create();
                     return new MatchMutation.Response(201,
@@ -111,7 +131,10 @@ public class MatchCommentController {
                 }));
     }
 
-    @Operation(summary = "경기 댓글 신고")
+    @Operation(summary = "경기 댓글 또는 답글 신고", requestBody = @io.swagger.v3.oas.annotations.parameters.RequestBody(
+            required = true, content = @Content(mediaType = MediaType.APPLICATION_JSON_VALUE,
+            schema = @Schema(implementation = ReportBody.class),
+            examples = @ExampleObject(value = "{\"reason\":\"SPAM\"}"))))
     @PostMapping(value = "/{commentId}/reports", consumes = MediaType.APPLICATION_JSON_VALUE)
     @ResponseStatus(HttpStatus.CREATED)
     public ResponseEntity<MatchApiResponse.Success<ReportResponse>> report(
@@ -197,16 +220,22 @@ public class MatchCommentController {
     private LocalDateTime expiresAt() { return LocalDateTime.now(ZoneOffset.UTC).plus(retention); }
     private record Boundary(LocalDateTime time, UUID id) {}
     public record Page(List<CommentResponse> data, MatchListQuery.PageMeta meta) {}
+    @Schema(additionalProperties = Schema.AdditionalPropertiesValue.FALSE)
+    public record ReportBody(@Schema(requiredMode = Schema.RequiredMode.REQUIRED) Reason reason,
+                             @Schema(maxLength = 1000) String detail) {}
+
     public record ReportResponse(UUID id, UUID commentId, OffsetDateTime reportedAt) {
         static ReportResponse from(Report report) {
             return new ReportResponse(report.id(), report.commentId(), MatchApiResponse.fromUtc(report.reportedAt()));
         }
     }
 
-    public record CommentResponse(UUID id, UUID matchId, UUID authorId, String content, OffsetDateTime createdAt) {
+    public record CommentResponse(UUID id, UUID matchId, UUID authorId, String content, OffsetDateTime createdAt,
+                                  @JsonInclude(JsonInclude.Include.NON_NULL) UUID parentCommentId) {
         static CommentResponse from(Comment comment) {
-            return new CommentResponse(comment.id(), comment.matchId(), comment.authorId(), comment.content(),
-                    MatchApiResponse.fromUtc(comment.createdAt()));
+            String content = comment.deletedAt() == null ? comment.content() : "[삭제된 댓글입니다]";
+            return new CommentResponse(comment.id(), comment.matchId(), comment.authorId(), content,
+                    MatchApiResponse.fromUtc(comment.createdAt()), comment.parentCommentId());
         }
     }
 }

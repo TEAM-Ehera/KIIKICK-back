@@ -1,6 +1,5 @@
 package com.teamehera.kiikick.match.service;
 
-import com.teamehera.kiikick.friend.repository.UserBlockRepository;
 import com.teamehera.kiikick.match.repository.MatchCommentReportRepository;
 import com.teamehera.kiikick.match.repository.MatchCommentReportRepository.Report;
 import com.teamehera.kiikick.match.repository.MatchCommentRepository;
@@ -22,14 +21,12 @@ public class MatchCommentReportService {
     private final MatchSocialAccess access;
     private final MatchCommentRepository comments;
     private final MatchCommentReportRepository reports;
-    private final UserBlockRepository blocks;
 
     public MatchCommentReportService(MatchSocialAccess access, MatchCommentRepository comments,
-                                     MatchCommentReportRepository reports, UserBlockRepository blocks) {
+                                     MatchCommentReportRepository reports) {
         this.access = access;
         this.comments = comments;
         this.reports = reports;
-        this.blocks = blocks;
     }
 
     @Transactional
@@ -41,11 +38,8 @@ public class MatchCommentReportService {
         }
         String reportDetail = detail == null || detail.isBlank() ? null : detail;
 
-        var comment = comments.findByIdForUpdate(matchId, commentId)
+        var comment = comments.findReportableForUpdate(matchId, commentId, reporterId)
                 .orElseThrow(MatchOwnership.ResourceNotFound::new);
-        if (comment.hiddenAt() != null || blocks.existsEitherDirection(reporterId, comment.authorId())) {
-            throw new MatchOwnership.ResourceNotFound();
-        }
         if (reporterId.equals(comment.authorId())) {
             throw new SelfReportNotAllowed();
         }

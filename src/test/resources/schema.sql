@@ -378,10 +378,16 @@ CREATE TABLE match_comments (
     content VARCHAR(1000) NOT NULL,
     created_at TIMESTAMP(6) NOT NULL,
     hidden_at TIMESTAMP(6) NULL,
+    parent_comment_id BINARY(16) NULL DEFAULT NULL,
+    deleted_at TIMESTAMP(6) NULL DEFAULT NULL,
     CONSTRAINT fk_match_comment_match FOREIGN KEY (match_id) REFERENCES matches(id) ON DELETE CASCADE,
-    CONSTRAINT fk_match_comment_author FOREIGN KEY (author_id) REFERENCES users(id)
+    CONSTRAINT fk_match_comment_author FOREIGN KEY (author_id) REFERENCES users(id),
+    CONSTRAINT uq_match_comments_match_id_id UNIQUE (match_id, id),
+    CONSTRAINT fk_match_comments_parent FOREIGN KEY (match_id, parent_comment_id)
+        REFERENCES match_comments (match_id, id) ON DELETE RESTRICT
 );
 CREATE INDEX idx_match_comments_page ON match_comments (match_id, created_at DESC, id DESC);
+CREATE INDEX idx_match_comments_parent_page ON match_comments (match_id, parent_comment_id, created_at DESC, id DESC);
 
 CREATE TABLE quarter_friends (
     quarter_id BINARY(16) NOT NULL,

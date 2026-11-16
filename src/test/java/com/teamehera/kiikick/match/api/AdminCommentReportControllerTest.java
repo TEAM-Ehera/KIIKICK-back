@@ -1,6 +1,8 @@
 package com.teamehera.kiikick.match.api;
 
 import com.teamehera.kiikick.auth.security.AccessTokenService;
+import com.teamehera.kiikick.friend.domain.FriendPair;
+import com.teamehera.kiikick.friend.repository.FriendPairRepository;
 import com.teamehera.kiikick.match.domain.Match;
 import com.teamehera.kiikick.match.repository.MatchCommentReportRepository;
 import com.teamehera.kiikick.match.repository.MatchCommentReportRepository.Report;
@@ -30,6 +32,7 @@ import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.endsWith;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @SpringBootTest(properties = "spring.datasource.url=jdbc:h2:mem:admin_comment_reports;MODE=MySQL;DB_CLOSE_DELAY=-1")
@@ -43,6 +46,7 @@ class AdminCommentReportControllerTest {
     @Autowired JdbcTemplate jdbc;
     @Autowired AccessTokenService tokens;
     @Autowired UserRepository users;
+    @Autowired FriendPairRepository friends;
     @Autowired MatchRepository matches;
     @Autowired MatchCommentRepository comments;
     @Autowired MatchCommentReportRepository reports;
@@ -61,6 +65,10 @@ class AdminCommentReportControllerTest {
             users.save(id, null);
         }
         jdbc.update("INSERT INTO admin_users (user_id) VALUES (?), (?)", uuidToBytes(admin), uuidToBytes(secondAdmin));
+        users.completeOnboarding(author, author.toString().substring(0, 16), NOW);
+        users.completeOnboarding(reporter, reporter.toString().substring(0, 16), NOW);
+        var pair = FriendPairRepository.normalize(author, reporter);
+        friends.save(new FriendPair(UUID.randomUUID(), pair[0], pair[1], author, "ACCEPTED", NOW, NOW));
         matches.save(new Match(match, author, null, "경기", null, null, null, "COMPLETED",
                 NOW, NOW.plusHours(1), 1, NOW, NOW));
         comments.save(new Comment(comment, match, author, "원문", NOW));
@@ -70,8 +78,10 @@ class AdminCommentReportControllerTest {
     void administratorCanReadSnapshotsAndUseFilteredCursorPagination() throws Exception {
         var first = seedReport(reporter, NOW);
         var second = seedReport(secondAdmin, NOW.plusSeconds(1));
-        mvc.perform(get(PATH)).andExpect(status().isUnauthorized());
-        mvc.perform(auth(get(PATH + "/{id}", first), reporter)).andExpect(status().isForbidden());
+        mvc.perform(get(PATH)).andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error.code").value("UNAUTHENTICATED"));
+        mvc.perform(auth(get(PATH + "/{id}", first), reporter)).andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error.code").value("FORBIDDEN"));
         mvc.perform(auth(patch(PATH + "/{id}", first), reporter).contentType("application/json")
                         .content("{\"resolution\":\"DELETED\"}")).andExpect(status().isForbidden());
 
@@ -114,7 +124,10 @@ class AdminCommentReportControllerTest {
         process(second, secondAdmin, "HIDDEN").andExpect(status().isOk());
         assertThat(comments.findByIdForUpdate(comment).orElseThrow().hiddenAt()).isEqualTo(hiddenAt);
         process(third, admin, "DELETED").andExpect(status().isOk());
-        assertThat(comments.findByIdForUpdate(comment)).isEmpty();
+        var deleted = comments.findByIdForUpdate(comment).orElseThrow();
+        assertThat(deleted.deletedAt()).isNotNull();
+        assertThat(deleted.hiddenAt()).isEqualTo(hiddenAt);
+        assertThat(deleted.content()).isNull();
         mvc.perform(auth(get(PATH + "/{id}", first), admin)).andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.commentContent").value("원문"))
                 .andExpect(jsonPath("$.data.status").value("PROCESSED"));
@@ -123,13 +136,17 @@ class AdminCommentReportControllerTest {
     }
 
     @Test
-    void publicListExcludesHiddenAndDeletedCommentsWhileReportsRemain() throws Exception {
+    void hidingAParentExcludesItsThreadAndDeletingAParentRetainsItsReplies() throws Exception {
         var hiddenReport = seedReport(reporter, NOW);
         var pendingReport = seedReport(secondAdmin, NOW);
         UUID deletedComment = UUID.randomUUID();
         UUID visibleComment = UUID.randomUUID();
         comments.save(new Comment(deletedComment, match, author, "삭제 대상", NOW));
         comments.save(new Comment(visibleComment, match, author, "정상 댓글", NOW));
+        UUID hiddenReply = UUID.randomUUID();
+        UUID retainedReply = UUID.randomUUID();
+        comments.save(new Comment(hiddenReply, match, author, "숨겨질 답글", NOW, comment, null));
+        comments.save(new Comment(retainedReply, match, author, "보존될 답글", NOW, deletedComment, null));
         UUID deletedReport = UUID.randomUUID();
         reports.save(new Report(deletedReport, reporter, author, deletedComment, "삭제 대상",
                 "SPAM", null, NOW, null, null, null));
@@ -142,9 +159,22 @@ class AdminCommentReportControllerTest {
         mvc.perform(auth(get(list, match), author)).andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[*].id").value(containsInAnyOrder(
                         deletedComment.toString(), visibleComment.toString())));
+        mvc.perform(auth(get(list, match).param("parentCommentId", comment.toString()), reporter))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.length()").value(0));
+        mvc.perform(auth(post(list + "/{id}/reports", match, hiddenReply), reporter)
+                        .contentType("application/json").content("{\"reason\":\"SPAM\"}"))
+                .andExpect(status().isNotFound());
+
         process(deletedReport, admin, "DELETED").andExpect(status().isOk());
         mvc.perform(auth(get(list, match), author)).andExpect(status().isOk())
-                .andExpect(jsonPath("$.data[*].id").value(containsInAnyOrder(visibleComment.toString())));
+                .andExpect(jsonPath("$.data[*].id").value(containsInAnyOrder(
+                        deletedComment.toString(), visibleComment.toString())));
+        mvc.perform(auth(get(list, match).param("parentCommentId", deletedComment.toString()), reporter))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data[0].id").value(retainedReply.toString()));
+        mvc.perform(auth(post(list + "/{id}/reports", match, retainedReply), reporter)
+                        .contentType("application/json").content("{\"reason\":\"SPAM\"}"))
+                .andExpect(status().isCreated());
+        assertThat(comments.findByIdForUpdate(deletedComment).orElseThrow().deletedAt()).isNotNull();
 
         assertThat(reports.findById(hiddenReport).orElseThrow().commentContent()).isEqualTo("원문");
         assertThat(reports.findById(deletedReport).orElseThrow().commentContent()).isEqualTo("삭제 대상");
@@ -152,10 +182,10 @@ class AdminCommentReportControllerTest {
     }
 
     @Test
-    void missingCommentRollsBackHideAndAllowsOtherResolutions() throws Exception {
+    void softDeletedCommentRollsBackHideAndAllowsOtherResolutions() throws Exception {
         var first = seedReport(reporter, NOW);
         var second = seedReport(secondAdmin, NOW);
-        comments.deleteById(comment);
+        comments.softDeleteById(comment, NOW.plusSeconds(1));
 
         process(first, admin, "HIDDEN").andExpect(status().isConflict())
                 .andExpect(jsonPath("$.error.code").value("COMMENT_ALREADY_DELETED"));
@@ -192,7 +222,7 @@ class AdminCommentReportControllerTest {
                 assertThat(comments.findByIdForUpdate(comment).orElseThrow().hiddenAt()).isNotNull();
             } else {
                 assertThat(result.processedBy()).isEqualTo(secondAdmin);
-                assertThat(comments.findByIdForUpdate(comment)).isEmpty();
+                assertThat(comments.findByIdForUpdate(comment).orElseThrow().deletedAt()).isNotNull();
             }
         }
     }
