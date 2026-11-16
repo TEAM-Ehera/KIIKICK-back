@@ -96,3 +96,11 @@ FROM heartRateSamples ORDER BY workoutPayloadId, sampleSeq;
 [V005__workout_events_field.sql](migrations/V005__workout_events_field.sql)은 V004 이후 `workout_payloads`와 기존 `workoutPayloads`에 각각 nullable JSON `events_json`, `field_snapshot`을 추가한다. 각 ALTER는 별도 DDL이므로 부분 적용 실패 시 컬럼 상태를 확인하고 미적용 문장만 재실행한다. 두 테이블의 스키마 변경을 모두 완료한 뒤 애플리케이션을 배포한다. 기존 행·합계는 변경하지 않으며 NULL은 응답에서 빈 events 배열과 null field로 복원한다.
 
 2026-11-09 검증: 전체 테스트 277개와 bootJar 빌드 통과. 격리 MySQL 8.4.11에서 V001~V005 적용과 JSON 사본 저장·조회, 기존 업로드, 경기장 코너 회귀 테스트 3개 통과.
+
+## 경기 댓글 신고 배포
+
+1. 대상 DB와 백업을 확인한다. `SHOW CREATE TABLE match_comments`로 [V006](migrations/V006__match_comments.sql)이 적용됐는지 확인하고, `hidden_at`, `match_comment_reports`, `admin_users`의 기존 적용 상태를 점검한다.
+2. [V008](migrations/V008__match_comment_reports.sql), [V009](migrations/V009__admin_users.sql), 애플리케이션 순서로 적용한다. 배포 전 `SHOW CREATE TABLE`과 `SHOW INDEX`로 숨김 컬럼, 신고 PK·UNIQUE·CHECK·인덱스, 관리자 PK·외래 키를 확인한다. 새 애플리케이션은 일반 댓글 목록에서도 `hidden_at`을 참조한다.
+3. V008의 DDL은 문장별로 커밋될 수 있다. 실패하면 배포를 멈추고 실행 기록과 실제 컬럼·테이블 정의를 V008과 대조한다. `hidden_at`만 정확히 적용됐다면 승인된 복구 작업으로 남은 `CREATE TABLE`을 적용한다. 정의가 다르거나 적용 상태를 확정할 수 없으면 백업 복구 또는 별도 교정 계획을 검토한다.
+4. 운영 담당자는 승인된 DB 계정으로 활성 사용자의 UUID를 확인하고 `admin_users.user_id`에 BINARY(16) 값으로 등록한다. 회수 시 같은 ID의 관리자 행을 삭제한다. 런타임 DB 계정은 `admin_users`의 SELECT만 가능하도록 유효 권한을 확인하고 관리자 행 변경 권한은 운영 계정에 둔다.
+5. 관리자 목록 조회로 미인증 401, 일반 사용자 403, 활성 관리자 200을 확인한다. 권한 회수 뒤에는 같은 JWT로 다시 요청해 403을 확인한다.

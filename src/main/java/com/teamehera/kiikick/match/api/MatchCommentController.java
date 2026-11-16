@@ -1,17 +1,20 @@
 package com.teamehera.kiikick.match.api;
 
 import com.teamehera.kiikick.friend.service.FriendCommands;
+import com.teamehera.kiikick.match.repository.MatchCommentReportRepository.Report;
 import com.teamehera.kiikick.match.repository.MatchCommentRepository;
 import com.teamehera.kiikick.match.repository.MatchCommentRepository.Comment;
 import com.teamehera.kiikick.match.service.*;
 import io.swagger.v3.oas.annotations.Operation;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 import java.nio.charset.StandardCharsets;
@@ -33,15 +36,17 @@ import java.util.UUID;
 public class MatchCommentController {
     private final MatchSocialAccess access;
     private final MatchCommentRepository comments;
+    private final MatchCommentReportService reports;
     private final FriendCommands commands;
     private final ObjectMapper json;
     private final Duration retention;
 
     public MatchCommentController(MatchSocialAccess access, MatchCommentRepository comments, FriendCommands commands,
-                                  ObjectMapper json,
+                                  MatchCommentReportService reports, ObjectMapper json,
                                   @Value("${kiikick.match.idempotency-retention:P1D}") Duration retention) {
         this.access = access;
         this.comments = comments;
+        this.reports = reports;
         this.commands = commands;
         this.json = json;
         this.retention = retention;
@@ -106,6 +111,23 @@ public class MatchCommentController {
                 }));
     }
 
+    @Operation(summary = "경기 댓글 신고")
+    @PostMapping(value = "/{commentId}/reports", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @ResponseStatus(HttpStatus.CREATED)
+    public ResponseEntity<MatchApiResponse.Success<ReportResponse>> report(
+            Principal principal, @PathVariable UUID matchId, @PathVariable UUID commentId,
+            @RequestBody(required = false) byte[] body) {
+        UUID reporterId = MatchController.actor(principal);
+        var input = MatchSettings.readBody(json, body);
+        MatchSettings.checkObject(input, "body", Set.of("reason", "detail"));
+        var report = reports.submit(reporterId, matchId, commentId,
+                reportText(input, "reason"), reportText(input, "detail"));
+        var meta = MatchApiResponse.Meta.create();
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .header(MatchApiResponse.REQUEST_ID_HEADER, meta.requestId().toString())
+                .body(new MatchApiResponse.Success<>(ReportResponse.from(report), meta));
+    }
+
     @Operation(summary = "내가 작성한 경기 댓글 삭제")
     @DeleteMapping("/{commentId}")
     public ResponseEntity<String> delete(Principal principal, @PathVariable UUID matchId, @PathVariable UUID commentId,
@@ -127,6 +149,17 @@ public class MatchCommentController {
                     return new MatchMutation.Response(204, json.writeValueAsString(Map.of(
                             MatchApiResponse.REQUEST_ID_HEADER, UUID.randomUUID().toString())), null);
                 }));
+    }
+
+    private static String reportText(JsonNode input, String field) {
+        var value = input.get(field);
+        if (value == null || value.isNull()) {
+            return null;
+        }
+        if (!value.isString()) {
+            throw new MatchSettings.InvalidSettings(List.of(field));
+        }
+        return value.stringValue();
     }
 
     private static Boundary decode(String cursor, String scope) {
@@ -164,6 +197,12 @@ public class MatchCommentController {
     private LocalDateTime expiresAt() { return LocalDateTime.now(ZoneOffset.UTC).plus(retention); }
     private record Boundary(LocalDateTime time, UUID id) {}
     public record Page(List<CommentResponse> data, MatchListQuery.PageMeta meta) {}
+    public record ReportResponse(UUID id, UUID commentId, OffsetDateTime reportedAt) {
+        static ReportResponse from(Report report) {
+            return new ReportResponse(report.id(), report.commentId(), MatchApiResponse.fromUtc(report.reportedAt()));
+        }
+    }
+
     public record CommentResponse(UUID id, UUID matchId, UUID authorId, String content, OffsetDateTime createdAt) {
         static CommentResponse from(Comment comment) {
             return new CommentResponse(comment.id(), comment.matchId(), comment.authorId(), comment.content(),

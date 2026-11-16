@@ -6,6 +6,7 @@ import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import static com.teamehera.kiikick.global.jdbc.JdbcValueConverter.*;
@@ -15,7 +16,7 @@ public class MatchCommentRepository {
     private final JdbcTemplate jdbc;
     private final RowMapper<Comment> mapper = (rs, row) -> new Comment(bytesToUuid(rs.getBytes("id")),
             bytesToUuid(rs.getBytes("match_id")), bytesToUuid(rs.getBytes("author_id")), rs.getString("content"),
-            rs.getTimestamp("created_at").toLocalDateTime());
+            rs.getTimestamp("created_at").toLocalDateTime(), nullableDateTime(rs, "hidden_at"));
 
     public MatchCommentRepository(JdbcTemplate jdbc) {
         this.jdbc = jdbc;
@@ -31,7 +32,7 @@ public class MatchCommentRepository {
         // 차단한 사용자와 나를 차단한 사용자의 댓글은 양쪽 모두 숨긴다.
         String sql = """
                 SELECT c.* FROM match_comments c
-                WHERE c.match_id = ? AND NOT EXISTS (
+                WHERE c.match_id = ? AND c.hidden_at IS NULL AND NOT EXISTS (
                     SELECT 1 FROM user_blocks b
                     WHERE (b.blocker_id = ? AND b.blocked_id = c.author_id)
                        OR (b.blocked_id = ? AND b.blocker_id = c.author_id)
@@ -52,10 +53,37 @@ public class MatchCommentRepository {
         return jdbc.query(sql, mapper, args.toArray());
     }
 
+    public Optional<Comment> findByIdForUpdate(UUID matchId, UUID commentId) {
+        return jdbc.query(
+                "SELECT * FROM match_comments WHERE match_id = ? AND id = ? FOR UPDATE",
+                mapper, uuidToBytes(matchId), uuidToBytes(commentId)
+        ).stream().findFirst();
+    }
+
+    public Optional<Comment> findByIdForUpdate(UUID commentId) {
+        return jdbc.query("SELECT * FROM match_comments WHERE id = ? FOR UPDATE",
+                mapper, uuidToBytes(commentId)).stream().findFirst();
+    }
+
+    public int hide(UUID commentId, LocalDateTime hiddenAt) {
+        return jdbc.update("UPDATE match_comments SET hidden_at = ? WHERE id = ? AND hidden_at IS NULL",
+                hiddenAt, uuidToBytes(commentId));
+    }
+
+    public int deleteById(UUID commentId) {
+        return jdbc.update("DELETE FROM match_comments WHERE id = ?", uuidToBytes(commentId));
+    }
+
     public int delete(UUID matchId, UUID commentId, UUID actor) {
         return jdbc.update("DELETE FROM match_comments WHERE id = ? AND match_id = ? AND author_id = ?",
                 uuidToBytes(commentId), uuidToBytes(matchId), uuidToBytes(actor));
     }
 
-    public record Comment(UUID id, UUID matchId, UUID authorId, String content, LocalDateTime createdAt) {}
+    public record Comment(
+            UUID id, UUID matchId, UUID authorId, String content, LocalDateTime createdAt, LocalDateTime hiddenAt
+    ) {
+        public Comment(UUID id, UUID matchId, UUID authorId, String content, LocalDateTime createdAt) {
+            this(id, matchId, authorId, content, createdAt, null);
+        }
+    }
 }

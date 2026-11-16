@@ -476,6 +476,7 @@ TableGroup quarter_records {
 }
 TableGroup social {
   match_comments
+  match_comment_reports
   friend_pairs
   user_blocks
   notifications
@@ -495,8 +496,9 @@ Table match_comments {
   author_id binary(16) [not null]
   content varchar(1000) [not null]
   created_at datetime(6) [not null]
+  hidden_at datetime(6) [null]
   indexes {
-    (match_id, created_at, id) [name: 'idx_match_comments_page']
+    (match_id, created_at [desc], id [desc]) [name: 'idx_match_comments_page']
   }
   Note: '댓글 페이지 인덱스의 물리 정렬은 created_at DESC, id DESC. 경기 버전과 독립적.'
 }
@@ -515,3 +517,34 @@ Table "quarter_friends" {
 
 Ref "fk_quarter_friend_quarter":"quarters"."id" < "quarter_friends"."quarter_id" [delete: cascade]
 Ref "fk_quarter_friend_user":"users"."id" < "quarter_friends"."friend_user_id" [delete: cascade]
+
+Table match_comment_reports {
+  id binary(16) [pk, not null]
+  reporter_id binary(16) [not null]
+  comment_author_id binary(16) [not null]
+  comment_id binary(16) [not null]
+  comment_content varchar(1000) [not null]
+  reason varchar(32) [not null]
+  detail varchar(1000) [null]
+  reported_at datetime(6) [not null]
+  processed_at datetime(6) [null]
+  processed_by binary(16) [null]
+  resolution varchar(16) [null]
+  indexes {
+    (reporter_id, comment_id) [unique, name: 'uq_match_comment_reports_reporter_comment']
+    (processed_at, reported_at [desc], id [desc]) [name: 'idx_match_comment_reports_queue']
+    comment_id [name: 'idx_match_comment_reports_comment']
+  }
+  checks {
+    `reporter_id <> comment_author_id` [name: 'chk_match_comment_reports_no_self_report']
+    `CHAR_LENGTH(TRIM(reason)) > 0` [name: 'chk_match_comment_reports_reason']
+    `resolution IN ('NO_ACTION', 'HIDDEN', 'DELETED')` [name: 'chk_match_comment_reports_resolution']
+    `(processed_at IS NULL AND processed_by IS NULL AND resolution IS NULL) OR (processed_at IS NOT NULL AND processed_by IS NOT NULL AND resolution IS NOT NULL)` [name: 'chk_match_comment_reports_processing']
+  }
+  Note: '신고 당시 원문과 사용자·댓글 ID를 외래 키 없이 보존한다.'
+}
+
+Table admin_users {
+  user_id binary(16) [pk, not null]
+}
+Ref fk_admin_users_user: users.id - admin_users.user_id [delete: cascade]

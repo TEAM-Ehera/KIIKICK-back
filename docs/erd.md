@@ -535,6 +535,7 @@ BINARY(16) UUID와 DATETIME(6) UTC를 사용한다. UTC 저장은 DB 타입만�
 | author_id | BINARY(16) | NOT NULL | FK → users.id |
 | content | VARCHAR(1000) | NOT NULL | |
 | created_at | DATETIME(6) | NOT NULL | UTC |
+| hidden_at | DATETIME(6) | NULL | UTC, 관리자 숨김 시각 |
 
 목록 인덱스: `(match_id, created_at DESC, id DESC)`. 친구 삭제 시 댓글을 보존하고 접근을 제한한다. 차단 관계의 작성자 댓글은 양방향 숨김 처리한다. 기존 DB에는 `V006__match_comments.sql`을 적용한다.
 
@@ -542,3 +543,23 @@ BINARY(16) UUID와 DATETIME(6) UTC를 사용한다. UTC 저장은 DB 타입만�
 ### 활성 닉네임 제약 (2026-11-10)
 
 `users.active_nickname`은 활성 계정일 때만 `nickname`의 원문 UTF-8 바이트를 반환하는 STORED 생성 컬럼이다. UNIQUE `uk_users_active_nickname`은 활성 계정의 동일 닉네임만 거절한다. 삭제된 계정과 온보딩 전 null 닉네임은 NULL 키이므로 여러 행을 허용한다. 기존 정적 ERD 이미지에는 이 생성 컬럼이 없으므로 SQL·DBML 정의를 기준으로 확인한다. 기존 DB에는 V007을 적용한다.
+
+### match_comment_reports 및 admin_users
+
+| match_comment_reports 컬럼 | SQL 타입 | null |
+| --- | --- | --- |
+| id | BINARY(16) | NOT NULL |
+| reporter_id | BINARY(16) | NOT NULL |
+| comment_author_id | BINARY(16) | NOT NULL |
+| comment_id | BINARY(16) | NOT NULL |
+| comment_content | VARCHAR(1000) | NOT NULL |
+| reason | VARCHAR(32) | NOT NULL |
+| detail | VARCHAR(1000) | NULL |
+| reported_at | DATETIME(6) | NOT NULL |
+| processed_at | DATETIME(6) | NULL |
+| processed_by | BINARY(16) | NULL |
+| resolution | VARCHAR(16) | NULL |
+
+`id`는 PK, `(reporter_id, comment_id)`는 UNIQUE다. CHECK는 자기 신고 금지, 빈 사유 금지, 결과 코드 제한, 처리 필드 세 개의 동시 NULL 또는 동시 NOT NULL을 강제한다. 인덱스는 `(processed_at, reported_at DESC, id DESC)`와 `(comment_id)`다. 시각은 UTC이며 댓글과 사용자 ID는 외래 키 없이 보존한다.
+
+`admin_users.user_id`는 `BINARY(16) NOT NULL` PK이며 `users.id`를 참조한다. 사용자 물리 삭제 시 관리자 행도 삭제된다. 상세 물리 정의는 [설계 SQL](dbdiagram/full-design.sql)과 [DBML](dbdiagram/full-design.dbml)을 따른다.

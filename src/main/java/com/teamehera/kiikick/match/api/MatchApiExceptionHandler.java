@@ -2,6 +2,11 @@ package com.teamehera.kiikick.match.api;
 
 import com.teamehera.kiikick.friend.service.FriendCommands;
 import com.teamehera.kiikick.friend.service.FriendQuery;
+import com.teamehera.kiikick.match.service.AdminCommentReportService.CommentAlreadyDeleted;
+import com.teamehera.kiikick.match.service.AdminCommentReportService.ReportAlreadyProcessed;
+import com.teamehera.kiikick.match.service.MatchCommentReportService.CommentAlreadyReported;
+import com.teamehera.kiikick.match.service.MatchCommentReportService.InvalidInput;
+import com.teamehera.kiikick.match.service.MatchCommentReportService.SelfReportNotAllowed;
 import com.teamehera.kiikick.match.service.MatchListQuery.InvalidListRequest;
 import com.teamehera.kiikick.match.service.MatchMutation;
 import com.teamehera.kiikick.match.service.MatchResultQuery.ResultNotReady;
@@ -90,6 +95,36 @@ public class MatchApiExceptionHandler {
     public ResponseEntity<MatchApiResponse.Failure> invalidPositionCode(HttpServletRequest request) {
         return failure(HttpStatus.UNPROCESSABLE_CONTENT, "VALIDATION_FAILED", "입력값을 확인해주세요.",
                 Map.of("fields", java.util.List.of("positionCode")), request);
+    }
+
+    @ExceptionHandler(InvalidInput.class)
+    public ResponseEntity<MatchApiResponse.Failure> invalidCommentReport(
+            InvalidInput exception, HttpServletRequest request) {
+        return invalidSettings(new MatchSettings.InvalidSettings(java.util.List.of(exception.getMessage())), request);
+    }
+
+    @ExceptionHandler(ReportAlreadyProcessed.class)
+    public ResponseEntity<MatchApiResponse.Failure> reportAlreadyProcessed(HttpServletRequest request) {
+        return failure(HttpStatus.CONFLICT, "REPORT_ALREADY_PROCESSED",
+                "이미 처리된 신고입니다.", Map.of(), request);
+    }
+
+    @ExceptionHandler(CommentAlreadyDeleted.class)
+    public ResponseEntity<MatchApiResponse.Failure> commentAlreadyDeleted(HttpServletRequest request) {
+        return failure(HttpStatus.CONFLICT, "COMMENT_ALREADY_DELETED",
+                "이미 삭제된 댓글입니다.", Map.of(), request);
+    }
+
+    @ExceptionHandler(SelfReportNotAllowed.class)
+    public ResponseEntity<MatchApiResponse.Failure> selfReportNotAllowed(HttpServletRequest request) {
+        return failure(HttpStatus.UNPROCESSABLE_CONTENT, "SELF_REPORT_NOT_ALLOWED",
+                "내 댓글은 신고할 수 없습니다.", Map.of(), request);
+    }
+
+    @ExceptionHandler(CommentAlreadyReported.class)
+    public ResponseEntity<MatchApiResponse.Failure> commentAlreadyReported(HttpServletRequest request) {
+        return failure(HttpStatus.CONFLICT, "COMMENT_ALREADY_REPORTED",
+                "이미 신고한 댓글입니다.", Map.of(), request);
     }
 
     @ExceptionHandler(MatchSettings.InvalidSettings.class)

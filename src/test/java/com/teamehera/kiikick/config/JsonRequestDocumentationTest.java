@@ -12,6 +12,9 @@ import org.springframework.test.web.servlet.MockMvc;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -68,6 +71,81 @@ class JsonRequestDocumentationTest {
                 .at("/requestBody/content/application~1json/examples/iOS WorkoutPayload/value");
         assertThat(workout.at("/events/0/type").asText()).isEqualTo("goal");
         assertThat(workout.at("/field/cornerD/latitude").isNumber()).isTrue();
+    }
+
+    @Test
+    void commentReportOperationsPublishRequestsSuccessAndApplicableErrors() {
+        String admin = "/api/v1/admin/comment-reports";
+        var submit = operation("/api/v1/matches/{matchId}/comments/{commentId}/reports", "post");
+        var list = operation(admin, "get");
+        var detail = operation(admin + "/{reportId}", "get");
+        var process = operation(admin + "/{reportId}", "patch");
+
+        assertThat(submit.at("/requestBody/content/application~1json/example/reason").asText()).isEqualTo("SPAM");
+        assertThat(submit.at("/responses/201/content/application~1json/example/data/commentId").isString()).isTrue();
+        assertThat(submit.at("/responses/201/content/application~1json/schema").isObject()).isTrue();
+        assertThat(list.has("requestBody")).isFalse();
+        assertThat(detail.has("requestBody")).isFalse();
+        assertThat(process.at("/requestBody/content/application~1json/example/resolution").asText()).isEqualTo("HIDDEN");
+        for (var adminOperation : List.of(list, detail, process)) {
+            assertThat(adminOperation.at("/responses/200/content/application~1json/schema").isObject()).isTrue();
+        }
+
+        assertErrors(submit, "201", true, Map.of(
+                "400", Set.of("INVALID_REQUEST"), "401", Set.of("UNAUTHENTICATED", "TOKEN_EXPIRED"),
+                "404", Set.of("RESOURCE_NOT_FOUND"), "409", Set.of("COMMENT_ALREADY_REPORTED"),
+                "422", Set.of("SELF_REPORT_NOT_ALLOWED", "VALIDATION_FAILED")));
+        assertErrors(list, "200", false, Map.of(
+                "400", Set.of("INVALID_REQUEST", "INVALID_CURSOR"),
+                "401", Set.of("UNAUTHENTICATED", "TOKEN_EXPIRED"), "403", Set.of("FORBIDDEN")));
+        assertErrors(detail, "200", false, Map.of(
+                "400", Set.of("INVALID_REQUEST"), "401", Set.of("UNAUTHENTICATED", "TOKEN_EXPIRED"),
+                "403", Set.of("FORBIDDEN"), "404", Set.of("RESOURCE_NOT_FOUND")));
+        assertErrors(process, "200", true, Map.of(
+                "400", Set.of("INVALID_REQUEST"), "401", Set.of("UNAUTHENTICATED", "TOKEN_EXPIRED"),
+                "403", Set.of("FORBIDDEN"), "404", Set.of("RESOURCE_NOT_FOUND"),
+                "409", Set.of("REPORT_ALREADY_PROCESSED", "COMMENT_ALREADY_DELETED"),
+                "422", Set.of("VALIDATION_FAILED")));
+        assertThat(errorExample(submit, "422", "VALIDATION_FAILED").at("/error/details/fields/0").asText())
+                .isEqualTo("reason");
+        assertThat(errorExample(process, "422", "VALIDATION_FAILED").at("/error/details/fields/0").asText())
+                .isEqualTo("resolution");
+    }
+
+    private void assertErrors(JsonNode operation, String success, boolean write,
+                              Map<String, Set<String>> expected) {
+        var statuses = new HashSet<>(expected.keySet());
+        statuses.add(success);
+        assertThat(operation.path("responses").propertyNames()).containsExactlyInAnyOrderElementsOf(statuses);
+        expected.forEach((status, codes) -> {
+            boolean security = status.equals("401") || status.equals("403");
+            var examples = operation.at("/responses/" + status + "/content/application~1json/examples");
+            assertThat(examples.propertyNames()).containsExactlyInAnyOrderElementsOf(codes);
+            for (String code : codes) {
+                var example = errorExample(operation, status, code);
+                assertThat(example.propertyNames()).containsExactlyInAnyOrder("error", "meta");
+                var error = example.path("error");
+                assertThat(error.propertyNames())
+                        .containsExactlyInAnyOrder("code", "message", "retryable", "persistence", "details");
+                assertThat(error.path("code").asText()).isEqualTo(code);
+                assertThat(error.path("message").asText()).isNotBlank();
+                assertThat(error.path("retryable").isBoolean()).isTrue();
+                assertThat(error.path("retryable").asBoolean()).isFalse();
+                if (write && !security) {
+                    assertThat(error.path("persistence").asText()).isEqualTo("NOT_SAVED");
+                } else {
+                    assertThat(error.path("persistence").isNull()).isTrue();
+                }
+                assertThat(error.path("details").isObject()).isTrue();
+                assertThat(example.path("meta").propertyNames()).containsExactlyInAnyOrder("requestId", "serverTime");
+                assertThat(example.at("/meta/requestId").asText()).matches(security ? "req-.+" : "[0-9a-f-]{36}");
+                assertThat(example.at("/meta/serverTime").asText()).endsWith("+09:00");
+            }
+        });
+    }
+
+    private JsonNode errorExample(JsonNode operation, String status, String code) {
+        return operation.at("/responses/" + status + "/content/application~1json/examples/" + code + "/value");
     }
 
     private JsonNode operation(String path, String method) {
