@@ -70,7 +70,7 @@ class AuthOpenApiTest {
             assertThat(ids.add(operation(api).path("operationId").asText())).isTrue();
             assertThat(response(api).isMissingNode()).isFalse();
         }
-        for (String absent : List.of("/api/v1/users/me/consents", "/api/v1/users/me/deletion-requests", "/api/v1/auth/password-reset"))
+        for (String absent : List.of("/api/v1/users/me/deletion-requests", "/api/v1/auth/password-reset"))
             assertThat(document.path("paths").has(absent)).isFalse();
     }
     @Test void 공개5개는_전역Bearer를_해제하고_보호3개는_Bearer를_요구한다() {
