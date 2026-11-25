@@ -1,0 +1,23 @@
+services:
+  jenkins:
+    image: kiikick-jenkins:2.580.2-homeserver
+    restart: unless-stopped
+    user: "1000:1000"
+    group_add:
+      - "983"
+    ports:
+      - "127.0.0.1:8090:8080"
+    environment:
+      JAVA_OPTS: "-Xmx1536m -Djenkins.install.runSetupWizard=false"
+      JENKINS_OPTS: "--httpPort=8080"
+    volumes:
+      - ./home:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /home/asher/apps/kiikick-admin:/home/asher/apps/kiikick-admin
+    mem_limit: 3g
+    cpus: 2
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"

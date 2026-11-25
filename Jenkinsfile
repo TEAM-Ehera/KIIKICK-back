@@ -42,11 +42,11 @@ pipeline {
                 }
             }
             steps {
-                sh './gradlew --no-daemon bootJar'
+                sh './gradlew --no-daemon assemble'
                 archiveArtifacts artifacts: 'build/libs/*.jar', fingerprint: true
             }
         }
-        stage('Deploy development container') {
+        stage('Deploy home-server API') {
             when {
                 expression { env.JOB_NAME == 'kiikick-develop' && env.GIT_BRANCH == 'origin/develop' }
             }
@@ -59,7 +59,7 @@ pipeline {
                             set -eu
                             jar=build/libs/KIIKICK-back-0.0.1-SNAPSHOT.jar
                             digest=$(sha256sum "$jar" | cut -d ' ' -f 1)
-                            sudo -n /usr/local/sbin/kiikick-install-dev-container "$GIT_COMMIT" "$digest" < "$jar"
+                            /usr/local/sbin/kiikick-install-homeserver-jar "$GIT_COMMIT" "$digest" < "$jar"
                         '''
                         deployed = true
                     } finally {
