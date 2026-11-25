@@ -29,3 +29,9 @@ Jenkins Package 단계는 `assemble`을 사용한다. 소스 컨텍스트 업로
 ```sh
 python3 -m unittest discover -s ops/deploy/tests -v
 ```
+
+## 이전 검증 기록 (2026-11-26)
+
+홈서버 Jenkins 로그인 화면 200, 기존 계정·암호화된 자격증명 복원, Java 21과 Docker 접근을 확인했다. 설치된 배포 도우미로 기존 승인된 운영 JAR를 다시 배포해 candidate/primary 전환과 임시 컨테이너 제거를 확인했다. 운영 DB·인증·Sentry·PostHog 환경을 유지했다. EC2 Nginx는 계속 실행 중이며 기존 앱 주소의 상태 점검은 200, 비인증 경기 조회는 401이다.
+
+변경 검토: https://github.com/TEAM-Ehera/KIIKICK-back/pull/132
