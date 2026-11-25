@@ -1,5 +1,8 @@
 package com.teamehera.kiikick.match.service;
 
+import com.teamehera.kiikick.observability.ProductEvent;
+import org.springframework.context.ApplicationEventPublisher;
+
 import com.teamehera.kiikick.match.api.MatchApiResponse;
 import com.teamehera.kiikick.match.api.MatchSettings;
 import com.teamehera.kiikick.match.domain.Match;
@@ -14,15 +17,18 @@ import java.util.UUID;
 
 @Service
 public class MatchSettingsService {
+    private final ApplicationEventPublisher events;
 
     private final MatchRepository matches;
     private final MatchOwnership ownership;
     private final VenueRepository venues;
 
-    public MatchSettingsService(MatchRepository matches, MatchOwnership ownership, VenueRepository venues) {
+    public MatchSettingsService(MatchRepository matches, MatchOwnership ownership, VenueRepository venues,
+                                ApplicationEventPublisher events) {
         this.matches = matches;
         this.ownership = ownership;
         this.venues = venues;
+        this.events = events;
     }
 
     // Called inside the mutation transaction that also stores the HTTP response.
@@ -32,6 +38,7 @@ public class MatchSettingsService {
                 null, "DRAFT", null, null, 1, now, now);
         var match = apply(draft, settings);
         matches.save(match);
+        events.publishEvent(new ProductEvent(ProductEvent.Type.MATCH_CREATED, actor, match.id()));
         return ownership.requireMatch(actor, match.id());
     }
 

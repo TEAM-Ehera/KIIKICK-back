@@ -2,6 +2,7 @@ plugins {
     id 'java'
     id 'org.springframework.boot' version '4.1.2'
     id 'io.spring.dependency-management' version '1.1.7'
+    id 'io.sentry.jvm.gradle' version '6.27.0'
 }
 
 group = 'com.teamehera'
@@ -18,7 +19,18 @@ repositories {
     mavenCentral()
 }
 
+sentry {
+    // 인증 토큰이 없는 개발·CI 빌드는 외부 업로드 없이 실행한다.
+    includeSourceContext = providers.environmentVariable('SENTRY_AUTH_TOKEN').isPresent()
+    autoInstallation { enabled = false }
+    org = 'kiikick'
+    projectName = 'kiikick-backend'
+    authToken = System.getenv('SENTRY_AUTH_TOKEN')
+}
+
 dependencies {
+    implementation 'io.sentry:sentry-spring-boot-4-starter:8.65.1'
+    implementation 'com.posthog:posthog-server:2.26.1'
     implementation platform('software.amazon.awssdk:bom:2.57.10')
     implementation 'software.amazon.awssdk:s3'
     implementation 'software.amazon.awssdk:url-connection-client'

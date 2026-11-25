@@ -18,6 +18,8 @@ import org.mockito.InjectMocks;
 import com.teamehera.kiikick.workout.service.WorkoutContextCodec;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
+import com.teamehera.kiikick.observability.ProductEvent;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -48,6 +50,9 @@ class WorkoutPayloadServiceTest {
 
     @Mock
     private WorkoutContextCodec context;
+
+    @Mock
+    private ApplicationEventPublisher events;
 
     @InjectMocks
     private WorkoutPayloadService workoutPayloadService;
@@ -108,6 +113,8 @@ class WorkoutPayloadServiceTest {
                 .saveWorkoutPayload(workoutCaptor.capture());
 
         WorkoutPayload savedWorkout = workoutCaptor.getValue();
+        verify(events).publishEvent(new ProductEvent(ProductEvent.Type.WORKOUT_UPLOADED,
+                userId, savedWorkout.id()));
 
         saveOrder.verify(workoutPayloadRepository)
                 .saveTrackPoints(

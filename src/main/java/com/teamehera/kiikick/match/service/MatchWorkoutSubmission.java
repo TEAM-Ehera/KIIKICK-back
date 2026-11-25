@@ -1,5 +1,8 @@
 package com.teamehera.kiikick.match.service;
 
+import com.teamehera.kiikick.observability.ProductEvent;
+import org.springframework.context.ApplicationEventPublisher;
+
 import com.teamehera.kiikick.match.domain.Match;
 import com.teamehera.kiikick.match.domain.Quarter;
 import com.teamehera.kiikick.match.repository.MatchRepository;
@@ -18,17 +21,20 @@ import java.util.UUID;
 
 @Service
 public class MatchWorkoutSubmission {
+    private final ApplicationEventPublisher events;
     private final MatchRepository matches;
     private final QuarterRepository quarters;
     private final QuarterPositionService positions;
     private final QuarterWorkoutUpload workouts;
 
     public MatchWorkoutSubmission(MatchRepository matches, QuarterRepository quarters,
-                                  QuarterPositionService positions, QuarterWorkoutUpload workouts) {
+                                  QuarterPositionService positions, QuarterWorkoutUpload workouts,
+                                  ApplicationEventPublisher events) {
         this.matches = matches;
         this.quarters = quarters;
         this.positions = positions;
         this.workouts = workouts;
+        this.events = events;
     }
 
     // Called inside MatchMutation's owner lock and idempotency transaction.
@@ -60,6 +66,7 @@ public class MatchWorkoutSubmission {
             // IDs may collide with another owner's import; roll back without exposing their records.
             throw new MatchOwnership.ResourceNotFound();
         }
+        events.publishEvent(new ProductEvent(ProductEvent.Type.MATCH_CREATED, actor, match.id()));
         return match;
     }
 

@@ -1,5 +1,8 @@
 package com.teamehera.kiikick.workout.service;
 
+import com.teamehera.kiikick.observability.ProductEvent;
+import org.springframework.context.ApplicationEventPublisher;
+
 import com.teamehera.kiikick.match.domain.Match;
 import com.teamehera.kiikick.match.domain.Quarter;
 import com.teamehera.kiikick.match.repository.MatchRepository;
@@ -23,6 +26,7 @@ import java.util.function.IntToDoubleFunction;
 
 @Service
 public class QuarterWorkoutUpload {
+    private final ApplicationEventPublisher events;
     private final WorkoutPayloadRepository workouts;
     private final TrackPointRepository tracks;
     private final HeartRateSampleRepository heartRates;
@@ -33,7 +37,8 @@ public class QuarterWorkoutUpload {
 
     public QuarterWorkoutUpload(WorkoutPayloadRepository workouts, TrackPointRepository tracks,
                                 HeartRateSampleRepository heartRates, QuarterSummaryRepository summaries,
-                                MatchRepository matches, ObjectMapper json, WorkoutContextCodec context) {
+                                MatchRepository matches, ObjectMapper json, WorkoutContextCodec context,
+                                ApplicationEventPublisher events) {
         this.workouts = workouts;
         this.tracks = tracks;
         this.heartRates = heartRates;
@@ -41,6 +46,7 @@ public class QuarterWorkoutUpload {
         this.matches = matches;
         this.json = json;
         this.context = context;
+        this.events = events;
     }
 
     // MatchMutation locks the parent across deduplication, sample inserts and publication of PROCESSING.
@@ -90,6 +96,7 @@ public class QuarterWorkoutUpload {
         tracks.saveAll(WorkoutPayloadService.createTrackPoints(workout.id(), request.points()));
         heartRates.saveAll(WorkoutPayloadService.createHeartRateSamples(workout.id(), request.heartRateSamples()));
         summaries.saveProcessing(quarter.id(), workout.id(), "v1", "{}", "{}", hash, LocalDateTime.now(ZoneOffset.UTC));
+        events.publishEvent(new ProductEvent(ProductEvent.Type.WORKOUT_UPLOADED, match.ownerId(), workout.id()));
         return new StoredWorkout(workout, true);
     }
 

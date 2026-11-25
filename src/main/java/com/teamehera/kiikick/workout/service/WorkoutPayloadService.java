@@ -1,5 +1,8 @@
 package com.teamehera.kiikick.workout.service;
 
+import com.teamehera.kiikick.observability.ProductEvent;
+import org.springframework.context.ApplicationEventPublisher;
+
 import com.teamehera.kiikick.global.exception.InvalidWorkoutPayloadException;
 import com.teamehera.kiikick.global.exception.UserNotFoundException;
 import com.teamehera.kiikick.user.repository.UserRepository;
@@ -35,15 +38,18 @@ public class WorkoutPayloadService {
     private final UserRepository userRepository;
     private final WorkoutPayloadRepository workoutPayloadRepository;
     private final WorkoutContextCodec context;
+    private final ApplicationEventPublisher events;
 
     public WorkoutPayloadService(
             UserRepository userRepository,
             WorkoutPayloadRepository workoutPayloadRepository,
-            WorkoutContextCodec context
+            WorkoutContextCodec context,
+            ApplicationEventPublisher events
     ) {
         this.userRepository = userRepository;
         this.workoutPayloadRepository = workoutPayloadRepository;
         this.context = context;
+        this.events = events;
     }
 
     /*
@@ -97,6 +103,7 @@ public class WorkoutPayloadService {
         workoutPayloadRepository.saveTrackPoints(trackPoints);
         workoutPayloadRepository.saveHeartRateSamples(heartRateSamples);
 
+        events.publishEvent(new ProductEvent(ProductEvent.Type.WORKOUT_UPLOADED, userId, workoutPayloadId));
         return new WorkoutPayloadCreateResponse(workoutPayloadId);
     }
 
