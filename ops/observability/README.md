@@ -1,3 +1,5 @@
+> 현재 운영 배포는 [홈서버 Jenkins 절차](../jenkins/README.md)를 따른다. 아래 EC2 Jenkins 구성은 이전 기록이다. App Store 앱의 EC2 Nginx 중계는 유지한다.
+
 # KIIKICK 운영 관측과 CI
 
 개발 서버는 Spring Boot를 `kiikick-dev` Docker 컨테이너로 실행한다. Nginx가 로컬 8080으로 프록시하고 애플리케이션은 RDS MySQL에 연결한다. 첫 수집 대상은 Nginx의 구조화된 요청 지표다. URL·쿼리 문자열·클라이언트 IP·요청 본문 없이 요청 수, 5xx 비율, 응답 시간과 요청 ID를 확인할 수 있다. 원인 조사에는 서버의 애플리케이션과 MySQL 로그를 함께 본다.

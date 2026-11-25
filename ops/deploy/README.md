@@ -1,5 +1,8 @@
 # KIIKICK Docker 배포
 
+현재 운영 대상은 홈서버다. [홈서버 Jenkins와 배포 절차](../jenkins/README.md)를 따른다. 아래 EC2 설치 방식은 과거 기록이며 기존 App Store 앱 주소 중계와 구 API 재배포 차단은 유지한다.
+
+
 Jenkins의 `kiikick-develop` 작업이 Java 21로 검증한 JAR를 서버의
 `/usr/local/sbin/kiikick-install-dev-container`에 전달한다. 배포 스크립트를 변경하면
 서버에 설치된 사본도 갱신한다. 새 컨테이너는 헬스체크 통과 후 배포를 완료한다.

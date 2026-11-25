@@ -1,5 +1,8 @@
 package com.teamehera.kiikick.auth.service;
 
+import com.teamehera.kiikick.observability.ProductEvent;
+import org.springframework.context.ApplicationEventPublisher;
+
 import com.teamehera.kiikick.auth.domain.AuthSession;
 import com.teamehera.kiikick.auth.domain.EmailCredential;
 import com.teamehera.kiikick.auth.repository.AuthSessionRepository;
@@ -20,6 +23,7 @@ import java.util.UUID;
 
 @Service
 public class SignupTransactionService {
+    private final ApplicationEventPublisher events;
 
     private final RegistrationTokenService registrationTokenService;
     private final UserRepository userRepository;
@@ -36,7 +40,8 @@ public class SignupTransactionService {
             AuthSessionRepository sessionRepository,
             AccessTokenService accessTokenService,
             RefreshTokenIssuer refreshTokenIssuer,
-            Clock clock
+            Clock clock,
+            ApplicationEventPublisher events
     ) {
         this.registrationTokenService = registrationTokenService;
         this.userRepository = userRepository;
@@ -45,6 +50,7 @@ public class SignupTransactionService {
         this.accessTokenService = accessTokenService;
         this.refreshTokenIssuer = refreshTokenIssuer;
         this.clock = clock;
+        this.events = events;
     }
 
     @Transactional
@@ -81,6 +87,7 @@ public class SignupTransactionService {
         ));
         IssuedAccessToken accessToken = accessTokenService.issue(userId, sessionId);
         User user = userRepository.findById(userId).orElseThrow();
+        events.publishEvent(new ProductEvent(ProductEvent.Type.USER_SIGNED_UP, userId, userId));
 
         // 토큰 소비부터 사용자·Credential·세션 생성까지 하나라도 실패하면 전부 롤백한다.
         return new SignupResult(

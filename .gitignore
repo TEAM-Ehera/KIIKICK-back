@@ -38,3 +38,7 @@ out/
 
 ### Local environment variables ###
 .env
+
+# Python deployment tooling
+__pycache__/
+*.pyc

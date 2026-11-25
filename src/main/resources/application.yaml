@@ -41,6 +41,12 @@ management:
         include: health,info
 
 kiikick:
+  observability:
+    environment: ${OBSERVABILITY_ENVIRONMENT:development}
+    posthog:
+      enabled: ${POSTHOG_ENABLED:false}
+      api-key: ${POSTHOG_API_KEY:}
+      host: ${POSTHOG_HOST:https://us.i.posthog.com}
   auth:
     access-token:
       secret-base64: ${AUTH_ACCESS_TOKEN_SECRET_BASE64}
@@ -61,3 +67,13 @@ kiikick-avatar:
   public-base-url: ${AVATAR_R2_PUBLIC_BASE_URL:}
   access-key-id: ${AVATAR_R2_ACCESS_KEY_ID:}
   secret-access-key: ${AVATAR_R2_SECRET_ACCESS_KEY:}
+
+sentry:
+  dsn: ${SENTRY_DSN:}
+  environment: ${OBSERVABILITY_ENVIRONMENT:development}
+  release: ${SENTRY_RELEASE:kiikick-backend@local}
+  send-default-pii: false
+  max-request-body-size: none
+  traces-sample-rate: 0.0
+  # Spring의 기존 예외 처리기 뒤에서 처리되지 않은 예외를 수집한다.
+  exception-resolver-order: 1
